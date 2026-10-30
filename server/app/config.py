@@ -1,0 +1,52 @@
+"""환경설정. server/.env 를 읽고, 이미 설정된 환경변수가 우선한다."""
+
+from __future__ import annotations
+
+import os
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+from dotenv import load_dotenv
+
+SERVER_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(SERVER_ROOT / ".env", override=False)
+
+
+def _require(key: str) -> str:
+    value = os.getenv(key, "")
+    if not value:
+        raise RuntimeError(f"환경변수 {key} 가 설정되지 않았습니다 (server/.env 확인).")
+    return value
+
+
+@dataclass(frozen=True)
+class Settings:
+    db_host: str
+    db_port: int
+    db_user: str
+    db_pass: str
+    db_name: str
+    api_key: str
+    timezone: ZoneInfo
+    media_root: Path
+    max_image_bytes: int
+
+    @classmethod
+    def load(cls) -> "Settings":
+        db_name = os.getenv("DB_NAME", "kakao_collector")
+        if not re.fullmatch(r"[A-Za-z0-9_]{1,64}", db_name):
+            raise RuntimeError("DB_NAME 은 영문/숫자/밑줄만 사용할 수 있습니다.")
+        media_root = Path(os.getenv("MEDIA_ROOT", str(SERVER_ROOT / "storage" / "media")))
+        return cls(
+            db_host=_require("DB_HOST"),
+            db_port=int(os.getenv("DB_PORT", "3306")),
+            db_user=_require("DB_USER"),
+            db_pass=os.getenv("DB_PASS", ""),
+            db_name=db_name,
+            api_key=_require("API_KEY"),
+            timezone=ZoneInfo(os.getenv("APP_TIMEZONE", "Asia/Seoul")),
+            media_root=media_root.resolve(),
+            max_image_bytes=int(os.getenv("MAX_IMAGE_MB", "10")) * 1024 * 1024,
+        )
