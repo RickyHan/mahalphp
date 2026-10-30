@@ -38,6 +38,10 @@
         <button role="tab" class="tab" data-tab="chat" aria-selected="true">대화</button>
         <button role="tab" class="tab" data-tab="photos" aria-selected="false">사진</button>
         <button role="tab" class="tab" data-tab="search" aria-selected="false">검색</button>
+        <button role="tab" class="tab" data-tab="complaints" aria-selected="false">민원</button>
+        <button role="tab" class="tab" data-tab="stats" aria-selected="false">통계</button>
+        <button role="tab" class="tab" data-tab="members" aria-selected="false">참여자 이력</button>
+        <button role="tab" class="tab" data-tab="settings" aria-selected="false">설정</button>
         <span class="panel-title" id="panel-title"></span>
       </nav>
 
@@ -73,6 +77,64 @@
         <ul class="results" id="results"></ul>
         <div class="center"><button class="btn" id="results-more" type="button" hidden>더 보기</button></div>
       </section>
+
+      <section class="view" id="view-complaints" role="tabpanel" hidden>
+        <div class="view-toolbar">
+          <select id="cp-category" aria-label="민원 분류"><option value="">전체 분류</option></select>
+          <label class="check"><input type="checkbox" id="cp-room-only"> 선택한 대화방만</label>
+          <button class="btn" id="cp-classify" type="button">지금 분류</button>
+          <button class="btn" id="cp-retry" type="button">실패 재시도</button>
+        </div>
+        <p class="ops-status" id="cp-status"></p>
+        <ul class="ops-list" id="cp-list"></ul>
+      </section>
+
+      <section class="view" id="view-stats" role="tabpanel" hidden>
+        <div class="view-toolbar" role="radiogroup" aria-label="기간" id="st-periods">
+          <button class="btn chip" type="button" data-period="today">오늘</button>
+          <button class="btn chip" type="button" data-period="week" aria-pressed="true">7일</button>
+          <button class="btn chip" type="button" data-period="month">30일</button>
+          <button class="btn chip" type="button" data-period="all">전체</button>
+        </div>
+        <div class="stats" id="st-body"></div>
+      </section>
+
+      <section class="view" id="view-members" role="tabpanel" hidden>
+        <div class="view-toolbar">
+          <select id="mb-mode" aria-label="보기">
+            <option value="events">이력</option>
+            <option value="members">참여자 (선택한 방)</option>
+          </select>
+          <select id="mb-type" aria-label="이력 종류">
+            <option value="">전체 이력</option>
+            <option value="join">입장</option>
+            <option value="leave">퇴장</option>
+            <option value="kick">내보냄</option>
+            <option value="invite">초대</option>
+            <option value="rename">대화명 변경</option>
+            <option value="first_seen">첫 발언</option>
+          </select>
+          <label class="check"><input type="checkbox" id="mb-room-only" checked> 선택한 대화방만</label>
+        </div>
+        <p class="ops-status" id="mb-status"></p>
+        <ul class="ops-list" id="mb-list"></ul>
+      </section>
+
+      <section class="view" id="view-settings" role="tabpanel" hidden>
+        <form class="settings" id="settings-form">
+          <h3>민원 자동 분류 (Gemini)</h3>
+          <p class="muted" id="set-gemini"></p>
+          <label class="check"><input type="checkbox" id="set-complaint"> 민원 자동 분류 사용</label>
+          <label>모델 <input id="set-model" maxlength="80" autocomplete="off"></label>
+          <h3>민원 접수 안내</h3>
+          <label class="check"><input type="checkbox" id="set-reply"> 민원 접수 시 해당 채팅방에 안내 메시지 보내기</label>
+          <label>안내 문구 <input id="set-template" maxlength="300" autocomplete="off"></label>
+          <p class="muted">{분류} {요약} {보낸사람} {방} 을 넣을 수 있습니다. 새 문제의 첫 민원에만, 수신 30분 이내일 때, 휴대폰 앱이 카톡 '답장'으로 보냅니다.</p>
+          <div><button class="btn btn-primary" type="submit">저장</button> <span class="muted" id="set-saved"></span></div>
+          <h3>분류 워커 상태</h3>
+          <p class="muted" id="set-worker"></p>
+        </form>
+      </section>
     </main>
   </div>
 
@@ -87,5 +149,6 @@
   </div>
 
   <script src="/admin/static/admin.js"></script>
+  <script src="/admin/static/admin-ops.js"></script>
 </body>
 </html>

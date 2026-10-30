@@ -186,3 +186,11 @@ def test_retry_failed_resets(settings, admin):
         store.mark_failed(cur, [mid], "응답에 결과 없음", store.now_local(settings))
     assert admin.get("/api/admin/complaints").json()["counts"]["failed"] >= 1
     assert admin.post("/api/admin/classify", params={"retry_failed": "true"}).json()["reset"] >= 1
+
+
+def test_admin_page_has_new_tabs(admin):
+    page = admin.get("/admin").text
+    for tab in ("complaints", "stats", "members", "settings"):
+        assert f'data-tab="{tab}"' in page and f'id="view-{tab}"' in page
+    assert "/admin/static/admin-ops.js" in page
+    assert admin.get("/admin/static/admin-ops.js").status_code == 200

@@ -125,8 +125,9 @@
   }
   const dims = (w, h) => (w && h ? ` · ${w}×${h}px` : "");
 
+  const TAB_TITLES = { photos: "사진 모아보기", search: "메시지 검색", complaints: "민원", stats: "민원 통계", members: "참여자 이력", settings: "설정" };
   function updateTitle() {
-    $("panel-title").textContent = state.tab === "chat" ? state.room || "" : state.tab === "photos" ? "사진 모아보기" : "메시지 검색";
+    $("panel-title").textContent = state.tab === "chat" ? state.room || "" : TAB_TITLES[state.tab] || "";
   }
 
   // ---- 요약 · 대화방 목록 ------------------------------------------------------------------
@@ -386,7 +387,7 @@
   function switchTab(tab) {
     state.tab = tab;
     for (const b of document.querySelectorAll(".tab")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
-    for (const name of ["chat", "photos", "search"]) $(`view-${name}`).hidden = name !== tab;
+    for (const v of document.querySelectorAll(".view")) v.hidden = v.id !== `view-${tab}`;
     $("layout").classList.add("room-open");
     $("new-msg").hidden = true;
     updateTitle();
@@ -395,6 +396,7 @@
       if (key !== state.photosKey) loadPhotos(true).catch(reportError);
     }
     if (tab === "search") $("search-q").focus();
+    window.KC?.onTab?.(tab); // 민원·통계·이력·설정 탭 (admin-ops.js)
   }
 
   function openChatLightbox(mediaId) {
@@ -504,6 +506,12 @@
     }
     setInterval(() => tick().catch(reportError), POLL_MS);
   }
+
+  // admin-ops.js 에서 쓰는 공용 함수
+  window.KC = Object.assign(window.KC || {}, {
+    api, el, reportError, fmtDateTime, openRoom: (room, id) => openRoom(room, id).catch(reportError),
+    currentRoom: () => state.room, currentTab: () => state.tab,
+  });
 
   init().catch(reportError);
 })();
