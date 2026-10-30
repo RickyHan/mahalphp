@@ -8,7 +8,7 @@ import threading
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from . import store
+from . import db, live, store
 from .auth import get_settings
 
 log = logging.getLogger("kakao.worker")
@@ -34,6 +34,7 @@ def _loop() -> None:
         if result.get("done"):
             backoff = 0
             status.update(state="분류 중", last=f"{stamp} {result['done']}건 분류 · 민원 {result.get('complaints', 0)}건")
+            live.bump("complaint")
             continue  # 남은 것이 있을 수 있으니 바로 이어서
         if result.get("retry"):
             backoff = min(backoff * 2 or 30, 600)
@@ -50,6 +51,11 @@ def _loop() -> None:
 
 @asynccontextmanager
 async def lifespan(_app):
+    # 새 버전에서 추가된 테이블(예: vendors)을 시작 시 자동 생성 (이미 있으면 그대로)
+    try:
+        db.install_schema(get_settings())
+    except Exception:  # 권한 부족 등 — 서비스는 계속 띄운다
+        log.exception("스키마 자동 갱신 실패: python -m scripts.install_db 를 직접 실행하십시오")
     thread = None
     if os.getenv("WORKER_ENABLED", "1") == "1":
         _stop.clear()

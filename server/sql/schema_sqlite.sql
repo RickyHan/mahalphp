@@ -89,3 +89,18 @@ CREATE TABLE IF NOT EXISTS app_settings (
   name  TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS vendors (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  biz_no     TEXT NOT NULL DEFAULT '',
+  phone      TEXT NOT NULL DEFAULT '',
+  address    TEXT NOT NULL DEFAULT '',
+  room_name  TEXT,
+  doc_path   TEXT,
+  doc_mime   TEXT,
+  doc_name   TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vendors_room ON vendors (room_name);

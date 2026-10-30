@@ -4,7 +4,8 @@
     POST /api/messages             메시지 1건 저장 (multipart, 선택적으로 image 첨부)
     GET  /api/messages             저장된 메시지 조회
     GET  /api/media/{media_id}     저장된 사진 내려받기
-    /admin, /api/admin/*           관리자 웹 (app/admin.py)
+    /admin, /api/admin/*           관리자 웹 (app/admin.py, 민원처리업체: app/vendors.py)
+    GET  /api/admin/stream         실시간 갱신 신호 (Server-Sent Events)
 
 POST /api/messages 는 헤더 X-Api-Key 가 .env 의 API_KEY 와 같아야 한다.
 조회 API(/api/messages, /api/media)는 관리자 로그인 세션으로만 접근한다(단말 API 키로는 읽기 불가).
@@ -20,7 +21,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFi
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import admin, db, media, store, worker
+from . import admin, db, live, media, store, vendors, worker
 from .auth import SettingsDep, get_settings, require_api_key, require_reader  # noqa: F401 (get_settings: 테스트에서 사용)
 
 MESSAGE_TYPES = {"text", "photo", "video", "emoticon", "file", "other"}
@@ -28,6 +29,7 @@ MAX_TEXT_BYTES = 65535  # MySQL TEXT 한도
 
 app = FastAPI(title="Kakao Notification Collector", version="2.0.0", lifespan=worker.lifespan)
 app.include_router(admin.router)
+app.include_router(vendors.router)
 app.mount("/admin/static", StaticFiles(directory=admin.STATIC_DIR), name="admin-static")
 
 
@@ -125,6 +127,7 @@ async def create_message(
 
     if not duplicate:
         worker.wake()
+        live.bump("message")
     return {"ok": True, "id": message_id, "duplicate": duplicate, "media_id": media_id}
 
 
@@ -150,6 +153,7 @@ def reply_result(
         ok = store.finish_reply(cur, reply_id, device_id, sent, note, store.now_local(settings))
     if not ok:
         raise HTTPException(404, "대기 중인 안내가 아닙니다.")
+    live.bump("complaint")
     return {"ok": True}
 
 

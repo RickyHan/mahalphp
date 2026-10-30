@@ -4,7 +4,8 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const PAGE = 100;
-  const POLL_MS = 10000;
+  const POLL_MS = 10000; // 실시간 연결이 끊겼을 때의 대체 새로고침 주기
+  const SAFETY_MS = 60000; // 실시간 연결 중에도 혹시 놓친 변경을 잡는 주기
   const SELF = "나";
   const TYPE_LABEL = { photo: "📷 사진", video: "🎬 동영상", emoticon: "😊 이모티콘", file: "📎 파일", other: "기타" };
   const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -125,7 +126,7 @@
   }
   const dims = (w, h) => (w && h ? ` · ${w}×${h}px` : "");
 
-  const TAB_TITLES = { photos: "사진 모아보기", search: "메시지 검색", complaints: "민원", stats: "민원 통계", members: "참여자 이력", settings: "설정" };
+  const TAB_TITLES = { photos: "사진 모아보기", search: "메시지 검색", complaints: "민원", stats: "민원 통계", members: "참여자 이력", vendors: "민원처리업체", settings: "설정" };
   function updateTitle() {
     $("panel-title").textContent = state.tab === "chat" ? state.room || "" : TAB_TITLES[state.tab] || "";
   }
@@ -488,6 +489,73 @@
     await Promise.all([loadSummary(), loadRooms(), state.tab === "chat" ? pollNewer() : null]);
   }
 
+  // ---- 실시간 갱신 (Server-Sent Events) -------------------------------------------------------
+  // 서버가 새 메시지를 저장하면 'change' 신호를 보내고, 화면은 그 즉시 필요한 부분만 다시 읽는다.
+
+  const live = { connected: false, lastPoll: 0, pending: new Set(), timer: null, offTimer: null };
+
+  function setLive(state, text) {
+    $("live").dataset.state = state;
+    $("live-text").textContent = text;
+  }
+
+  function pulseLive() {
+    const node = $("live");
+    node.classList.remove("pulse");
+    void node.offsetWidth; // 애니메이션 다시 시작
+    node.classList.add("pulse");
+  }
+
+  async function applyChanges() {
+    const topics = [...live.pending];
+    live.pending.clear();
+    const jobs = [];
+    if (topics.includes("message")) jobs.push(loadSummary(), loadRooms(), state.tab === "chat" ? pollNewer() : null);
+    jobs.push(window.KC.onLive?.(topics)); // 민원·통계·업체 탭 (admin-ops.js, admin-vendors.js)
+    await Promise.all(jobs);
+  }
+
+  function onChange(topics) {
+    for (const t of topics) live.pending.add(t);
+    if (topics.includes("message")) pulseLive();
+    clearTimeout(live.timer);
+    live.timer = setTimeout(() => applyChanges().catch(reportError), 250); // 몰려오는 신호는 한 번에 처리
+  }
+
+  function startLive() {
+    if (!("EventSource" in window)) {
+      setLive("off", "자동 새로고침");
+      return;
+    }
+    const source = new EventSource("/api/admin/stream");
+    source.addEventListener("hello", () => {
+      clearTimeout(live.offTimer);
+      const wasDown = !live.connected;
+      live.connected = true;
+      setLive("on", "실시간");
+      if (wasDown) tick().catch(reportError); // 끊겨 있던 동안의 변경 반영
+    });
+    source.addEventListener("change", (e) => {
+      try {
+        onChange(JSON.parse(e.data).topics || []);
+      } catch {
+        onChange(["message"]);
+      }
+    });
+    source.onerror = () => {
+      // 서버는 1분마다 연결을 새로 맺으므로 잠깐의 끊김은 표시하지 않는다
+      clearTimeout(live.offTimer);
+      live.offTimer = setTimeout(() => {
+        live.connected = false;
+        setLive("off", "재연결 중");
+      }, 4000);
+      if (source.readyState === EventSource.CLOSED) {
+        // 로그인 만료 등으로 영구히 닫힘 → 로그인 확인 후 다시 연결
+        setTimeout(() => api("/api/admin/me").then(startLive).catch(reportError), 5000);
+      }
+    };
+  }
+
   async function init() {
     bind();
     const me = await api("/api/admin/me");
@@ -504,7 +572,13 @@
     } else {
       $("layout").classList.remove("room-open");
     }
-    setInterval(() => tick().catch(reportError), POLL_MS);
+    startLive();
+    setInterval(() => {
+      const now = Date.now();
+      if (now - live.lastPoll < (live.connected ? SAFETY_MS : POLL_MS)) return;
+      live.lastPoll = now;
+      tick().catch(reportError);
+    }, 2000);
   }
 
   // admin-ops.js 에서 쓰는 공용 함수

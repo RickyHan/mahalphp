@@ -116,6 +116,23 @@ CREATE TABLE IF NOT EXISTS `app_settings` (
   PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='설정';
 
+-- 민원처리업체 (담당 카톡 대화방 1개 지정)
+CREATE TABLE IF NOT EXISTS `vendors` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name`       VARCHAR(100)    NOT NULL COMMENT '업체명',
+  `biz_no`     VARCHAR(20)     NOT NULL DEFAULT '' COMMENT '사업자등록번호',
+  `phone`      VARCHAR(20)     NOT NULL DEFAULT '',
+  `address`    VARCHAR(300)    NOT NULL DEFAULT '',
+  `room_name`  VARCHAR(255)    NULL COMMENT '담당 카톡 대화방',
+  `doc_path`   VARCHAR(255)    NULL COMMENT '사업자등록증 파일 (storage/vendor-docs 기준)',
+  `doc_mime`   VARCHAR(50)     NULL,
+  `doc_name`   VARCHAR(200)    NULL,
+  `created_at` DATETIME(3)     NOT NULL,
+  `updated_at` DATETIME(3)     NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_vendors_room` (`room_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='민원처리업체';
+
 -- 권장: DBA 계정 대신 이 스키마 전용 최소 권한 계정을 만들어 서버 .env에 사용
 -- CREATE USER 'kakao_app'@'%' IDENTIFIED BY '<강력한 비밀번호>';
 -- GRANT SELECT, INSERT, UPDATE ON `kakao_collector`.* TO 'kakao_app'@'%';

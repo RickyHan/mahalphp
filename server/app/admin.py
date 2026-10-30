@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 
 from pydantic import BaseModel, Field
 
 from . import complaints as cp
-from . import db, store, worker
+from . import db, live, store, worker
 from .auth import (
     SESSION_COOKIE,
     SettingsDep,
@@ -106,6 +109,43 @@ def _is_https(request: Request) -> bool:
 @router.get("/api/admin/me")
 def me(user: Annotated[str, Admin]) -> dict[str, Any]:
     return {"ok": True, "user": user}
+
+
+# 연결 하나를 이 시간만 유지하고 끊는다. 브라우저(EventSource)가 곧바로 다시 연결하며,
+# 서버 재시작이 열린 연결 때문에 오래 지연되지 않게 한다.
+STREAM_SECONDS = 55.0
+STREAM_TICK = 0.5
+STREAM_PING = 15.0
+
+
+@router.get("/api/admin/stream", dependencies=[Admin])
+async def stream(request: Request) -> StreamingResponse:
+    """실시간 갱신 신호 (Server-Sent Events). 새 메시지·민원 분류·업체 변경 시 'change' 이벤트."""
+
+    async def events():
+        version, _ = live.snapshot()
+        yield "retry: 1000\nevent: hello\ndata: {}\n\n"
+        started = last_sent = time.monotonic()
+        while time.monotonic() - started < STREAM_SECONDS:
+            if await request.is_disconnected():
+                return
+            await asyncio.sleep(STREAM_TICK)
+            current, topics = live.snapshot()
+            now = time.monotonic()
+            if current != version:
+                changed = sorted(k for k, v in topics.items() if v > version)
+                version = current
+                last_sent = now
+                yield f"event: change\ndata: {json.dumps({'topics': changed})}\n\n"
+            elif now - last_sent >= STREAM_PING:
+                last_sent = now
+                yield ": ping\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},  # nginx 가 모아 두지 않고 바로 전달
+    )
 
 
 @router.get("/api/admin/summary", dependencies=[Admin])

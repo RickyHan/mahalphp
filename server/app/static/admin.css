@@ -241,26 +241,70 @@ mark { background: var(--highlight); color: inherit; border-radius: 3px; padding
 .btn-small { padding: 3px 10px; font-size: 12px; }
 .chip[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
 
-.stats { padding: 4px 16px 32px; }
-.stats h3 { margin: 24px 0 8px; font-size: 15px; }
-.hero { margin: 0; font-size: 44px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.small { font-size: 11px; margin: 0 0 4px; }
-.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
-.tile { display: flex; flex-direction: column; }
-.tile strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+/* 통계: 카드 격자 (상단 바의 .stats 와 이름이 겹치지 않도록 .st-report 사용) */
+.st-report { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 16px 16px 32px; align-items: start; }
+.st-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; min-width: 0; }
+.st-wide { grid-column: 1 / -1; }
+.st-card h3 { margin: 0 0 12px; font-size: 14px; font-weight: 700; }
+.st-summary { display: grid; grid-template-columns: 1.4fr repeat(4, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.tile { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
+.tile strong { font-size: 26px; line-height: 1.1; font-weight: 800; font-variant-numeric: tabular-nums; }
 .tile span { font-size: 12px; color: var(--muted); }
-.hbars { display: flex; flex-direction: column; gap: 6px; }
-.hbar { display: grid; grid-template-columns: minmax(80px, 180px) 1fr 84px; align-items: center; gap: 8px; font-size: 13px; }
+.tile-hero strong { font-size: 44px; }
+.tile-hero span { font-size: 13px; color: var(--text); font-weight: 600; }
+.tile-alert strong { color: var(--alert); }
+.small { font-size: 11px; margin: 0 0 4px; }
+.hbars { display: flex; flex-direction: column; gap: 8px; }
+.hbar { display: grid; grid-template-columns: minmax(72px, 160px) minmax(0, 1fr) 76px; align-items: center; gap: 10px; font-size: 13px; }
 .hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hbar-track { height: 14px; }
-.hbar-fill { display: block; height: 100%; min-width: 2px; background: var(--viz-bar); border-radius: 0 4px 4px 0; }
-.hbar-value { text-align: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.cols { display: flex; align-items: flex-end; gap: 2px; height: 120px; border-bottom: 1px solid var(--viz-grid); }
-.col { flex: 1; height: 100%; display: flex; align-items: flex-end; cursor: default; }
+.hbar-track { height: 12px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
+.hbar-fill { display: block; height: 100%; min-width: 3px; background: var(--viz-bar); border-radius: 6px; }
+.hbar-value { text-align: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cols-wrap { display: flex; flex-direction: column; gap: 6px; }
+.cols { display: flex; align-items: flex-end; gap: 4px; height: 140px; border-bottom: 1px solid var(--viz-grid); padding-top: 18px; }
+.col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; cursor: default; }
 .col:hover .col-bar, .col:focus .col-bar { filter: brightness(1.15); }
-.col-bar { display: block; width: 100%; background: var(--viz-bar); border-radius: 4px 4px 0 0; }
-.cols-axis { display: flex; gap: 2px; font-size: 10px; color: var(--muted); }
-.cols-axis span { flex: 1; overflow: visible; white-space: nowrap; }
+.col-bar { display: block; width: 100%; max-width: 40px; background: var(--viz-bar); border-radius: 4px 4px 0 0; }
+.col-value { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-bottom: 2px; }
+.cols-axis { display: flex; gap: 4px; font-size: 11px; color: var(--muted); }
+.cols-axis span { flex: 1; min-width: 0; text-align: center; white-space: nowrap; overflow: visible; }
+
+/* 실시간 표시 */
+.live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 10px; border-radius: 999px; background: var(--surface-2); white-space: nowrap; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: #9aa3ae; }
+.live[data-state="on"] { color: #1a7f37; }
+.live[data-state="on"] .live-dot { background: #1fa34a; box-shadow: 0 0 0 3px rgb(31 163 74 / 20%); }
+.live.pulse .live-dot { animation: live-pulse 0.9s ease-out; }
+@keyframes live-pulse { 0% { box-shadow: 0 0 0 0 rgb(31 163 74 / 60%); } 100% { box-shadow: 0 0 0 10px rgb(31 163 74 / 0%); } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .live[data-state="on"] { color: #6fdd8b; } }
+@media (prefers-reduced-motion: reduce) { .live.pulse .live-dot { animation: none; } }
+
+/* 민원처리업체 */
+#vd-search { flex: 1; min-width: 160px; max-width: 360px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); }
+.vd-form { margin: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+.vd-form h3 { margin: 0 0 12px; font-size: 15px; }
+.vd-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.vd-grid label:not(.check), .vd-label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.vd-grid input:not([type="checkbox"]):not([type="file"]), .vd-grid select { padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); font-size: 14px; color: var(--text); font-weight: 400; }
+.vd-wide { grid-column: 1 / -1; }
+.vd-doc { display: flex; flex-direction: column; gap: 6px; }
+.vd-doc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 13px; }
+.req { color: var(--danger); }
+.vd-error { color: var(--danger); font-size: 13px; margin: 10px 0 0; min-height: 1em; }
+.vd-error:empty { display: none; }
+.vd-actions { display: flex; gap: 8px; margin-top: 14px; }
+.vd-list { list-style: none; margin: 0; padding: 0 12px 24px; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.vd-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.vd-card-head { display: flex; align-items: flex-start; gap: 8px; }
+.vd-card-head strong { font-size: 16px; flex: 1; word-break: break-word; }
+.vd-card dl { margin: 0; display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 4px 8px; font-size: 13px; }
+.vd-card dt { color: var(--muted); }
+.vd-card dd { margin: 0; word-break: break-word; }
+.vd-room { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 10px; background: var(--accent); color: var(--accent-text); font-weight: 600; font-size: 12px; }
+.vd-room-missing { background: var(--alert-bg); color: var(--alert); }
+.vd-card-actions { display: flex; gap: 6px; margin-top: 4px; }
+.btn-danger { color: var(--danger); }
+.vd-doc-thumb { max-width: 100%; max-height: 140px; border-radius: 8px; border: 1px solid var(--border); object-fit: contain; background: var(--surface-2); cursor: zoom-in; }
 
 .mb-row { display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
 .mb-row .muted { font-size: 12px; }
@@ -271,7 +315,11 @@ mark { background: var(--highlight); color: inherit; border-radius: 3px; padding
 .settings input:not([type="checkbox"]) { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); }
 .settings .muted { margin: 0; font-size: 12px; }
 
-@media (max-width: 760px) {
-  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .hbar { grid-template-columns: 96px 1fr 76px; }
+@media (max-width: 900px) {
+  .st-report { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .st-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tile-hero { grid-column: 1 / -1; }
+  .hbar { grid-template-columns: 88px minmax(0, 1fr) 70px; }
+  .vd-grid { grid-template-columns: minmax(0, 1fr); }
+  .live #live-text { display: none; }
 }

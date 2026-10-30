@@ -110,45 +110,49 @@
 
   function columns(points, every) {
     const max = Math.max(...points.map((p) => p[1]), 1);
+    const total = points.reduce((n, p) => n + p[1], 0);
     const plot = el("div", { class: "cols" });
-    for (const [label, v] of points) {
-      const bar = el("span", { class: "col-bar" });
-      bar.style.height = v ? `${Math.max((v / max) * 100, 2)}%` : "0";
-      plot.append(el("div", { class: "col", title: `${label}: ${v}건`, tabindex: "0" }, bar));
-    }
     const axis = el("div", { class: "cols-axis" });
-    points.forEach(([label], i) => axis.append(el("span", { text: i % every === 0 || i === points.length - 1 ? label : "" })));
-    return el("div", {}, el("p", { class: "muted small", text: `최대 ${max}건 · 막대에 마우스를 올리면 값 표시` }), plot, axis);
+    points.forEach(([label, v], i) => {
+      const bar = el("span", { class: "col-bar" });
+      bar.style.height = v ? `${Math.max((v / max) * 100, 3)}%` : "0";
+      plot.append(
+        el(
+          "div",
+          { class: "col", title: `${label}: ${v}건`, tabindex: "0" },
+          v ? el("span", { class: "col-value", text: String(v) }) : null,
+          bar,
+        ),
+      );
+      axis.append(el("span", { text: i % every === 0 || i === points.length - 1 ? label : "" }));
+    });
+    if (!total) return el("p", { class: "muted", text: "데이터 없음" });
+    return el("div", { class: "cols-wrap" }, plot, axis);
   }
+
+  const card = (title, body, wide = false) =>
+    el("section", { class: `st-card${wide ? " st-wide" : ""}` }, el("h3", { text: title }), body);
 
   async function loadStats() {
     for (const b of $("st-periods").children) b.setAttribute("aria-pressed", String(b.dataset.period === statsPeriod));
     const s = await api("/api/admin/stats", { period: statsPeriod });
     const label = { today: "오늘", week: "최근 7일", month: "최근 30일", all: "전체" }[statsPeriod];
-    const body = $("st-body");
-    body.replaceChildren(
-      el("p", { class: "muted", text: `${label} 접수된 문제` }),
-      el("p", { class: "hero", text: `${s.issues}건` }),
+    const tile = (k, v, cls = "") => el("div", { class: `tile ${cls}` }, el("strong", { text: Number(v).toLocaleString("ko-KR") }), el("span", { text: k }));
+    $("st-body").replaceChildren(
       el(
-        "div",
-        { class: "tiles" },
-        ...[
-          ["민원 메시지", s.messages],
-          ["반복 민원", s.repeated_issues],
-          ["안내 보냄", s.reply_sent],
-          ["안내 실패", s.reply_failed],
-        ].map(([k, v]) => el("div", { class: "tile" }, el("strong", { text: String(v) }), el("span", { text: k }))),
+        "section",
+        { class: "st-card st-wide st-summary" },
+        tile(`${label} 접수된 문제`, s.issues, "tile-hero"),
+        tile("민원 메시지", s.messages),
+        tile("반복 민원", s.repeated_issues),
+        tile("안내 보냄", s.reply_sent),
+        tile("안내 실패", s.reply_failed, s.reply_failed ? "tile-alert" : ""),
       ),
-      el("h3", { text: "분류별 문제" }),
-      bars(s.by_category, s.issues),
-      el("h3", { text: statsPeriod === "all" ? "일별 추이 (최근 30일)" : "일별 추이" }),
-      columns(s.daily, Math.max(1, Math.floor(s.daily.length / 6))),
-      el("h3", { text: "시간대별 (문제 시작 시각)" }),
-      columns(s.hourly.map((v, h) => [`${h}시`, v]), 6),
-      el("h3", { text: "방별 문제 TOP 10" }),
-      bars(s.by_room, s.issues),
-      el("h3", { text: "민원 제기자 TOP 10" }),
-      bars(s.by_sender, s.issues),
+      card("분류별 문제", bars(s.by_category, s.issues)),
+      card("방별 문제 TOP 10", bars(s.by_room, s.issues)),
+      card(statsPeriod === "all" ? "일별 추이 (최근 30일)" : "일별 추이", columns(s.daily, Math.max(1, Math.ceil(s.daily.length / 7))), true),
+      card("시간대별 (문제 시작 시각)", columns(s.hourly.map((v, h) => [`${h}시`, v]), 3), true),
+      card("민원 제기자 TOP 10", bars(s.by_sender, s.issues), true),
     );
   }
 
@@ -232,12 +236,27 @@
 
   // ---- 연결 -------------------------------------------------------------------------------
 
-  const LOADERS = { complaints: loadComplaints, stats: loadStats, members: loadMembers, settings: loadSettings };
+  // 탭별 화면 읽기. admin-vendors.js 가 여기에 'vendors' 를 추가한다.
+  const LOADERS = (KC.loaders = Object.assign(KC.loaders || {}, {
+    complaints: loadComplaints,
+    stats: loadStats,
+    members: loadMembers,
+    settings: loadSettings,
+  }));
+  // 실시간 신호가 왔을 때 다시 읽을 탭
+  const LIVE_TOPICS = { complaints: ["message", "complaint"], stats: ["complaint"], members: ["message"], vendors: ["vendor"] };
 
   KC.onTab = (tab) => {
     const load = LOADERS[tab];
     if (load) load().catch(reportError);
     loaded[tab] = true;
+  };
+
+  KC.onLive = (topics) => {
+    const tab = KC.currentTab();
+    const load = LOADERS[tab];
+    if (load && (LIVE_TOPICS[tab] || []).some((t) => topics.includes(t))) return load();
+    return null;
   };
 
   $("cp-category").addEventListener("change", () => loadComplaints().catch(reportError));
@@ -257,9 +276,9 @@
   $("mb-room-only").addEventListener("change", () => loadMembers().catch(reportError));
   $("settings-form").addEventListener("submit", (e) => saveSettings(e).catch(reportError));
 
-  // 보고 있는 탭은 30초마다 새로고침 (설정 탭 제외)
+  // 실시간 신호와 별도로, 보고 있는 탭은 1분마다 새로고침 (설정·업체 탭 제외: 입력 중인 내용 보호)
   setInterval(() => {
     const tab = KC.currentTab();
-    if (!document.hidden && tab !== "settings" && LOADERS[tab]) LOADERS[tab]().catch(reportError);
-  }, 30000);
+    if (!document.hidden && !["settings", "vendors"].includes(tab) && LOADERS[tab]) LOADERS[tab]().catch(reportError);
+  }, 60000);
 })();
