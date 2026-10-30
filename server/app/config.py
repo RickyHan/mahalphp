@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from dataclasses import dataclass
@@ -32,6 +33,10 @@ class Settings:
     timezone: ZoneInfo
     media_root: Path
     max_image_bytes: int
+    admin_user: str
+    admin_password: str
+    session_secret: bytes
+    session_hours: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -49,4 +54,11 @@ class Settings:
             timezone=ZoneInfo(os.getenv("APP_TIMEZONE", "Asia/Seoul")),
             media_root=media_root.resolve(),
             max_image_bytes=int(os.getenv("MAX_IMAGE_MB", "10")) * 1024 * 1024,
+            admin_user=os.getenv("ADMIN_USER", "admin"),
+            admin_password=os.getenv("ADMIN_PASSWORD", ""),
+            # 미지정 시 API_KEY·ADMIN_PASSWORD 로부터 유도 → 둘 중 하나를 바꾸면 기존 로그인 세션이 모두 무효화된다
+            session_secret=hashlib.sha256(
+                (os.getenv("ADMIN_SESSION_SECRET") or f"{os.getenv('API_KEY', '')}|{os.getenv('ADMIN_PASSWORD', '')}").encode()
+            ).digest(),
+            session_hours=int(os.getenv("ADMIN_SESSION_HOURS", "12")),
         )

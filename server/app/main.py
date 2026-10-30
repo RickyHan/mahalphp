@@ -4,46 +4,37 @@
     POST /api/messages             메시지 1건 저장 (multipart, 선택적으로 image 첨부)
     GET  /api/messages             저장된 메시지 조회
     GET  /api/media/{media_id}     저장된 사진 내려받기
+    /admin, /api/admin/*           관리자 웹 (app/admin.py)
 
-/api/health 를 제외한 모든 요청은 헤더 X-Api-Key 가 .env 의 API_KEY 와 같아야 한다.
+POST /api/messages 는 헤더 X-Api-Key 가 .env 의 API_KEY 와 같아야 한다.
+조회 API 는 X-Api-Key 또는 관리자 로그인 세션 중 하나로 접근할 수 있다.
 """
 
 from __future__ import annotations
 
 import hashlib
-import hmac
 from datetime import datetime
-from functools import lru_cache
 from typing import Annotated, Any
 
 import pymysql
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from . import db, media
-from .config import Settings
+from . import admin, db, media
+from .auth import SettingsDep, get_settings, require_api_key, require_reader  # noqa: F401 (get_settings: 테스트에서 사용)
 
 MESSAGE_TYPES = {"text", "photo", "video", "emoticon", "file", "other"}
 MAX_TEXT_BYTES = 65535  # MySQL TEXT 한도
 ER_DUP_ENTRY = 1062
 
-app = FastAPI(title="Kakao Notification Collector", version="1.0.0")
-
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings.load()
-
-
-SettingsDep = Annotated[Settings, Depends(get_settings)]
-
-
-def require_api_key(settings: SettingsDep, x_api_key: Annotated[str | None, Header()] = None) -> None:
-    if not x_api_key or not hmac.compare_digest(x_api_key, settings.api_key):
-        raise HTTPException(401, "API 키가 올바르지 않습니다.")
+app = FastAPI(title="Kakao Notification Collector", version="1.1.0")
+app.include_router(admin.router)
+app.mount("/admin/static", StaticFiles(directory=admin.STATIC_DIR), name="admin-static")
 
 
 Authorized = Depends(require_api_key)
+Reader = Depends(require_reader)
 
 
 def _clip(value: str, max_bytes: int) -> str:
@@ -127,7 +118,7 @@ async def create_message(
     return {"ok": True, "id": message_id, "duplicate": duplicate, "media_id": media_id}
 
 
-@app.get("/api/messages", dependencies=[Authorized])
+@app.get("/api/messages", dependencies=[Reader])
 def list_messages(
     settings: SettingsDep,
     room: str | None = None,
@@ -159,11 +150,16 @@ def list_messages(
     return {"ok": True, "items": rows}
 
 
-@app.get("/api/media/{media_id}", dependencies=[Authorized])
+@app.get("/api/media/{media_id}", dependencies=[Reader])
 def get_media(media_id: int, settings: SettingsDep) -> FileResponse:
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute("SELECT file_path, mime_type FROM kakao_media WHERE id = %s", (media_id,))
         row = cur.fetchone()
     if not row:
         raise HTTPException(404, "사진이 없습니다.")
-    return FileResponse(media.resolve(settings.media_root, row["file_path"]), media_type=row["mime_type"])
+    # 파일명이 내용의 SHA-256 이므로 내용이 바뀌지 않는다 → 브라우저 캐시 허용(개인 캐시만)
+    return FileResponse(
+        media.resolve(settings.media_root, row["file_path"]),
+        media_type=row["mime_type"],
+        headers={"Cache-Control": "private, max-age=86400"},
+    )

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>카톡 수집기 관리자</title>
+  <link rel="stylesheet" href="/admin/static/admin.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">💬</span><span>카톡 수집기</span></div>
+    <dl class="stats" id="stats" aria-label="수집 현황">
+      <div><dt>메시지</dt><dd id="stat-messages">–</dd></div>
+      <div><dt>오늘</dt><dd id="stat-today">–</dd></div>
+      <div><dt>대화방</dt><dd id="stat-rooms">–</dd></div>
+      <div><dt>사진</dt><dd id="stat-photos">–</dd></div>
+      <div class="stat-wide"><dt>마지막 수신</dt><dd id="stat-last">–</dd></div>
+    </dl>
+    <form method="post" action="/admin/logout" class="logout">
+      <span class="muted" id="whoami"></span>
+      <button type="submit" class="btn btn-ghost">로그아웃</button>
+    </form>
+  </header>
+
+  <div class="layout" id="layout">
+    <aside class="sidebar" aria-label="대화방 목록">
+      <div class="sidebar-head">
+        <input type="search" id="room-search" placeholder="대화방 검색" aria-label="대화방 검색">
+      </div>
+      <ul class="room-list" id="room-list"></ul>
+    </aside>
+
+    <main class="panel">
+      <nav class="tabs" role="tablist">
+        <button class="back-btn" id="back-btn" type="button" aria-label="대화방 목록으로">‹</button>
+        <button role="tab" class="tab" data-tab="chat" aria-selected="true">대화</button>
+        <button role="tab" class="tab" data-tab="photos" aria-selected="false">사진</button>
+        <button role="tab" class="tab" data-tab="search" aria-selected="false">검색</button>
+        <span class="panel-title" id="panel-title"></span>
+      </nav>
+
+      <section class="view" id="view-chat" role="tabpanel">
+        <div class="chat" id="chat">
+          <div class="empty" id="chat-empty">왼쪽에서 대화방을 선택하십시오.</div>
+        </div>
+        <button class="btn new-msg" id="new-msg" type="button" hidden>새 메시지 ↓</button>
+      </section>
+
+      <section class="view" id="view-photos" role="tabpanel" hidden>
+        <div class="view-toolbar">
+          <label class="check"><input type="checkbox" id="photos-room-only" checked> 선택한 대화방만</label>
+        </div>
+        <div class="gallery" id="gallery"></div>
+        <div class="center"><button class="btn" id="photos-more" type="button" hidden>더 보기</button></div>
+      </section>
+
+      <section class="view" id="view-search" role="tabpanel" hidden>
+        <form class="view-toolbar search-form" id="search-form">
+          <input type="search" id="search-q" placeholder="내용 또는 보낸 사람" aria-label="검색어" required>
+          <select id="search-type" aria-label="메시지 종류">
+            <option value="">전체 종류</option>
+            <option value="text">텍스트</option>
+            <option value="photo">사진</option>
+            <option value="video">동영상</option>
+            <option value="emoticon">이모티콘</option>
+            <option value="file">파일</option>
+          </select>
+          <label class="check"><input type="checkbox" id="search-room-only"> 선택한 대화방만</label>
+          <button class="btn btn-primary" type="submit">검색</button>
+        </form>
+        <ul class="results" id="results"></ul>
+        <div class="center"><button class="btn" id="results-more" type="button" hidden>더 보기</button></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="사진 보기">
+    <button class="lb-btn lb-close" id="lb-close" type="button" aria-label="닫기">×</button>
+    <button class="lb-btn lb-prev" id="lb-prev" type="button" aria-label="이전 사진">‹</button>
+    <figure>
+      <img id="lb-img" alt="">
+      <figcaption id="lb-caption"></figcaption>
+    </figure>
+    <button class="lb-btn lb-next" id="lb-next" type="button" aria-label="다음 사진">›</button>
+  </div>
+
+  <script src="/admin/static/admin.js"></script>
+</body>
+</html>

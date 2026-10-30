@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>관리자 로그인 · 카톡 수집기</title>
+  <link rel="stylesheet" href="/admin/static/admin.css">
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <div class="brand brand-lg"><span class="brand-mark" aria-hidden="true">💬</span><span>카톡 수집기</span></div>
+    <p class="muted">관리자 계정으로 로그인하십시오.</p>
+    <p id="login-error" class="login-error" role="alert" hidden></p>
+    <form method="post" action="/admin/login" class="login-form">
+      <label>아이디<input name="username" autocomplete="username" required autofocus></label>
+      <label>비밀번호<input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit" class="btn btn-primary">로그인</button>
+    </form>
+  </main>
+  <script src="/admin/static/login.js"></script>
+</body>
+</html>

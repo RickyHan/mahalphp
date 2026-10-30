@@ -1,13 +1,14 @@
 # mahalphp — 카카오톡 알림 수집기
 
-Android 휴대폰에 오는 **카카오톡 알림**을 읽어 **누가 · 어느 방에서 · 무슨 말을** 했는지, 그리고 가능한 경우 **사진**까지 MySQL에 저장합니다.
+Android 휴대폰에 오는 **카카오톡 알림**을 읽어 **누가 · 어느 방에서 · 무슨 말을** 했는지, 그리고 가능한 경우 **사진**까지 MySQL에 저장합니다. 수집한 대화와 사진은 **관리자 웹(`/admin`)**에서 볼 수 있습니다.
 
 ```
 [Android 앱: 카톡 수집기]                 [수집 서버: Python FastAPI]           [MySQL]
  NotificationListenerService   ── HTTP ──▶  POST /api/messages      ──────▶  kakao_collector
   · com.kakao.talk 알림만 수신   X-Api-Key   · 중복 제거(dedup_key)            ├ kakao_messages
   · 로컬 SQLite 큐(오프라인 보관)             · 사진 → storage/media           └ kakao_media
-  · WorkManager 자동 재전송
+  · WorkManager 자동 재전송                 /admin  관리자 웹 (로그인)
+                                            · 대화방 · 대화 · 사진 · 검색
 ```
 
 앱이 DB에 직접 접속하지 않고 서버를 거치는 이유는 **DB 계정을 APK 안에 넣지 않기 위해서**입니다. APK는 누구나 풀어 볼 수 있으므로, 앱에는 해지 가능한 API 키만 넣고 DB 계정은 서버에만 둡니다.
@@ -16,6 +17,7 @@ Android 휴대폰에 오는 **카카오톡 알림**을 읽어 **누가 · 어느
 |---|---|
 | `android/` | Android 앱 (Kotlin, minSdk 26 / targetSdk 34) |
 | `server/` | 수집 API (Python 3.10+, FastAPI, PyMySQL) |
+| `server/app/static/` | 관리자 웹 화면 (HTML/CSS/JS, 빌드 불필요) |
 | `server/sql/schema.sql` | 스키마·테이블 DDL |
 | `.github/workflows/ci.yml` | 서버 통합 테스트 + APK 빌드 (APK는 Actions 아티팩트로 내려받음) |
 
@@ -74,13 +76,41 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 |---|---|
 | `GET /api/health` | DB 연결 확인 (인증 불필요) |
 | `POST /api/messages` | 메시지 저장 (multipart, `image` 첨부 가능) |
-| `GET /api/messages?room=&sender=&limit=&before_id=` | 조회 |
-| `GET /api/media/{id}` | 사진 내려받기 |
+| `GET /api/messages?room=&sender=&limit=&before_id=` | 조회 (API 키 또는 관리자 세션) |
+| `GET /api/media/{id}` | 사진 내려받기 (API 키 또는 관리자 세션) |
 | `GET /docs` | Swagger UI |
 
-`/api/health`를 뺀 모든 API는 `X-Api-Key` 헤더가 필요합니다.
+메시지 저장(`POST /api/messages`)에는 `X-Api-Key` 헤더가 필요합니다. 조회 API는 API 키나 관리자 로그인 세션 중 하나만 있으면 됩니다.
 
 상시 운영할 때는 systemd나 Docker로 띄우고, 앞단에 Nginx와 HTTPS를 두는 구성을 권장합니다.
+
+## 2-1. 관리자 웹
+
+`server/.env`에 `ADMIN_USER`와 `ADMIN_PASSWORD`를 설정하고 서버를 다시 시작한 뒤, 브라우저에서 **`http://<서버IP>:8000/admin`**에 접속합니다. `ADMIN_PASSWORD`가 비어 있으면 관리자 웹은 비활성 상태가 됩니다.
+
+| 화면 | 기능 |
+|---|---|
+| 상단 현황 | 전체 메시지 수, 오늘 수신 수, 대화방 수, 사진 수, 마지막 수신 시각 |
+| 대화방 목록 | 최근 대화순으로 정렬. 방 이름 검색, 마지막 메시지 미리보기, 메시지 수 표시 |
+| 대화 | 카카오톡과 같은 말풍선. 날짜 구분선, 보낸 사람·시각, 사진 썸네일, 링크를 표시하고 이전 메시지를 더 불러올 수 있습니다. 새 메시지는 10초마다 자동으로 반영됩니다 |
+| 사진 | 전체 또는 선택한 방의 사진 갤러리. 클릭하면 크게 보이고, ← → 키로 넘기며 Esc로 닫습니다 |
+| 검색 | 내용·보낸 사람으로 검색하고 종류·방으로 거를 수 있습니다. 결과를 누르면 해당 대화의 앞뒤 맥락으로 이동합니다 |
+
+보안 설정:
+- 로그인 세션은 서명된 HttpOnly·SameSite=Strict 쿠키입니다. 유효 시간은 `ADMIN_SESSION_HOURS`(기본 12시간)이며, HTTPS 접속 시 Secure 속성이 붙습니다.
+- 같은 IP에서 로그인을 5회 실패하면 10분간 차단됩니다. Nginx 같은 프록시 뒤에서 운영하면 모든 접속이 같은 IP로 보이므로, `uvicorn --proxy-headers --forwarded-allow-ips=<프록시IP>` 옵션으로 실제 접속 IP를 넘기십시오.
+- `API_KEY`나 `ADMIN_PASSWORD`를 바꾸면 기존 로그인이 모두 무효화됩니다.
+- 화면에는 CSP(`script-src 'self'`)를 적용했고, 수집된 텍스트는 HTML이 아닌 글자로만 표시됩니다.
+- 관리자 웹은 **조회 전용**입니다(수정·삭제 기능 없음).
+- 단말용 API 키로는 관리자 API에 접근할 수 없습니다.
+- 관리자 웹을 외부에 공개할 때는 반드시 HTTPS를 적용하십시오.
+
+| 관리자 API (로그인 세션 필요) | 설명 |
+|---|---|
+| `GET /api/admin/summary` | 현황 수치 |
+| `GET /api/admin/rooms?q=` | 대화방 목록 |
+| `GET /api/admin/messages?room=&q=&sender=&type=&before_id=&after_id=&limit=` | 메시지(오래된 → 최신 순, `has_more` 포함) |
+| `GET /api/admin/photos?room=&before_id=&limit=` | 사진 목록 |
 
 ## 3. Android 앱 설치
 
