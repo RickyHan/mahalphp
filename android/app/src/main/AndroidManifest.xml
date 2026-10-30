@@ -31,6 +31,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".StatsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".MembersActivity"
             android:exported="false" />
 

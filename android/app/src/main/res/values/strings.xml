@@ -26,6 +26,8 @@
     <string name="members_empty">기록된 이력이 없습니다.\n단톡방·오픈채팅에서 메시지를 받으면 첫 발언자가 기록되고, 입장·퇴장 안내 메시지가 알림으로 오면 함께 기록됩니다.</string>
     <string name="open_complaints">🚨 민원 목록 보기</string>
     <string name="complaints_title">민원 목록</string>
+    <string name="open_stats">📊 민원 통계</string>
+    <string name="stats_title">민원 통계</string>
     <string name="complaints_empty">아직 민원으로 분류된 메시지가 없습니다.</string>
     <string name="complaints_disabled">민원 분류가 꺼져 있습니다.\n메인 화면의 \'5. 민원 자동 분류\'에서 Gemini API 키를 입력하고 켜십시오.</string>
     <string name="section_complaint">5. 민원 자동 분류 (Gemini)</string>

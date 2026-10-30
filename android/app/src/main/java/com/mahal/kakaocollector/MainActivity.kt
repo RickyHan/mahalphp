@@ -63,6 +63,7 @@ class MainActivity : Activity() {
         uploadEnabled.setOnCheckedChangeListener { _, checked -> onUploadToggled(checked) }
 
         findViewById<Button>(R.id.openRooms).setOnClickListener { startActivity(Intent(this, RoomsActivity::class.java)) }
+        findViewById<Button>(R.id.openStats).setOnClickListener { startActivity(Intent(this, StatsActivity::class.java)) }
         findViewById<Button>(R.id.openMembers).setOnClickListener { startActivity(Intent(this, MembersActivity::class.java)) }
         findViewById<Button>(R.id.openComplaints).setOnClickListener { startActivity(Intent(this, ComplaintsActivity::class.java)) }
 
