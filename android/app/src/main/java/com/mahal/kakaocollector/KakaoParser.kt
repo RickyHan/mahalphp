@@ -13,6 +13,8 @@ data class RawNotification(
     val messages: List<RawMessage>,
     val hasPicture: Boolean,
     val isGroupSummary: Boolean,
+    /** EXTRA_SUMMARY_TEXT. 일부 카카오톡 버전은 단톡방 이름을 여기에 넣는다 */
+    val summaryText: String? = null,
 )
 
 /** MessagingStyle 의 메시지 1개. sender 가 null 이면 내가 보낸 메시지다. */
@@ -53,9 +55,18 @@ object KakaoParser {
         return if (raw.messages.isNotEmpty()) parseMessagingStyle(raw) else listOfNotNull(parseLegacy(raw))
     }
 
+    /**
+     * 단톡방 이름 후보. 카카오톡 버전에 따라 대화 제목(conversationTitle) 또는
+     * subText/summaryText(알림 상단 작은 글씨)에 들어온다. 없으면 1:1 대화.
+     */
+    private fun groupRoomName(raw: RawNotification): String? =
+        raw.conversationTitle.clean() ?: raw.subText.clean() ?: raw.summaryText.clean()
+
     private fun parseMessagingStyle(raw: RawNotification): List<KakaoMessage> {
-        val room = raw.conversationTitle.clean() ?: raw.title.clean()
-        val isGroup = raw.isGroupConversation || raw.conversationTitle.clean() != null
+        val groupRoom = groupRoomName(raw)
+        // 1:1 대화는 방 이름 = 상대방 이름(알림 제목)
+        val room = groupRoom ?: raw.title.clean()
+        val isGroup = raw.isGroupConversation || groupRoom != null
         val lastIndex = raw.messages.lastIndex
         return raw.messages.mapIndexedNotNull { index, m ->
             val text = m.text.clean() ?: ""
@@ -81,7 +92,7 @@ object KakaoParser {
     private fun parseLegacy(raw: RawNotification): KakaoMessage? {
         val sender = raw.title.clean() ?: return null
         val text = raw.text.clean() ?: return null
-        val room = raw.subText.clean()
+        val room = groupRoomName(raw)
         return KakaoMessage(
             room = room ?: sender,
             sender = sender,

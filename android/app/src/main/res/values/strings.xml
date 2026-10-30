@@ -19,6 +19,10 @@
     <string name="upload_enabled">서버 전송 사용</string>
     <string name="export_csv">CSV 내보내기</string>
     <string name="delete_all">전체 삭제</string>
+    <string name="open_diagnostics">알림 구조 진단 (방 이름이 이상할 때)</string>
+    <string name="diagnostics_title">알림 구조 진단</string>
+    <string name="diagnostics_share">이 내용 보내기 (카톡·메일 등)</string>
+    <string name="diagnostics_empty">아직 기록된 카톡 알림이 없습니다.\n알림 접근 권한을 켠 뒤 카톡을 받으면 최근 30건이 여기에 기록됩니다.</string>
     <string name="rooms_title">수집한 대화</string>
     <string name="rooms_count">대화방 %1$d개</string>
     <string name="rooms_empty">아직 수집된 대화가 없습니다.
@@ -39,7 +43,7 @@
     <string name="room_list_title">방 목록 (%1$d)</string>
     <string name="room_empty">아직 알림으로 확인된 방이 없습니다. 카톡을 받으면 여기에 표시됩니다.</string>
     <string name="test_connection">연결 테스트</string>
-        <string name="upload_now">지금 전송</string>
+    <string name="upload_now">지금 전송</string>
     <string name="refresh">새로고침</string>
     <string name="restricted_hint">Android 13 이상에서 권한 스위치가 비활성이면: 설정 &gt; 애플리케이션 &gt; 카톡 수집기 &gt; 우측 상단 ⋮ &gt; \'제한된 설정 허용\' 후 다시 시도하십시오.</string>
 </resources>

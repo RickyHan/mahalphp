@@ -46,7 +46,35 @@ object NotificationExtractor {
             messages = messages,
             hasPicture = extras.containsKey(Notification.EXTRA_PICTURE) || extras.containsKey(EXTRA_PICTURE_ICON),
             isGroupSummary = n.flags and Notification.FLAG_GROUP_SUMMARY != 0,
+            summaryText = extras.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)?.toString(),
         )
+    }
+
+    /**
+     * 진단용: 알림에 담긴 값을 사람이 읽을 수 있는 텍스트로 정리한다(비트맵 등은 크기만).
+     * 카카오톡 버전별 알림 구조(방 이름·보낸 사람이 어느 키에 있는지)를 확인하는 데 쓴다.
+     */
+    fun dump(sbn: StatusBarNotification): String {
+        val n = sbn.notification
+        val sb = StringBuilder()
+        sb.append("key=").append(sbn.key).append('\n')
+        sb.append("category=").append(n.category).append(" flags=0x").append(Integer.toHexString(n.flags))
+            .append(" group=").append(n.group).append('\n')
+        fun describe(value: Any?): String = when (value) {
+            null -> "null"
+            is Bitmap -> "Bitmap(${value.width}x${value.height})"
+            is Icon -> "Icon"
+            is CharSequence -> "\"" + value.toString().replace("\n", "⏎").take(120) + "\""
+            is Bundle -> "Bundle{" + value.keySet().sorted().joinToString { k -> "$k=${describe(value.get(k))}" } + "}"
+            is Array<*> -> "[" + value.joinToString { describe(it) } + "]"
+            else -> value.javaClass.simpleName + ":" + value.toString().take(120)
+        }
+        val extras = n.extras
+        for (k in extras.keySet().sorted()) {
+            @Suppress("DEPRECATION")
+            sb.append("  ").append(k).append(" = ").append(describe(extras.get(k))).append('\n')
+        }
+        return sb.toString()
     }
 
     /**

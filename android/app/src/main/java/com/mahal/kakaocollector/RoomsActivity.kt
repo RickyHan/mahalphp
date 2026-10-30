@@ -112,7 +112,9 @@ class RoomsActivity : Activity() {
         val avatar = v.findViewById<TextView>(R.id.avatar)
         avatar.text = if (r.isGroup) "👥" else r.room.take(1)
         (avatar.background.mutate() as GradientDrawable).setColor(avatarColor(r.room))
-        v.findViewById<TextView>(R.id.roomName).text = "${r.room}  ${r.messageCount}"
+        // 방 이름은 카톡에 설정된 그대로, 메시지 수는 따로 표시
+        v.findViewById<TextView>(R.id.roomName).text = r.room
+        v.findViewById<TextView>(R.id.roomCount).text = "${r.messageCount}건"
         v.findViewById<TextView>(R.id.roomTime).text = shortTime(r.lastPostedAt)
         val prefix = if (r.isGroup) "${r.lastSender}: " else ""
         v.findViewById<TextView>(R.id.roomLast).text = prefix + Display.preview(r.lastType, r.lastText)

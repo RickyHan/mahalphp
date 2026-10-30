@@ -16,6 +16,7 @@ class KakaoParserTest {
         messages: List<RawMessage> = emptyList(),
         hasPicture: Boolean = false,
         isGroupSummary: Boolean = false,
+        summaryText: String? = null,
     ) = RawNotification(
         key = "0|com.kakao.talk|2|null|10001",
         postTime = 2_000L,
@@ -28,6 +29,7 @@ class KakaoParserTest {
         messages = messages,
         hasPicture = hasPicture,
         isGroupSummary = isGroupSummary,
+        summaryText = summaryText,
     )
 
     @Test
@@ -122,5 +124,43 @@ class KakaoParserTest {
         assertEquals(MessageType.EMOTICON, KakaoParser.classify("이모티콘을 보냈습니다.", false))
         assertEquals(MessageType.FILE, KakaoParser.classify("파일: 보고서.pdf", false))
         assertEquals(MessageType.TEXT, KakaoParser.classify("사진 잘 나왔네", false))
+    }
+
+    // 실제 카카오톡: 단톡방 이름이 conversationTitle 이 아니라 subText 에만 있는 경우.
+    // 수정 전에는 보낸 사람 이름(title)이 방 이름이 되어 단톡방이 사람별로 쪼개졌다.
+    @Test
+    fun messagingStyleGroupRoomFromSubText() {
+        val fromHong = KakaoParser.parse(
+            raw(title = "홍길동", subText = "개발팀 단톡방", messages = listOf(RawMessage("배포 3시", "홍길동", 1_000L)))
+        ).single()
+        val fromKim = KakaoParser.parse(
+            raw(title = "김철수", subText = "개발팀 단톡방", messages = listOf(RawMessage("확인", "김철수", 2_000L)))
+        ).single()
+        assertEquals("개발팀 단톡방", fromHong.room)
+        assertEquals("개발팀 단톡방", fromKim.room)
+        assertEquals("홍길동", fromHong.sender)
+        assertEquals("김철수", fromKim.sender)
+        assertTrue(fromHong.isGroupChat && fromKim.isGroupChat)
+    }
+
+    @Test
+    fun groupRoomFromSummaryText() {
+        val styled = KakaoParser.parse(
+            raw(title = "박민수", summaryText = "가족방", messages = listOf(RawMessage("안녕", "박민수", 1_000L)))
+        ).single()
+        assertEquals("가족방", styled.room)
+        assertTrue(styled.isGroupChat)
+
+        val legacy = KakaoParser.parse(raw(title = "박민수", text = "안녕", summaryText = "가족방")).single()
+        assertEquals("가족방", legacy.room)
+        assertTrue(legacy.isGroupChat)
+    }
+
+    @Test
+    fun conversationTitleWinsOverSubText() {
+        val m = KakaoParser.parse(
+            raw(title = "홍길동", conversationTitle = "오픈채팅 개발자모임", subText = "다른값", messages = listOf(RawMessage("hi", "홍길동", 1L)))
+        ).single()
+        assertEquals("오픈채팅 개발자모임", m.room)
     }
 }

@@ -12,7 +12,7 @@ import java.security.MessageDigest
  * 서버 전송을 켠 경우에는 전송 대기열 역할도 겸한다(status: local → pending → sent/failed).
  */
 class MessageStore private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 3) {
+    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 4) {
 
     data class Row(
         val id: Long,
@@ -65,6 +65,7 @@ class MessageStore private constructor(context: Context) :
         db.execSQL("CREATE INDEX idx_queue_status ON queue(status, id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_queue_room ON queue(room, id)")
         createSeenRooms(db)
+        createNotificationLog(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -78,7 +79,27 @@ class MessageStore private constructor(context: Context) :
         if (oldVersion < 3) {
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_queue_room ON queue(room, id)")
         }
+        if (oldVersion < 4) {
+            createNotificationLog(db)
+        }
     }
+
+    /** 진단용: 최근 카카오톡 알림 원본 구조 (최근 [LOG_KEEP]건만 유지) */
+    private fun createNotificationLog(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS notification_log (id INTEGER PRIMARY KEY AUTOINCREMENT, time INTEGER NOT NULL, dump TEXT NOT NULL)")
+    }
+
+    fun addNotificationLog(time: Long, dump: String) {
+        writableDatabase.run {
+            execSQL("INSERT INTO notification_log (time, dump) VALUES (?, ?)", arrayOf(time, dump))
+            execSQL("DELETE FROM notification_log WHERE id NOT IN (SELECT id FROM notification_log ORDER BY id DESC LIMIT $LOG_KEEP)")
+        }
+    }
+
+    fun notificationLogs(): List<Pair<Long, String>> =
+        readableDatabase.rawQuery("SELECT time, dump FROM notification_log ORDER BY id DESC", null).use { c ->
+            buildList { while (c.moveToNext()) add(c.getLong(0) to c.getString(1)) }
+        }
 
     /** 알림으로 들어온 적 있는 방 목록 (수집 제외된 방 포함 — 방 선택 화면용, 내용은 저장하지 않음) */
     private fun createSeenRooms(db: SQLiteDatabase) {
@@ -94,7 +115,8 @@ class MessageStore private constructor(context: Context) :
 
     fun recordSeenRoom(room: String, isGroup: Boolean, time: Long) {
         // UPSERT(ON CONFLICT DO UPDATE)는 SQLite 3.24+(Android 11+) 전용이라 두 문장으로 처리
-        val key = RoomFilter.normalize(room)
+        // 방 이름은 카톡에 설정된 그대로 저장 (공백 정리는 비교할 때만)
+        val key = room
         val group = if (isGroup) 1 else 0
         writableDatabase.run {
             execSQL("INSERT OR IGNORE INTO seen_rooms (room, is_group, last_seen, notifications) VALUES (?, ?, ?, 0)", arrayOf(key, group, time))
@@ -239,6 +261,7 @@ class MessageStore private constructor(context: Context) :
         const val FAILED = "failed"
         /** 서버 전송 꺼짐: 휴대폰에만 저장 */
         const val LOCAL = "local"
+        const val LOG_KEEP = 30
 
         @Volatile private var instance: MessageStore? = null
 

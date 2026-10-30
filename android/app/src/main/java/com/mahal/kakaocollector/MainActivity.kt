@@ -75,6 +75,7 @@ class MainActivity : Activity() {
         }
         findViewById<Button>(R.id.exportCsv).setOnClickListener { exportCsv() }
         findViewById<Button>(R.id.deleteAll).setOnClickListener { confirmDeleteAll() }
+        findViewById<Button>(R.id.openDiagnostics).setOnClickListener { startActivity(Intent(this, DiagnosticsActivity::class.java)) }
         findViewById<Button>(R.id.refresh).setOnClickListener { refresh() }
     }
 

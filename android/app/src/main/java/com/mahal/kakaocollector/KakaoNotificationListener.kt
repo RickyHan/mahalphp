@@ -32,6 +32,11 @@ class KakaoNotificationListener : NotificationListenerService() {
         try {
             val store = MessageStore.get(this)
             val messages = KakaoParser.parse(NotificationExtractor.extract(sbn))
+            val parsed = messages.joinToString("\n") { "  → 방=[${it.room}] 보낸사람=[${it.sender}] 단톡=${it.isGroupChat} 종류=${it.type.wire} 내용=[${it.text.take(40)}]" }
+            // 수집 제외 방의 알림은 진단 기록에도 남기지 않는다 (해석 실패 알림은 원인 확인을 위해 기록)
+            if (messages.isEmpty() || messages.any { settings.allowsRoom(it.room) }) {
+                store.addNotificationLog(System.currentTimeMillis(), NotificationExtractor.dump(sbn) + "해석 결과:\n" + parsed.ifEmpty { "  (대화 알림 아님 — 건너뜀)" })
+            }
             var queued = 0
             messages.forEachIndexed { index, message ->
                 if (store.contains(message)) return@forEachIndexed

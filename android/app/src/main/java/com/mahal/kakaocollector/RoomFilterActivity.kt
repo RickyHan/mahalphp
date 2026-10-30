@@ -60,23 +60,24 @@ class RoomFilterActivity : Activity() {
         }
         // 아직 알림이 오지 않았지만 직접 추가해 둔 방
         for (name in checked.sorted()) {
-            if (rooms.none { RoomFilter.normalize(it) == name }) {
+            if (rooms.none { RoomFilter.normalize(it) == RoomFilter.normalize(name) }) {
                 rooms += name
                 labels += "$name\n  직접 추가 · 아직 알림 없음"
             }
         }
         adapter.notifyDataSetChanged()
-        rooms.forEachIndexed { i, room -> roomList.setItemChecked(i, RoomFilter.normalize(room) in checked) }
+        val checkedKeys = checked.map(RoomFilter::normalize).toSet()
+        rooms.forEachIndexed { i, room -> roomList.setItemChecked(i, RoomFilter.normalize(room) in checkedKeys) }
         findViewById<TextView>(R.id.roomListTitle).text = getString(R.string.room_list_title, rooms.size)
         findViewById<TextView>(R.id.emptyRooms).visibility = if (rooms.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun currentChecked(): Set<String> =
-        rooms.filterIndexed { i, _ -> roomList.isItemChecked(i) }.map(RoomFilter::normalize).toSet()
+        rooms.filterIndexed { i, _ -> roomList.isItemChecked(i) }.toSet()
 
     private fun addManualRoom() {
         val input = findViewById<EditText>(R.id.manualRoom)
-        val name = RoomFilter.normalize(input.text.toString())
+        val name = input.text.toString().trim()
         if (name.isEmpty()) return
         loadRooms(currentChecked() + name)
         input.text.clear()

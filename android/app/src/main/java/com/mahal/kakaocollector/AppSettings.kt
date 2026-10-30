@@ -33,7 +33,7 @@ class AppSettings(context: Context) {
 
     var selectedRooms: Set<String>
         get() = prefs.getStringSet(KEY_ROOMS, emptySet())?.toSet() ?: emptySet()
-        set(value) = prefs.edit().putStringSet(KEY_ROOMS, value.map(RoomFilter::normalize).toSet()).apply()
+        set(value) = prefs.edit().putStringSet(KEY_ROOMS, value).apply()
 
     fun allowsRoom(room: String): Boolean = RoomFilter.allows(room, roomFilterMode, selectedRooms)
 

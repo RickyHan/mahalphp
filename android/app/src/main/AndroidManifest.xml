@@ -31,6 +31,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".DiagnosticsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".PhotoActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
