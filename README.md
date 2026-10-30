@@ -51,7 +51,7 @@ python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # DB_HOST / DB_PORT / DB_USER / DB_PASS / API_KEY 입력
 python -m scripts.install_db
-# 접속: ...@61.83.189.246:33306 / 스키마: kakao_collector
+# 접속: ...@<DB호스트>:<포트> / 스키마: kakao_collector
 # 테이블: kakao_media, kakao_messages
 ```
 

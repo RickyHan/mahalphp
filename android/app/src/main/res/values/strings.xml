@@ -6,7 +6,7 @@
     <string name="open_listener_settings">알림 접근 권한 설정 열기</string>
     <string name="open_battery_settings">배터리 최적화 예외 설정 열기</string>
     <string name="section_server">2. 수집 서버</string>
-    <string name="hint_server_url">서버 주소 (예: http://61.83.189.246:8000)</string>
+    <string name="hint_server_url">서버 주소 (예: http://192.168.0.10:8000)</string>
     <string name="hint_api_key">API 키 (server/.env 의 API_KEY)</string>
     <string name="capture_enabled">수집 사용</string>
     <string name="capture_images">사진 미리보기 저장</string>
