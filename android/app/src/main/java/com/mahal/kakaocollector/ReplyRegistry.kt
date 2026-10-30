@@ -53,9 +53,5 @@ object ReplyRegistry {
         }
     }
 
-    /** 안내 문구 치환: {보낸사람} {분류} {요약} {방} */
-    fun format(template: String, sender: String, category: String, summary: String, room: String): String =
-        template.replace("{보낸사람}", sender).replace("{분류}", category).replace("{요약}", summary).replace("{방}", room).trim()
-
     internal fun clearForTest() = actions.clear()
 }

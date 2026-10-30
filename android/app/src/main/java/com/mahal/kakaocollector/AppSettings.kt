@@ -3,6 +3,7 @@ package com.mahal.kakaocollector
 import android.content.Context
 import java.util.UUID
 
+/** 수집 앱 설정: 서버 주소·API 키·수집 옵션·수집할 방 */
 class AppSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -22,43 +23,6 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_IMAGES, true)
         set(value) = prefs.edit().putBoolean(KEY_IMAGES, value).apply()
 
-    /** 서버로도 전송할지 (끄면 휴대폰에만 저장) */
-    var uploadEnabled: Boolean
-        get() = prefs.getBoolean(KEY_UPLOAD, false)
-        set(value) = prefs.edit().putBoolean(KEY_UPLOAD, value).apply()
-
-    /** Gemini 민원 분류 사용 */
-    var complaintEnabled: Boolean
-        get() = prefs.getBoolean(KEY_COMPLAINT, BuildConfig.DEFAULT_GEMINI_KEY.isNotEmpty()) // 내장 키가 있으면 기본 켜짐
-        set(value) = prefs.edit().putBoolean(KEY_COMPLAINT, value).apply()
-
-    /** Gemini API 키. 직접 입력한 값이 없으면 개인 빌드에 내장된 기본 키(공개 빌드는 빈 값) */
-    var geminiKey: String
-        get() = prefs.getString(KEY_GEMINI_KEY, null)?.takeIf { it.isNotBlank() } ?: BuildConfig.DEFAULT_GEMINI_KEY
-        set(value) = prefs.edit().putString(KEY_GEMINI_KEY, value.trim()).apply()
-
-    var geminiModel: String
-        get() = prefs.getString(KEY_GEMINI_MODEL, null)?.takeIf { it.isNotBlank() } ?: DEFAULT_MODEL
-        set(value) = prefs.edit().putString(KEY_GEMINI_MODEL, value.trim().removePrefix("models/")).apply()
-
-    /** 마지막 분류 실행 결과 (화면 표시용) */
-    var complaintStatus: String
-        get() = prefs.getString(KEY_COMPLAINT_STATUS, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_COMPLAINT_STATUS, value).apply()
-
-    /** 민원 접수 시 해당 채팅방에 안내 메시지 자동 전송 */
-    var autoReplyEnabled: Boolean
-        get() = prefs.getBoolean(KEY_AUTO_REPLY, true)
-        set(value) = prefs.edit().putBoolean(KEY_AUTO_REPLY, value).apply()
-
-    /** 안내 문구. {분류} {요약} {보낸사람} {방} 치환 */
-    var replyTemplate: String
-        get() = prefs.getString(KEY_REPLY_TEMPLATE, null)?.takeIf { it.isNotBlank() } ?: DEFAULT_REPLY_TEMPLATE
-        set(value) = prefs.edit().putString(KEY_REPLY_TEMPLATE, value.trim()).apply()
-
-    val shouldClassify: Boolean
-        get() = complaintEnabled && geminiKey.isNotEmpty()
-
     var roomFilterMode: RoomFilterMode
         get() = runCatching { RoomFilterMode.valueOf(prefs.getString(KEY_ROOM_MODE, null) ?: "") }.getOrDefault(RoomFilterMode.ALL)
         set(value) = prefs.edit().putString(KEY_ROOM_MODE, value.name).apply()
@@ -69,7 +33,7 @@ class AppSettings(context: Context) {
 
     fun allowsRoom(room: String): Boolean = RoomFilter.allows(room, roomFilterMode, selectedRooms)
 
-    /** 설치마다 1회 생성되는 단말 식별자 */
+    /** 설치마다 1회 생성되는 단말 식별자 (서버가 안내 메시지를 보낼 휴대폰을 구분) */
     val deviceId: String
         get() = prefs.getString(KEY_DEVICE_ID, null) ?: UUID.randomUUID().toString().also {
             prefs.edit().putString(KEY_DEVICE_ID, it).apply()
@@ -78,26 +42,13 @@ class AppSettings(context: Context) {
     val isConfigured: Boolean
         get() = serverUrl.startsWith("http") && apiKey.isNotEmpty()
 
-    /** 실제로 서버 전송을 할 상태인지 */
-    val shouldUpload: Boolean
-        get() = uploadEnabled && isConfigured
-
-    companion object {
-        const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
-        const val DEFAULT_REPLY_TEMPLATE = "[{분류}] 민원이 접수되었습니다."
-        private const val KEY_AUTO_REPLY = "auto_reply_enabled"
-        private const val KEY_REPLY_TEMPLATE = "reply_template"
-        private const val KEY_COMPLAINT = "complaint_enabled"
-        private const val KEY_GEMINI_KEY = "gemini_key"
-        private const val KEY_GEMINI_MODEL = "gemini_model"
-        private const val KEY_COMPLAINT_STATUS = "complaint_status"
-        private const val KEY_SERVER_URL = "server_url"
-        private const val KEY_API_KEY = "api_key"
-        private const val KEY_CAPTURE = "capture_enabled"
-        private const val KEY_IMAGES = "capture_images"
-        private const val KEY_DEVICE_ID = "device_id"
-        private const val KEY_ROOM_MODE = "room_filter_mode"
-        private const val KEY_UPLOAD = "upload_enabled"
-        private const val KEY_ROOMS = "selected_rooms"
+    private companion object {
+        const val KEY_SERVER_URL = "server_url"
+        const val KEY_API_KEY = "api_key"
+        const val KEY_CAPTURE = "capture_enabled"
+        const val KEY_IMAGES = "capture_images"
+        const val KEY_DEVICE_ID = "device_id"
+        const val KEY_ROOM_MODE = "room_filter_mode"
+        const val KEY_ROOMS = "selected_rooms"
     }
 }

@@ -18,7 +18,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val settings = AppSettings(applicationContext)
-        if (!settings.shouldUpload) return@withContext Result.success() // 서버 전송을 켜면 다시 예약됨
+        if (!settings.isConfigured) return@withContext Result.success() // 서버 설정을 저장하면 다시 예약됨
         val store = MessageStore.get(applicationContext)
         val api = ApiClient(settings)
 
@@ -36,6 +36,9 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 }
             }
         }
+        store.pruneSent()
+        // 서버가 방금 올린 메시지를 분류해 '접수 안내'를 정하면 가져가 전송한다
+        ReplyWorker.enqueue(applicationContext)
         Result.success()
     }
 

@@ -13,7 +13,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
 
-/** 휴대폰 내 SQLite 저장소의 실제 쿼리를 Robolectric(Android SQLite)으로 검증 */
+/** 전송 대기열(SQLite) — 실제 Android SQLite 로 검증 */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class MessageStoreTest {
@@ -32,138 +32,77 @@ class MessageStoreTest {
     @After
     fun tearDown() = MessageStore.resetForTest()
 
-    private fun msg(room: String, sender: String, text: String, t: Long, type: MessageType = MessageType.TEXT, group: Boolean = true) =
-        KakaoMessage(room, sender, text, type, group, t, "key")
-
-    private fun image(name: String): String =
-        File(context.filesDir, "media").apply { mkdirs() }.resolve(name).apply { writeBytes(byteArrayOf(1, 2, 3)) }.absolutePath
+    private fun msg(text: String, t: Long, key: String? = null) =
+        KakaoMessage("가족방", "엄마", text, MessageType.TEXT, true, t, "k", senderKey = key)
 
     @Test
-    fun storesLocallyAndDeduplicates() {
-        assertTrue(store.insert(msg("가족방", "엄마", "밥 먹었니?", 1_000), null, upload = false))
-        assertFalse(store.insert(msg("가족방", "엄마", "밥 먹었니?", 1_000), null, upload = false))
-        assertTrue(store.contains(msg("가족방", "엄마", "밥 먹었니?", 1_000)))
-        val c = store.counts()
-        assertEquals(1, c.total)
-        assertEquals(1, c.local)
-        assertEquals(0, c.pending)
+    fun queuesOnceAndKeepsSenderKey() {
+        assertTrue(store.insert(msg("밥 먹었니?", 1_000, key = "u1"), null))
+        assertFalse(store.insert(msg("밥 먹었니?", 1_000, key = "u1"), null))
+        val row = store.pending(10).single()
+        assertEquals("u1", row.senderKey)
+        assertEquals(1, store.counts().pending)
     }
 
     @Test
-    fun roomSummariesOrderedByLatestWithPhotoCount() {
-        store.insert(msg("개발팀", "홍길동", "첫 메시지", 1_000), null, upload = false)
-        store.insert(msg("이영희", "이영희", "안녕", 2_000, group = false), null, upload = false)
-        store.insert(msg("개발팀", "김철수", "사진을 보냈습니다.", 3_000, MessageType.PHOTO), image("a.jpg"), upload = false)
-
-        val rooms = store.roomSummaries()
-        assertEquals(listOf("개발팀", "이영희"), rooms.map { it.room })
-        assertEquals(2, rooms[0].messageCount)
-        assertEquals(1, rooms[0].photoCount)
-        assertEquals("김철수", rooms[0].lastSender)
-        assertEquals("photo", rooms[0].lastType)
-        assertTrue(rooms[0].isGroup)
-        assertFalse(rooms[1].isGroup)
-    }
-
-    @Test
-    fun roomMessagesPaging() {
-        (1..5).forEach { store.insert(msg("개발팀", "홍길동", "메시지 $it", it * 1_000L), null, upload = false) }
-        val all = store.roomMessages("개발팀")
-        assertEquals((1..5).map { "메시지 $it" }, all.map { it.text }) // 오래된 → 최신
-
-        val latest2 = store.roomMessages("개발팀", limit = 2)
-        assertEquals(listOf("메시지 4", "메시지 5"), latest2.map { it.text })
-
-        val older = store.roomMessages("개발팀", beforeId = latest2.first().id, limit = 2)
-        assertEquals(listOf("메시지 2", "메시지 3"), older.map { it.text })
-
-        val newer = store.roomMessages("개발팀", afterId = all[1].id, limit = 2)
-        assertEquals(listOf("메시지 3", "메시지 4"), newer.map { it.text })
-    }
-
-    @Test
-    fun searchMatchesTextAndSenderAndEscapesWildcards() {
-        store.insert(msg("마케팅", "정다은", "할인율 100% 쿠폰", 1_000), null, upload = false)
-        store.insert(msg("마케팅", "최유진", "100 단위로 수정", 2_000), null, upload = false)
-        store.insert(msg("가족방", "엄마", "밥", 3_000), null, upload = false)
-
-        assertEquals(listOf("할인율 100% 쿠폰"), store.search("100%").map { it.text })
-        assertEquals(listOf("밥"), store.search("엄마").map { it.text })
-        assertEquals(2, store.search("100").size)
-        assertTrue(store.search("_").isEmpty())
-    }
-
-    @Test
-    fun uploadQueueTransitions() {
-        store.insert(msg("방", "a", "1", 1_000), null, upload = false)
-        store.insert(msg("방", "a", "2", 2_000), null, upload = true)
-        assertEquals(1, store.pending(10).size)
-
-        assertEquals(1, store.queueLocalForUpload())
-        val pending = store.pending(10)
-        assertEquals(2, pending.size)
-
-        store.markSent(pending[0])
-        store.markFailed(pending[1], "HTTP 422")
-        val c = store.counts()
-        assertEquals(1, c.sent)
-        assertEquals(1, c.failed)
-        assertEquals(0, c.pending)
-    }
-
-    @Test
-    fun imagesKeptAfterUploadAndRemovedOnDeleteAll() {
-        val path = image("b.jpg")
-        store.insert(msg("방", "a", "사진을 보냈습니다.", 1_000, MessageType.PHOTO), path, upload = true)
+    fun sentRowsDropPhotoAndArePruned() {
+        val photo = File(context.filesDir, "media").apply { mkdirs() }.resolve("p.jpg").apply { writeBytes(byteArrayOf(1)) }
+        store.insert(KakaoMessage("방", "a", "사진을 보냈습니다.", MessageType.PHOTO, true, 1, "k"), photo.absolutePath)
         store.markSent(store.pending(1).single())
-        assertTrue("전송 후에도 사진은 휴대폰에 보관", File(path).exists())
+        assertFalse("서버 저장 후 휴대폰 사진은 삭제", photo.exists())
 
-        store.recordSeenRoom("방", true, 1_000)
-        store.deleteAll()
-        assertFalse(File(path).exists())
-        assertEquals(0, store.counts().total)
-        assertEquals(listOf("방"), store.seenRooms().map { it.room }) // 방 선택 목록은 유지
+        (2..6).forEach { store.insert(msg("m$it", it.toLong()), null) }
+        store.pending(10).forEach(store::markSent)
+        store.pruneSent(keep = 3)
+        assertEquals(3, store.counts().total)
+        assertEquals(3, store.counts().sent)
     }
 
     @Test
-    fun memberTrackingFirstSeenAndRenameWithKey() {
-        store.recordSender("골프방", "user-1", "버디왕", 1_000)
-        store.recordSender("골프방", "user-1", "버디왕", 2_000)
-        store.recordSender("골프방", "user-1", "⛳버디킹⛳", 3_000)   // 같은 고유 키, 다른 대화명 → 변경
-        store.recordSender("골프방", "user-2", "이글", 4_000)
-
-        val events = store.memberEvents("골프방")
-        assertEquals(
-            listOf(MemberEvents.Type.FIRST_SEEN, MemberEvents.Type.RENAME, MemberEvents.Type.FIRST_SEEN),
-            events.map { it.type }
-        )
-        val rename = events.single { it.type == MemberEvents.Type.RENAME }
-        assertEquals("버디왕", rename.oldName)
-        assertEquals("⛳버디킹⛳", rename.member)
-
-        val members = store.members("골프방")
-        assertEquals(listOf("이글", "⛳버디킹⛳"), members.map { it.name })
-        assertEquals(3, members.single { it.name == "⛳버디킹⛳" }.messageCount)
-        assertTrue(members.all { it.keyed })
+    fun failedAndRetry() {
+        store.insert(msg("a", 1), null)
+        store.insert(msg("b", 2), null)
+        val (a, b) = store.pending(10)
+        store.markRetry(a, "timeout")
+        store.markFailed(b, "HTTP 422")
+        assertEquals(listOf("timeout"), store.pending(10).map { it.lastError })
+        assertEquals(1, store.counts().failed)
     }
 
     @Test
-    fun withoutKeyNewNameIsNewMemberNotRename() {
-        store.recordSender("방", null, "홍길동", 1_000)
-        store.recordSender("방", null, "길동이", 2_000)
-        assertEquals(listOf(MemberEvents.Type.FIRST_SEEN, MemberEvents.Type.FIRST_SEEN), store.memberEvents("방").map { it.type })
-        assertFalse(store.members("방").any { it.keyed })
+    fun seenRoomsKeepExactName() {
+        store.recordSeenRoom("우리  회사 개발팀 🚀", true, 1)
+        store.recordSeenRoom("우리  회사 개발팀 🚀", true, 5)
+        val room = store.seenRooms().single()
+        assertEquals("우리  회사 개발팀 🚀", room.room)
+        assertEquals(5L, room.lastSeen)
     }
 
     @Test
-    fun systemEventsFilterAndDeleteAll() {
-        store.addEvent(MemberEvents.Type.JOIN, "골프방", "신입", null, null, 5_000, "신입님이 들어왔습니다.")
-        store.addEvent(MemberEvents.Type.LEAVE, "골프방", "탈퇴자", null, null, 6_000, "탈퇴자님이 나갔습니다.")
-        store.addEvent(MemberEvents.Type.JOIN, "다른방", "누군가", null, null, 7_000, null)
-        assertEquals(listOf("탈퇴자", "신입"), store.memberEvents("골프방").map { it.member })
-        assertEquals(listOf("누군가", "신입"), store.memberEvents(type = MemberEvents.Type.JOIN).map { it.member })
-        assertEquals(listOf("다른방", "골프방"), store.memberRooms())
-        store.deleteAll()
-        assertTrue(store.memberEvents().isEmpty())
+    fun upgradeFromV7QueuesPhoneOnlyMessagesAndDropsOldTables() {
+        MessageStore.resetForTest()
+        context.deleteDatabase("queue.db")
+        // v7 스키마 흉내: local 상태 메시지 + 앱 내 분류 테이블
+        val path = context.getDatabasePath("queue.db").apply { parentFile?.mkdirs() }
+        android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(path, null).use { db ->
+            db.execSQL(
+                "CREATE TABLE queue (id INTEGER PRIMARY KEY AUTOINCREMENT, dedup TEXT NOT NULL UNIQUE, room TEXT NOT NULL, sender TEXT NOT NULL, " +
+                    "text TEXT NOT NULL, type TEXT NOT NULL, is_group INTEGER NOT NULL, posted_at INTEGER NOT NULL, notification_key TEXT NOT NULL, " +
+                    "image_path TEXT, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, created_at INTEGER NOT NULL)"
+            )
+            db.execSQL("CREATE TABLE seen_rooms (room TEXT PRIMARY KEY, is_group INTEGER NOT NULL, last_seen INTEGER NOT NULL, notifications INTEGER NOT NULL DEFAULT 0)")
+            db.execSQL("CREATE TABLE notification_log (id INTEGER PRIMARY KEY AUTOINCREMENT, time INTEGER NOT NULL, dump TEXT NOT NULL)")
+            db.execSQL("CREATE TABLE complaint_check (message_id INTEGER PRIMARY KEY, verdict INTEGER NOT NULL)")
+            db.execSQL("CREATE TABLE member_events (id INTEGER PRIMARY KEY)")
+            db.execSQL("INSERT INTO queue (dedup, room, sender, text, type, is_group, posted_at, notification_key, status, created_at) VALUES ('d1','방','a','휴대폰에만 있던 메시지','text',1,1,'k','local',1)")
+            db.version = 7
+        }
+        store = MessageStore.get(context)
+        assertEquals(listOf("휴대폰에만 있던 메시지"), store.pending(10).map { it.text })
+        store.readableDatabase.rawQuery("SELECT name FROM sqlite_master WHERE type='table'", null).use { c ->
+            val tables = buildList { while (c.moveToNext()) add(c.getString(0)) }
+            assertFalse(tables.contains("complaint_check"))
+            assertFalse(tables.contains("member_events"))
+        }
     }
 }

@@ -23,48 +23,8 @@
         </activity>
 
         <activity
-            android:name=".RoomsActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".ChatActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".StatsActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".MembersActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".ComplaintGroupActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".ComplaintsActivity"
-            android:exported="false" />
-
-        <activity
             android:name=".DiagnosticsActivity"
             android:exported="false" />
-
-        <activity
-            android:name=".PhotoActivity"
-            android:exported="false"
-            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
-
-        <!-- CSV 내보내기 파일을 다른 앱(메일·드라이브 등)에 공유 -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.files"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
 
         <activity
             android:name=".RoomFilterActivity"

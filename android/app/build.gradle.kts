@@ -10,13 +10,6 @@ val keystoreProps = Properties().apply {
     rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 
-// 개인 빌드용 기본 Gemini 키: android/secrets.properties 의 geminiKey (git 에 올리지 않음).
-// 파일이 없으면 빈 값 → 앱에서 직접 입력.
-val secretProps = Properties().apply {
-    rootProject.file("secrets.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
-}
-val defaultGeminiKey: String = secretProps.getProperty("geminiKey", "").trim().replace("\"", "")
-
 android {
     namespace = "com.mahal.kakaocollector"
     compileSdk = 34
@@ -25,9 +18,8 @@ android {
         applicationId = "com.mahal.kakaocollector"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.7.0"
-        buildConfigField("String", "DEFAULT_GEMINI_KEY", "\"$defaultGeminiKey\"")
+        versionCode = 13
+        versionName = "2.0.0"
     }
 
     signingConfigs {

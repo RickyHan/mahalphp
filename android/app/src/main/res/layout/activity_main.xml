@@ -11,49 +11,22 @@
         android:padding="16dp">
 
         <Button
-            android:id="@+id/openRooms"
+            android:id="@+id/openWeb"
             android:layout_width="match_parent"
-            android:layout_height="64dp"
-            android:text="@string/open_rooms"
-            android:textSize="17sp"
+            android:layout_height="60dp"
+            android:text="@string/open_web"
+            android:textSize="16sp"
             android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/openComplaints"
-            android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:text="@string/open_complaints"
-            android:textSize="16sp" />
-
-        <Button
-            android:id="@+id/openStats"
-            android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:text="@string/open_stats"
-            android:textSize="16sp" />
-
-        <Button
-            android:id="@+id/openMembers"
-            android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:text="@string/open_members"
-            android:textSize="16sp" />
-
         <TextView
-            android:id="@+id/storageSummary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center"
             android:paddingTop="4dp"
-            android:paddingBottom="16dp" />
+            android:paddingBottom="16dp"
+            android:text="@string/app_role"
+            android:textSize="12sp" />
 
-        <!-- 1. 권한 -->
-        <TextView
-            style="@android:style/TextAppearance.Material.Subhead"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/section_permission"
-            android:textStyle="bold" />
+        <TextView style="@android:style/TextAppearance.Material.Subhead" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/section_permission" android:textStyle="bold" />
 
         <TextView
             android:id="@+id/permissionStatus"
@@ -80,13 +53,41 @@
             android:text="@string/restricted_hint"
             android:textSize="12sp" />
 
-        <!-- 2. 수집 설정 -->
-        <TextView
-            style="@android:style/TextAppearance.Material.Subhead"
-            android:layout_width="wrap_content"
+        <TextView style="@android:style/TextAppearance.Material.Subhead" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/section_server" android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/serverUrl"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/section_capture"
-            android:textStyle="bold" />
+            android:hint="@string/hint_server_url"
+            android:importantForAutofill="no"
+            android:inputType="textUri" />
+
+        <EditText
+            android:id="@+id/apiKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/hint_api_key"
+            android:importantForAutofill="no"
+            android:inputType="textPassword" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button android:id="@+id/save" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/save" />
+            <Button android:id="@+id/testConnection" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/test_connection" />
+            <Button android:id="@+id/uploadNow" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/upload_now" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/connectionStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="16dp" />
+
+        <TextView style="@android:style/TextAppearance.Material.Subhead" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/section_capture" android:textStyle="bold" />
 
         <Switch
             android:id="@+id/captureEnabled"
@@ -115,248 +116,27 @@
             android:paddingBottom="16dp"
             android:textSize="12sp" />
 
-        <!-- 3. 서버 전송 (선택) -->
-        <TextView
-            style="@android:style/TextAppearance.Material.Subhead"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/section_server"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingVertical="4dp"
-            android:text="@string/server_optional_hint"
-            android:textSize="12sp" />
-
-        <Switch
-            android:id="@+id/uploadEnabled"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingVertical="8dp"
-            android:text="@string/upload_enabled" />
-
-        <LinearLayout
-            android:id="@+id/serverFields"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <EditText
-                android:id="@+id/serverUrl"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/hint_server_url"
-                android:importantForAutofill="no"
-                android:inputType="textUri" />
-
-            <EditText
-                android:id="@+id/apiKey"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/hint_api_key"
-                android:importantForAutofill="no"
-                android:inputType="textPassword" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/save"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/save" />
-
-                <Button
-                    android:id="@+id/testConnection"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/test_connection" />
-
-                <Button
-                    android:id="@+id/uploadNow"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/upload_now" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/connectionStatus"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content" />
-
-            <TextView
-                android:id="@+id/queueStatus"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingVertical="4dp"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-        <!-- 5. 민원 자동 분류 -->
-        <TextView
-            style="@android:style/TextAppearance.Material.Subhead"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingTop="16dp"
-            android:text="@string/section_complaint"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingVertical="4dp"
-            android:text="@string/complaint_hint"
-            android:textSize="12sp" />
-
-        <Switch
-            android:id="@+id/complaintEnabled"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingVertical="8dp"
-            android:text="@string/complaint_enabled" />
-
-        <LinearLayout
-            android:id="@+id/complaintFields"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <EditText
-                android:id="@+id/geminiKey"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/hint_gemini_key"
-                android:importantForAutofill="no"
-                android:inputType="textPassword" />
-
-            <Switch
-                android:id="@+id/autoReplyEnabled"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingVertical="8dp"
-                android:text="@string/auto_reply_enabled" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/auto_reply_hint"
-                android:textSize="12sp" />
-
-            <EditText
-                android:id="@+id/replyTemplate"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/hint_reply_template"
-                android:importantForAutofill="no"
-                android:inputType="text" />
-
-            <EditText
-                android:id="@+id/geminiModel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/hint_gemini_model"
-                android:importantForAutofill="no"
-                android:inputType="text" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/saveComplaint"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/save" />
-
-                <Button
-                    android:id="@+id/classifyNow"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/classify_now" />
-
-                <Button
-                    android:id="@+id/retryFailed"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/retry_failed" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/complaintStatus"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingVertical="4dp"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-        <!-- 4. 데이터 -->
-        <TextView
-            style="@android:style/TextAppearance.Material.Subhead"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingTop="16dp"
-            android:text="@string/section_data"
-            android:textStyle="bold" />
-
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/exportCsv"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/export_csv" />
-
-            <Button
-                android:id="@+id/deleteAll"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/delete_all" />
+            <TextView style="@android:style/TextAppearance.Material.Subhead" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/section_status" android:textStyle="bold" />
+            <Button android:id="@+id/refresh" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/refresh" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/queueStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingVertical="4dp" />
 
         <Button
             android:id="@+id/openDiagnostics"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/open_diagnostics" />
-
-        <!-- 최근 수집 로그 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingTop="16dp">
-
-            <TextView
-                style="@android:style/TextAppearance.Material.Subhead"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/section_recent"
-                android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/refresh"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/refresh" />
-        </LinearLayout>
 
         <TextView
             android:id="@+id/recentMessages"

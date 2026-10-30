@@ -30,6 +30,7 @@ class ApiClient(private val settings: AppSettings) {
             .addFormDataPart("is_group_chat", row.isGroup.toString())
             .addFormDataPart("posted_at", row.postedAt.toString())
             .addFormDataPart("notification_key", row.notificationKey.take(255))
+            .apply { row.senderKey?.let { addFormDataPart("sender_key", it.take(255)) } }
             .apply {
                 row.imagePath?.let(::File)?.takeIf { it.exists() }?.let { file ->
                     addFormDataPart("image", file.name, file.asRequestBody("application/octet-stream".toMediaType()))
@@ -42,6 +43,41 @@ class ApiClient(private val settings: AppSettings) {
             .post(body)
             .build()
         return execute(request)
+    }
+
+    data class Reply(val id: Long, val room: String, val text: String)
+
+    /** 서버가 정한 '민원 접수 안내' 중 이 휴대폰이 카톡 답장으로 보내야 할 것 (실패 시 null) */
+    fun pendingReplies(): List<Reply>? {
+        val url = "${settings.serverUrl}/api/replies/pending?device_id=" + java.net.URLEncoder.encode(settings.deviceId, "UTF-8")
+        val request = Request.Builder().url(url).header("X-Api-Key", settings.apiKey).get().build()
+        return try {
+            client.newCall(request).execute().use { res ->
+                if (!res.isSuccessful) return null
+                val items = org.json.JSONObject(res.body?.string().orEmpty()).getJSONArray("items")
+                (0 until items.length()).map { i ->
+                    val o = items.getJSONObject(i)
+                    Reply(o.getLong("id"), o.getString("room_name"), o.getString("text"))
+                }
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** 안내 전송 결과 보고 */
+    fun reportReply(id: Long, sent: Boolean, note: String?): Boolean {
+        val body = okhttp3.FormBody.Builder()
+            .add("device_id", settings.deviceId)
+            .add("sent", sent.toString())
+            .apply { note?.let { add("note", it.take(250)) } }
+            .build()
+        val request = Request.Builder().url("${settings.serverUrl}/api/replies/$id/result").header("X-Api-Key", settings.apiKey).post(body).build()
+        return try {
+            client.newCall(request).execute().use { it.isSuccessful || it.code == 404 }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /** 연결 테스트: 성공 시 null, 실패 시 사유 */

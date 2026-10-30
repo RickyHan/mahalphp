@@ -7,7 +7,7 @@ import android.util.Log
 import java.io.File
 import java.util.concurrent.Executors
 
-/** 카카오톡 알림을 받아 로컬 큐에 저장하고 업로드를 예약한다. */
+/** 카카오톡 알림을 받아 전송 대기열에 넣고 서버 업로드를 예약한다. 조회·분류·이력은 서버가 처리. */
 class KakaoNotificationListener : NotificationListenerService() {
 
     private val worker = Executors.newSingleThreadExecutor()
@@ -44,29 +44,16 @@ class KakaoNotificationListener : NotificationListenerService() {
                 if (store.contains(message)) return@forEachIndexed
                 store.recordSeenRoom(message.room, message.isGroupChat, message.postedAt)
                 if (!settings.allowsRoom(message.room)) return@forEachIndexed
-                trackMembers(store, message)
-                // 민원 접수 안내를 보낼 수 있도록 이 방의 '답장' 수단을 기억
+                // 서버가 정한 민원 접수 안내를 보낼 수 있도록 이 방의 '답장' 수단을 기억
                 if (message.sender != KakaoParser.SELF_SENDER) ReplyRegistry.remember(message.room, sbn.notification)
                 val image = if (settings.captureImages && message.type == MessageType.PHOTO) {
                     NotificationExtractor.saveImage(this, sbn, message, isLatest = index == messages.lastIndex)
                 } else null
-                if (store.insert(message, image, upload = settings.shouldUpload)) queued++ else image?.let { File(it).delete() }
+                if (store.insert(message, image)) queued++ else image?.let { File(it).delete() }
             }
-            if (queued > 0 && settings.shouldUpload) UploadWorker.enqueue(this)
-            if (queued > 0 && settings.shouldClassify) ComplaintWorker.enqueue(this)
+            if (queued > 0 && settings.isConfigured) UploadWorker.enqueue(this)
         } catch (e: Exception) {
             Log.w(TAG, "알림 처리 실패", e)
-        }
-    }
-
-    /** 안내 메시지면 입장·퇴장 등 이력으로, 일반 메시지면 발언자(첫 발언·대화명 변경)로 기록 */
-    private fun trackMembers(store: MessageStore, m: KakaoMessage) {
-        if (!m.isGroupChat || m.sender == KakaoParser.SELF_SENDER) return
-        val detected = MemberEvents.detect(m.text)
-        if (detected.isNotEmpty()) {
-            detected.forEach { store.addEvent(it.type, m.room, it.member, null, it.actor, m.postedAt, m.text) }
-        } else {
-            store.recordSender(m.room, m.senderKey, m.sender, m.postedAt)
         }
     }
 
