@@ -26,3 +26,4 @@ android/keystore.properties
 # 수집 데이터 (SQLite DB)
 server/storage/*.db
 server/storage/*.db-*
+android/.kotlin/

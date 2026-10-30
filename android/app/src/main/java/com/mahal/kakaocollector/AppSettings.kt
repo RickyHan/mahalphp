@@ -27,6 +27,28 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_UPLOAD, false)
         set(value) = prefs.edit().putBoolean(KEY_UPLOAD, value).apply()
 
+    /** Gemini 민원 분류 사용 */
+    var complaintEnabled: Boolean
+        get() = prefs.getBoolean(KEY_COMPLAINT, false)
+        set(value) = prefs.edit().putBoolean(KEY_COMPLAINT, value).apply()
+
+    /** Gemini API 키 (휴대폰에만 저장, APK 에는 포함하지 않음) */
+    var geminiKey: String
+        get() = prefs.getString(KEY_GEMINI_KEY, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_GEMINI_KEY, value.trim()).apply()
+
+    var geminiModel: String
+        get() = prefs.getString(KEY_GEMINI_MODEL, null)?.takeIf { it.isNotBlank() } ?: DEFAULT_MODEL
+        set(value) = prefs.edit().putString(KEY_GEMINI_MODEL, value.trim().removePrefix("models/")).apply()
+
+    /** 마지막 분류 실행 결과 (화면 표시용) */
+    var complaintStatus: String
+        get() = prefs.getString(KEY_COMPLAINT_STATUS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_COMPLAINT_STATUS, value).apply()
+
+    val shouldClassify: Boolean
+        get() = complaintEnabled && geminiKey.isNotEmpty()
+
     var roomFilterMode: RoomFilterMode
         get() = runCatching { RoomFilterMode.valueOf(prefs.getString(KEY_ROOM_MODE, null) ?: "") }.getOrDefault(RoomFilterMode.ALL)
         set(value) = prefs.edit().putString(KEY_ROOM_MODE, value.name).apply()
@@ -50,14 +72,19 @@ class AppSettings(context: Context) {
     val shouldUpload: Boolean
         get() = uploadEnabled && isConfigured
 
-    private companion object {
-        const val KEY_SERVER_URL = "server_url"
-        const val KEY_API_KEY = "api_key"
-        const val KEY_CAPTURE = "capture_enabled"
-        const val KEY_IMAGES = "capture_images"
-        const val KEY_DEVICE_ID = "device_id"
-        const val KEY_ROOM_MODE = "room_filter_mode"
-        const val KEY_UPLOAD = "upload_enabled"
-        const val KEY_ROOMS = "selected_rooms"
+    companion object {
+        const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
+        private const val KEY_COMPLAINT = "complaint_enabled"
+        private const val KEY_GEMINI_KEY = "gemini_key"
+        private const val KEY_GEMINI_MODEL = "gemini_model"
+        private const val KEY_COMPLAINT_STATUS = "complaint_status"
+        private const val KEY_SERVER_URL = "server_url"
+        private const val KEY_API_KEY = "api_key"
+        private const val KEY_CAPTURE = "capture_enabled"
+        private const val KEY_IMAGES = "capture_images"
+        private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_ROOM_MODE = "room_filter_mode"
+        private const val KEY_UPLOAD = "upload_enabled"
+        private const val KEY_ROOMS = "selected_rooms"
     }
 }

@@ -40,6 +40,11 @@ class MainActivity : Activity() {
     private val connectionStatus by lazy { findViewById<TextView>(R.id.connectionStatus) }
     private val queueStatus by lazy { findViewById<TextView>(R.id.queueStatus) }
     private val recentMessages by lazy { findViewById<TextView>(R.id.recentMessages) }
+    private val complaintEnabled by lazy { findViewById<Switch>(R.id.complaintEnabled) }
+    private val complaintFields by lazy { findViewById<View>(R.id.complaintFields) }
+    private val geminiKey by lazy { findViewById<EditText>(R.id.geminiKey) }
+    private val geminiModel by lazy { findViewById<EditText>(R.id.geminiModel) }
+    private val complaintStatus by lazy { findViewById<TextView>(R.id.complaintStatus) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,6 +63,27 @@ class MainActivity : Activity() {
         uploadEnabled.setOnCheckedChangeListener { _, checked -> onUploadToggled(checked) }
 
         findViewById<Button>(R.id.openRooms).setOnClickListener { startActivity(Intent(this, RoomsActivity::class.java)) }
+        findViewById<Button>(R.id.openComplaints).setOnClickListener { startActivity(Intent(this, ComplaintsActivity::class.java)) }
+
+        geminiKey.setText(settings.geminiKey)
+        geminiModel.setText(settings.geminiModel)
+        complaintEnabled.isChecked = settings.complaintEnabled
+        complaintFields.visibility = if (settings.complaintEnabled) View.VISIBLE else View.GONE
+        complaintEnabled.setOnCheckedChangeListener { _, checked ->
+            settings.complaintEnabled = checked
+            complaintFields.visibility = if (checked) View.VISIBLE else View.GONE
+            if (checked && settings.shouldClassify) ComplaintWorker.enqueue(this)
+            refresh()
+        }
+        findViewById<Button>(R.id.saveComplaint).setOnClickListener { saveComplaintSettings(); classifyNow() }
+        findViewById<Button>(R.id.classifyNow).setOnClickListener { saveComplaintSettings(); classifyNow() }
+        findViewById<Button>(R.id.retryFailed).setOnClickListener {
+            scope.launch {
+                val n = withContext(Dispatchers.IO) { MessageStore.get(this@MainActivity).resetFailedClassifications() }
+                Toast.makeText(this@MainActivity, "실패 ${n}건을 다시 분류합니다.", Toast.LENGTH_SHORT).show()
+                classifyNow()
+            }
+        }
         findViewById<Button>(R.id.openListenerSettings).setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
@@ -110,6 +136,23 @@ class MainActivity : Activity() {
             UploadWorker.enqueue(this@MainActivity)
             refresh()
         }
+    }
+
+    private fun saveComplaintSettings() {
+        settings.geminiKey = geminiKey.text.toString()
+        settings.geminiModel = geminiModel.text.toString()
+        geminiModel.setText(settings.geminiModel)
+    }
+
+    private fun classifyNow() {
+        if (!settings.shouldClassify) {
+            complaintStatus.text = "Gemini API 키를 입력하고 '민원 자동 분류 사용'을 켜십시오."
+            return
+        }
+        settings.complaintStatus = ""
+        ComplaintWorker.enqueue(this)
+        Toast.makeText(this, "민원 분류를 시작했습니다. 잠시 후 '민원 목록'에서 확인하십시오.", Toast.LENGTH_SHORT).show()
+        refresh()
     }
 
     private fun testConnection() {
@@ -177,6 +220,10 @@ class MainActivity : Activity() {
                 val store = MessageStore.get(this@MainActivity)
                 Triple(store.counts(), store.roomSummaries().size, store.recent(30))
             }
+            val cc = withContext(Dispatchers.IO) { MessageStore.get(this@MainActivity).complaintCounts() }
+            complaintStatus.text = "대상 ${cc.eligible}건 · 분류 ${cc.checked - cc.failed} · 민원 ${cc.complaints} · 대기 ${cc.waiting} · 실패 ${cc.failed}" +
+                (settings.complaintStatus.takeIf { it.isNotEmpty() }?.let { "\n최근 실행: $it" } ?: "")
+            findViewById<Button>(R.id.openComplaints).text = getString(R.string.open_complaints) + if (cc.complaints > 0) " (${cc.complaints})" else ""
             storageSummary.text = "휴대폰 저장: 메시지 ${counts.total}건 · 대화방 ${rooms}개 · 사진 ${counts.photos}장"
             queueStatus.text = "서버 전송: 대기 ${counts.pending} · 완료 ${counts.sent} · 실패 ${counts.failed} · 미전송(휴대폰만) ${counts.local}\n단말 ID: ${settings.deviceId}"
             val fmt = SimpleDateFormat("MM-dd HH:mm:ss", Locale.KOREA)

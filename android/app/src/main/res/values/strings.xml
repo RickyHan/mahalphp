@@ -19,6 +19,17 @@
     <string name="upload_enabled">서버 전송 사용</string>
     <string name="export_csv">CSV 내보내기</string>
     <string name="delete_all">전체 삭제</string>
+    <string name="open_complaints">🚨 민원 목록 보기</string>
+    <string name="complaints_title">민원 목록</string>
+    <string name="complaints_empty">아직 민원으로 분류된 메시지가 없습니다.</string>
+    <string name="complaints_disabled">민원 분류가 꺼져 있습니다.\n메인 화면의 \'5. 민원 자동 분류\'에서 Gemini API 키를 입력하고 켜십시오.</string>
+    <string name="section_complaint">5. 민원 자동 분류 (Gemini)</string>
+    <string name="complaint_hint">5글자 이상 텍스트 메시지를 Google Gemini 로 보내 입주민 민원인지 판정하고, 민원만 \'민원 목록\'에 모읍니다. 메시지 내용이 Google 로 전송되며 Gemini API 사용료가 발생할 수 있습니다.</string>
+    <string name="complaint_enabled">민원 자동 분류 사용</string>
+    <string name="hint_gemini_key">Gemini API 키 (Google AI Studio 에서 발급)</string>
+    <string name="hint_gemini_model">모델 (기본: gemini-3.5-flash-lite)</string>
+    <string name="classify_now">지금 분류</string>
+    <string name="retry_failed">실패 재시도</string>
     <string name="open_diagnostics">알림 구조 진단 (방 이름이 이상할 때)</string>
     <string name="diagnostics_title">알림 구조 진단</string>
     <string name="diagnostics_share">이 내용 보내기 (카톡·메일 등)</string>

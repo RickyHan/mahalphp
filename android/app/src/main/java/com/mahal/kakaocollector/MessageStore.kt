@@ -2,6 +2,7 @@ package com.mahal.kakaocollector
 
 import android.content.ContentValues
 import android.content.Context
+import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import java.io.File
@@ -12,7 +13,7 @@ import java.security.MessageDigest
  * 서버 전송을 켠 경우에는 전송 대기열 역할도 겸한다(status: local → pending → sent/failed).
  */
 class MessageStore private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 4) {
+    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 5) {
 
     data class Row(
         val id: Long,
@@ -41,6 +42,13 @@ class MessageStore private constructor(context: Context) :
         val lastPostedAt: Long,
     )
 
+    /** 민원으로 분류된 메시지 */
+    data class Complaint(val row: Row, val category: String, val summary: String, val confidence: Double, val checkedAt: Long)
+
+    data class ComplaintCounts(val eligible: Int, val checked: Int, val complaints: Int, val failed: Int) {
+        val waiting get() = eligible - checked
+    }
+
     data class SeenRoom(val room: String, val isGroup: Boolean, val lastSeen: Long, val notifications: Int)
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -66,6 +74,7 @@ class MessageStore private constructor(context: Context) :
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_queue_room ON queue(room, id)")
         createSeenRooms(db)
         createNotificationLog(db)
+        createComplaintCheck(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -81,6 +90,102 @@ class MessageStore private constructor(context: Context) :
         }
         if (oldVersion < 4) {
             createNotificationLog(db)
+        }
+        if (oldVersion < 5) {
+            createComplaintCheck(db)
+        }
+    }
+
+    /** Gemini 민원 분류 결과 (메시지 1건당 1행). verdict: 1=민원, 0=민원 아님, -1=분류 실패(재시도 대상) */
+    private fun createComplaintCheck(db: SQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS complaint_check (
+                message_id INTEGER PRIMARY KEY REFERENCES queue(id) ON DELETE CASCADE,
+                verdict INTEGER NOT NULL,
+                category TEXT NOT NULL DEFAULT '',
+                summary TEXT NOT NULL DEFAULT '',
+                confidence REAL NOT NULL DEFAULT 0,
+                model TEXT NOT NULL DEFAULT '',
+                checked_at INTEGER NOT NULL
+            )"""
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_complaint_verdict ON complaint_check(verdict, message_id)")
+    }
+
+    // ---- 민원 분류 ---------------------------------------------------------------------------
+
+    /** 아직 분류하지 않은 대상 메시지 (오래된 순) */
+    fun unclassified(limit: Int): List<Complaints.Item> = readableDatabase.rawQuery(
+        "SELECT q.id, q.room, q.sender, q.text FROM queue q LEFT JOIN complaint_check c ON c.message_id = q.id " +
+            "WHERE c.message_id IS NULL AND ${Complaints.eligibleSql("q.")} " +
+            "ORDER BY q.id LIMIT $limit",
+        null
+    ).use { c -> buildList { while (c.moveToNext()) add(Complaints.Item(c.getLong(0), c.getString(1), c.getString(2), c.getString(3))) } }
+
+    fun saveVerdicts(verdicts: List<Complaints.Verdict>, model: String, now: Long = System.currentTimeMillis()) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            for (v in verdicts) {
+                db.execSQL(
+                    "INSERT OR REPLACE INTO complaint_check (message_id, verdict, category, summary, confidence, model, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    arrayOf(v.id, if (v.isComplaint) 1 else 0, v.category, v.summary, v.confidence, model, now)
+                )
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /** 응답에 결과가 빠진 메시지: 실패로 기록 (재시도 버튼으로 다시 분류) */
+    fun markClassifyFailed(ids: Collection<Long>, reason: String, now: Long = System.currentTimeMillis()) {
+        val db = writableDatabase
+        ids.forEach { id ->
+            db.execSQL(
+                "INSERT OR REPLACE INTO complaint_check (message_id, verdict, summary, checked_at) VALUES (?, -1, ?, ?)",
+                arrayOf(id, reason.take(200), now)
+            )
+        }
+    }
+
+    fun resetFailedClassifications(): Int =
+        writableDatabase.compileStatement("DELETE FROM complaint_check WHERE verdict = -1").executeUpdateDelete()
+
+    fun complaintCounts(): ComplaintCounts = readableDatabase.rawQuery(
+        "SELECT (SELECT COUNT(*) FROM queue WHERE ${Complaints.eligibleSql()}), " +
+            "(SELECT COUNT(*) FROM complaint_check), " +
+            "(SELECT COUNT(*) FROM complaint_check WHERE verdict = 1), " +
+            "(SELECT COUNT(*) FROM complaint_check WHERE verdict = -1)",
+        null
+    ).use { c ->
+        c.moveToFirst()
+        ComplaintCounts(c.getInt(0), c.getInt(1), c.getInt(2), c.getInt(3))
+    }
+
+    /** 민원 목록 (최신순). category 가 있으면 해당 분류만 */
+    fun complaints(category: String? = null, limit: Int = 500): List<Complaint> {
+        val args = mutableListOf<String>()
+        val where = StringBuilder("c.verdict = 1")
+        category?.let { where.append(" AND c.category = ?"); args += it }
+        return readableDatabase.rawQuery(
+            "SELECT q.*, c.category AS c_category, c.summary AS c_summary, c.confidence AS c_confidence, c.checked_at AS c_checked " +
+                "FROM complaint_check c JOIN queue q ON q.id = c.message_id WHERE $where ORDER BY q.id DESC LIMIT $limit",
+            args.toTypedArray()
+        ).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    add(
+                        Complaint(
+                            row = rowFrom(c),
+                            category = c.getString(c.getColumnIndexOrThrow("c_category")),
+                            summary = c.getString(c.getColumnIndexOrThrow("c_summary")),
+                            confidence = c.getDouble(c.getColumnIndexOrThrow("c_confidence")),
+                            checkedAt = c.getLong(c.getColumnIndexOrThrow("c_checked")),
+                        )
+                    )
+                }
+            }
         }
     }
 
@@ -222,6 +327,7 @@ class MessageStore private constructor(context: Context) :
     /** 수집 데이터 전체 삭제 (사진 파일 포함). 방 선택 목록(seen_rooms)은 유지 */
     fun deleteAll() {
         query("image_path IS NOT NULL", null, "id ASC", Int.MAX_VALUE).forEach { r -> r.imagePath?.let { File(it).delete() } }
+        writableDatabase.execSQL("DELETE FROM complaint_check")
         writableDatabase.execSQL("DELETE FROM queue")
     }
 
@@ -234,26 +340,22 @@ class MessageStore private constructor(context: Context) :
 
     private fun query(where: String?, args: Array<String>?, order: String, limit: Int): List<Row> =
         readableDatabase.query("queue", null, where, args, null, null, order, limit.toString()).use { c ->
-            buildList {
-                while (c.moveToNext()) {
-                    add(
-                        Row(
-                            id = c.getLong(c.getColumnIndexOrThrow("id")),
-                            room = c.getString(c.getColumnIndexOrThrow("room")),
-                            sender = c.getString(c.getColumnIndexOrThrow("sender")),
-                            text = c.getString(c.getColumnIndexOrThrow("text")),
-                            type = c.getString(c.getColumnIndexOrThrow("type")),
-                            isGroup = c.getInt(c.getColumnIndexOrThrow("is_group")) == 1,
-                            postedAt = c.getLong(c.getColumnIndexOrThrow("posted_at")),
-                            notificationKey = c.getString(c.getColumnIndexOrThrow("notification_key")),
-                            imagePath = c.getString(c.getColumnIndexOrThrow("image_path")),
-                            status = c.getString(c.getColumnIndexOrThrow("status")),
-                            lastError = c.getString(c.getColumnIndexOrThrow("last_error")),
-                        )
-                    )
-                }
-            }
+            buildList { while (c.moveToNext()) add(rowFrom(c)) }
         }
+
+    private fun rowFrom(c: Cursor) = Row(
+        id = c.getLong(c.getColumnIndexOrThrow("id")),
+        room = c.getString(c.getColumnIndexOrThrow("room")),
+        sender = c.getString(c.getColumnIndexOrThrow("sender")),
+        text = c.getString(c.getColumnIndexOrThrow("text")),
+        type = c.getString(c.getColumnIndexOrThrow("type")),
+        isGroup = c.getInt(c.getColumnIndexOrThrow("is_group")) == 1,
+        postedAt = c.getLong(c.getColumnIndexOrThrow("posted_at")),
+        notificationKey = c.getString(c.getColumnIndexOrThrow("notification_key")),
+        imagePath = c.getString(c.getColumnIndexOrThrow("image_path")),
+        status = c.getString(c.getColumnIndexOrThrow("status")),
+        lastError = c.getString(c.getColumnIndexOrThrow("last_error")),
+    )
 
     companion object {
         const val PENDING = "pending"

@@ -48,6 +48,7 @@ class KakaoNotificationListener : NotificationListenerService() {
                 if (store.insert(message, image, upload = settings.shouldUpload)) queued++ else image?.let { File(it).delete() }
             }
             if (queued > 0 && settings.shouldUpload) UploadWorker.enqueue(this)
+            if (queued > 0 && settings.shouldClassify) ComplaintWorker.enqueue(this)
         } catch (e: Exception) {
             Log.w(TAG, "알림 처리 실패", e)
         }
