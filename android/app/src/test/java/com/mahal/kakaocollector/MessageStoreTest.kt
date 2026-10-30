@@ -124,4 +124,46 @@ class MessageStoreTest {
         assertEquals(0, store.counts().total)
         assertEquals(listOf("방"), store.seenRooms().map { it.room }) // 방 선택 목록은 유지
     }
+
+    @Test
+    fun memberTrackingFirstSeenAndRenameWithKey() {
+        store.recordSender("골프방", "user-1", "버디왕", 1_000)
+        store.recordSender("골프방", "user-1", "버디왕", 2_000)
+        store.recordSender("골프방", "user-1", "⛳버디킹⛳", 3_000)   // 같은 고유 키, 다른 대화명 → 변경
+        store.recordSender("골프방", "user-2", "이글", 4_000)
+
+        val events = store.memberEvents("골프방")
+        assertEquals(
+            listOf(MemberEvents.Type.FIRST_SEEN, MemberEvents.Type.RENAME, MemberEvents.Type.FIRST_SEEN),
+            events.map { it.type }
+        )
+        val rename = events.single { it.type == MemberEvents.Type.RENAME }
+        assertEquals("버디왕", rename.oldName)
+        assertEquals("⛳버디킹⛳", rename.member)
+
+        val members = store.members("골프방")
+        assertEquals(listOf("이글", "⛳버디킹⛳"), members.map { it.name })
+        assertEquals(3, members.single { it.name == "⛳버디킹⛳" }.messageCount)
+        assertTrue(members.all { it.keyed })
+    }
+
+    @Test
+    fun withoutKeyNewNameIsNewMemberNotRename() {
+        store.recordSender("방", null, "홍길동", 1_000)
+        store.recordSender("방", null, "길동이", 2_000)
+        assertEquals(listOf(MemberEvents.Type.FIRST_SEEN, MemberEvents.Type.FIRST_SEEN), store.memberEvents("방").map { it.type })
+        assertFalse(store.members("방").any { it.keyed })
+    }
+
+    @Test
+    fun systemEventsFilterAndDeleteAll() {
+        store.addEvent(MemberEvents.Type.JOIN, "골프방", "신입", null, null, 5_000, "신입님이 들어왔습니다.")
+        store.addEvent(MemberEvents.Type.LEAVE, "골프방", "탈퇴자", null, null, 6_000, "탈퇴자님이 나갔습니다.")
+        store.addEvent(MemberEvents.Type.JOIN, "다른방", "누군가", null, null, 7_000, null)
+        assertEquals(listOf("탈퇴자", "신입"), store.memberEvents("골프방").map { it.member })
+        assertEquals(listOf("누군가", "신입"), store.memberEvents(type = MemberEvents.Type.JOIN).map { it.member })
+        assertEquals(listOf("다른방", "골프방"), store.memberRooms())
+        store.deleteAll()
+        assertTrue(store.memberEvents().isEmpty())
+    }
 }

@@ -13,7 +13,7 @@ import java.security.MessageDigest
  * 서버 전송을 켠 경우에는 전송 대기열 역할도 겸한다(status: local → pending → sent/failed).
  */
 class MessageStore private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 5) {
+    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 6) {
 
     data class Row(
         val id: Long,
@@ -49,6 +49,20 @@ class MessageStore private constructor(context: Context) :
         val waiting get() = eligible - checked
     }
 
+    /** 방별 참여자 (발언 기준). keyed=true 면 카카오톡 고유 키로 식별되어 대화명 변경 추적 가능 */
+    data class Member(val room: String, val name: String, val keyed: Boolean, val firstSeen: Long, val lastSeen: Long, val messageCount: Int)
+
+    data class MemberEvent(
+        val id: Long,
+        val room: String,
+        val type: MemberEvents.Type,
+        val member: String,
+        val oldName: String?,
+        val actor: String?,
+        val at: Long,
+        val text: String?,
+    )
+
     data class SeenRoom(val room: String, val isGroup: Boolean, val lastSeen: Long, val notifications: Int)
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -75,6 +89,7 @@ class MessageStore private constructor(context: Context) :
         createSeenRooms(db)
         createNotificationLog(db)
         createComplaintCheck(db)
+        createMembers(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -94,7 +109,115 @@ class MessageStore private constructor(context: Context) :
         if (oldVersion < 5) {
             createComplaintCheck(db)
         }
+        if (oldVersion < 6) {
+            createMembers(db)
+        }
     }
+
+    /** 참여자(room_members)와 입장·퇴장·대화명 변경 이력(member_events) */
+    private fun createMembers(db: SQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS room_members (
+                room TEXT NOT NULL,
+                member_key TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                keyed INTEGER NOT NULL,
+                first_seen INTEGER NOT NULL,
+                last_seen INTEGER NOT NULL,
+                message_count INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (room, member_key)
+            )"""
+        )
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS member_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room TEXT NOT NULL,
+                type TEXT NOT NULL,
+                member TEXT NOT NULL,
+                old_name TEXT,
+                actor TEXT,
+                at INTEGER NOT NULL,
+                text TEXT
+            )"""
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_member_events_room ON member_events(room, at)")
+    }
+
+    // ---- 참여자·이력 ------------------------------------------------------------------------
+
+    /**
+     * 발언자를 기록한다. 처음 보는 사람이면 '첫 발언', 같은 고유 키인데 이름이 다르면 '대화명 변경' 이력을 남긴다.
+     * 고유 키가 없으면 이름으로 식별하므로 대화명 변경은 감지할 수 없다.
+     */
+    fun recordSender(room: String, senderKey: String?, name: String, at: Long) {
+        val keyed = senderKey != null
+        val key = if (keyed) "k:$senderKey" else "n:$name"
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val previous = db.rawQuery(
+                "SELECT display_name FROM room_members WHERE room = ? AND member_key = ?", arrayOf(room, key)
+            ).use { c -> if (c.moveToFirst()) c.getString(0) else null }
+            when {
+                previous == null -> {
+                    db.execSQL(
+                        "INSERT INTO room_members (room, member_key, display_name, keyed, first_seen, last_seen, message_count) VALUES (?, ?, ?, ?, ?, ?, 1)",
+                        arrayOf(room, key, name, if (keyed) 1 else 0, at, at)
+                    )
+                    addEvent(MemberEvents.Type.FIRST_SEEN, room, name, null, null, at, null)
+                }
+                else -> {
+                    if (previous != name) addEvent(MemberEvents.Type.RENAME, room, name, previous, null, at, null)
+                    db.execSQL(
+                        "UPDATE room_members SET display_name = ?, last_seen = MAX(last_seen, ?), first_seen = MIN(first_seen, ?), " +
+                            "message_count = message_count + 1 WHERE room = ? AND member_key = ?",
+                        arrayOf(name, at, at, room, key)
+                    )
+                }
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun addEvent(type: MemberEvents.Type, room: String, member: String, oldName: String?, actor: String?, at: Long, text: String?) {
+        writableDatabase.execSQL(
+            "INSERT INTO member_events (room, type, member, old_name, actor, at, text) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            arrayOf(room, type.wire, member, oldName, actor, at, text)
+        )
+    }
+
+    /** 이력 (최신순). room·type 이 null 이면 전체 */
+    fun memberEvents(room: String? = null, type: MemberEvents.Type? = null, limit: Int = 500): List<MemberEvent> {
+        val where = mutableListOf<String>()
+        val args = mutableListOf<String>()
+        room?.let { where += "room = ?"; args += it }
+        type?.let { where += "type = ?"; args += it.wire }
+        return readableDatabase.rawQuery(
+            "SELECT id, room, type, member, old_name, actor, at, text FROM member_events" +
+                (if (where.isEmpty()) "" else " WHERE " + where.joinToString(" AND ")) + " ORDER BY at DESC, id DESC LIMIT $limit",
+            args.toTypedArray()
+        ).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    val t = MemberEvents.Type.of(c.getString(2)) ?: continue
+                    add(MemberEvent(c.getLong(0), c.getString(1), t, c.getString(3), c.getString(4), c.getString(5), c.getLong(6), c.getString(7)))
+                }
+            }
+        }
+    }
+
+    /** 방 참여자 (최근 발언순) */
+    fun members(room: String): List<Member> = readableDatabase.rawQuery(
+        "SELECT room, display_name, keyed, first_seen, last_seen, message_count FROM room_members WHERE room = ? ORDER BY last_seen DESC",
+        arrayOf(room)
+    ).use { c -> buildList { while (c.moveToNext()) add(Member(c.getString(0), c.getString(1), c.getInt(2) == 1, c.getLong(3), c.getLong(4), c.getInt(5))) } }
+
+    /** 참여자 기록이 있는 방 목록 */
+    fun memberRooms(): List<String> = readableDatabase.rawQuery(
+        "SELECT room FROM (SELECT room, MAX(at) AS t FROM member_events GROUP BY room) ORDER BY t DESC", null
+    ).use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
 
     /** Gemini 민원 분류 결과 (메시지 1건당 1행). verdict: 1=민원, 0=민원 아님, -1=분류 실패(재시도 대상) */
     private fun createComplaintCheck(db: SQLiteDatabase) {
@@ -328,6 +451,8 @@ class MessageStore private constructor(context: Context) :
     fun deleteAll() {
         query("image_path IS NOT NULL", null, "id ASC", Int.MAX_VALUE).forEach { r -> r.imagePath?.let { File(it).delete() } }
         writableDatabase.execSQL("DELETE FROM complaint_check")
+        writableDatabase.execSQL("DELETE FROM member_events")
+        writableDatabase.execSQL("DELETE FROM room_members")
         writableDatabase.execSQL("DELETE FROM queue")
     }
 

@@ -31,6 +31,7 @@ object NotificationExtractor {
                 timestamp = m.timestamp,
                 dataMimeType = m.dataMimeType,
                 dataUri = m.dataUri?.toString(),
+                senderKey = m.person?.key ?: m.person?.uri,
             )
         }
         return RawNotification(
@@ -72,6 +73,13 @@ object NotificationExtractor {
             is Bundle -> "Bundle{" + value.keySet().sorted().joinToString { k -> "$k=${describe(value.get(k))}" } + "}"
             is Array<*> -> "[" + value.joinToString { describe(it) } + "]"
             else -> value.javaClass.simpleName + ":" + value.toString().take(120)
+        }
+        // 보낸 사람 고유 키 유무 (대화명 변경 감지 가능 여부 확인용)
+        runCatching {
+            NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)?.messages?.forEach { m ->
+                sb.append("  person: name=[").append(m.person?.name).append("] key=[").append(m.person?.key)
+                    .append("] uri=[").append(m.person?.uri).append("]\n")
+            }
         }
         val extras = n.extras
         for (k in extras.keySet().sorted()) {

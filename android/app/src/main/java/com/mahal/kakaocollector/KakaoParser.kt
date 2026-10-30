@@ -29,6 +29,8 @@ data class RawMessage(
     val timestamp: Long,
     val dataMimeType: String? = null,
     val dataUri: String? = null,
+    /** 보낸 사람 고유 키(Person.key/uri). 카카오톡이 넣어 주면 대화명이 바뀌어도 같은 사람으로 식별 가능 */
+    val senderKey: String? = null,
 )
 
 enum class MessageType(val wire: String) { TEXT("text"), PHOTO("photo"), VIDEO("video"), EMOTICON("emoticon"), FILE("file"), OTHER("other") }
@@ -43,6 +45,7 @@ data class KakaoMessage(
     val notificationKey: String,
     /** MessagingStyle 메시지에 첨부된 이미지 URI (있을 때만) */
     val imageUri: String? = null,
+    val senderKey: String? = null,
 )
 
 object KakaoParser {
@@ -92,6 +95,7 @@ object KakaoParser {
                 postedAt = m.timestamp.takeIf { it > 0 } ?: raw.fallbackTime(),
                 notificationKey = raw.key,
                 imageUri = if (hasImageData) m.dataUri else null,
+                senderKey = m.senderKey?.takeIf { it.isNotBlank() },
             )
         }
     }

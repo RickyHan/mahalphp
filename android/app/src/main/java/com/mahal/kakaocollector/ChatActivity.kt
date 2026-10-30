@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
@@ -54,6 +56,17 @@ class ChatActivity : Activity() {
                 loadNewer()
             }
         }
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menu.add(0, MENU_MEMBERS, 0, getString(R.string.members_title)).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId != MENU_MEMBERS) return super.onOptionsItemSelected(item)
+        startActivity(Intent(this, MembersActivity::class.java).putExtra(MembersActivity.EXTRA_ROOM, room))
+        return true
     }
 
     override fun onDestroy() {
@@ -189,5 +202,6 @@ class ChatActivity : Activity() {
         private const val PAGE = 200
         private const val POLL_MS = 4000L
         private const val THUMB_PX = 600
+        private const val MENU_MEMBERS = 1
     }
 }

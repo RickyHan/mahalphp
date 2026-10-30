@@ -19,6 +19,11 @@
     <string name="upload_enabled">서버 전송 사용</string>
     <string name="export_csv">CSV 내보내기</string>
     <string name="delete_all">전체 삭제</string>
+    <string name="open_members">👥 입장·퇴장·대화명 이력</string>
+    <string name="members_title">참여자 이력</string>
+    <string name="members_mode_events">이력</string>
+    <string name="members_mode_members">참여자</string>
+    <string name="members_empty">기록된 이력이 없습니다.\n단톡방·오픈채팅에서 메시지를 받으면 첫 발언자가 기록되고, 입장·퇴장 안내 메시지가 알림으로 오면 함께 기록됩니다.</string>
     <string name="open_complaints">🚨 민원 목록 보기</string>
     <string name="complaints_title">민원 목록</string>
     <string name="complaints_empty">아직 민원으로 분류된 메시지가 없습니다.</string>

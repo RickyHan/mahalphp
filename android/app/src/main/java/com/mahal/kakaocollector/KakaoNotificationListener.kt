@@ -44,6 +44,7 @@ class KakaoNotificationListener : NotificationListenerService() {
                 if (store.contains(message)) return@forEachIndexed
                 store.recordSeenRoom(message.room, message.isGroupChat, message.postedAt)
                 if (!settings.allowsRoom(message.room)) return@forEachIndexed
+                trackMembers(store, message)
                 val image = if (settings.captureImages && message.type == MessageType.PHOTO) {
                     NotificationExtractor.saveImage(this, sbn, message, isLatest = index == messages.lastIndex)
                 } else null
@@ -53,6 +54,17 @@ class KakaoNotificationListener : NotificationListenerService() {
             if (queued > 0 && settings.shouldClassify) ComplaintWorker.enqueue(this)
         } catch (e: Exception) {
             Log.w(TAG, "알림 처리 실패", e)
+        }
+    }
+
+    /** 안내 메시지면 입장·퇴장 등 이력으로, 일반 메시지면 발언자(첫 발언·대화명 변경)로 기록 */
+    private fun trackMembers(store: MessageStore, m: KakaoMessage) {
+        if (!m.isGroupChat || m.sender == KakaoParser.SELF_SENDER) return
+        val detected = MemberEvents.detect(m.text)
+        if (detected.isNotEmpty()) {
+            detected.forEach { store.addEvent(it.type, m.room, it.member, null, it.actor, m.postedAt, m.text) }
+        } else {
+            store.recordSender(m.room, m.senderKey, m.sender, m.postedAt)
         }
     }
 

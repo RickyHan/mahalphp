@@ -25,6 +25,13 @@
             android:text="@string/open_complaints"
             android:textSize="16sp" />
 
+        <Button
+            android:id="@+id/openMembers"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="@string/open_members"
+            android:textSize="16sp" />
+
         <TextView
             android:id="@+id/storageSummary"
             android:layout_width="match_parent"
