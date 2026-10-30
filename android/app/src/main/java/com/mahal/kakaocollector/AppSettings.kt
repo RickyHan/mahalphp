@@ -22,6 +22,11 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_IMAGES, true)
         set(value) = prefs.edit().putBoolean(KEY_IMAGES, value).apply()
 
+    /** 서버로도 전송할지 (끄면 휴대폰에만 저장) */
+    var uploadEnabled: Boolean
+        get() = prefs.getBoolean(KEY_UPLOAD, false)
+        set(value) = prefs.edit().putBoolean(KEY_UPLOAD, value).apply()
+
     var roomFilterMode: RoomFilterMode
         get() = runCatching { RoomFilterMode.valueOf(prefs.getString(KEY_ROOM_MODE, null) ?: "") }.getOrDefault(RoomFilterMode.ALL)
         set(value) = prefs.edit().putString(KEY_ROOM_MODE, value.name).apply()
@@ -41,6 +46,10 @@ class AppSettings(context: Context) {
     val isConfigured: Boolean
         get() = serverUrl.startsWith("http") && apiKey.isNotEmpty()
 
+    /** 실제로 서버 전송을 할 상태인지 */
+    val shouldUpload: Boolean
+        get() = uploadEnabled && isConfigured
+
     private companion object {
         const val KEY_SERVER_URL = "server_url"
         const val KEY_API_KEY = "api_key"
@@ -48,6 +57,7 @@ class AppSettings(context: Context) {
         const val KEY_IMAGES = "capture_images"
         const val KEY_DEVICE_ID = "device_id"
         const val KEY_ROOM_MODE = "room_filter_mode"
+        const val KEY_UPLOAD = "upload_enabled"
         const val KEY_ROOMS = "selected_rooms"
     }
 }

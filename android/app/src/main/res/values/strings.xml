@@ -5,12 +5,29 @@
     <string name="section_permission">1. 권한</string>
     <string name="open_listener_settings">알림 접근 권한 설정 열기</string>
     <string name="open_battery_settings">배터리 최적화 예외 설정 열기</string>
-    <string name="section_server">2. 수집 서버</string>
+    <string name="section_server">3. 서버로도 전송 (선택)</string>
     <string name="hint_server_url">서버 주소 (예: http://192.168.0.10:8000)</string>
     <string name="hint_api_key">API 키 (server/.env 의 API_KEY)</string>
     <string name="capture_enabled">수집 사용</string>
     <string name="capture_images">사진 미리보기 저장</string>
     <string name="save">저장</string>
+    <string name="open_rooms">📖 수집한 대화 보기</string>
+    <string name="section_capture">2. 수집 설정</string>
+    <string name="section_data">4. 데이터</string>
+    <string name="section_recent">최근 수집</string>
+    <string name="server_optional_hint">메시지와 사진은 이 휴대폰에 저장되며 앱에서 바로 볼 수 있습니다. PC 관리자 웹이나 DB 서버에도 모으려면 켜십시오.</string>
+    <string name="upload_enabled">서버 전송 사용</string>
+    <string name="export_csv">CSV 내보내기</string>
+    <string name="delete_all">전체 삭제</string>
+    <string name="rooms_title">수집한 대화</string>
+    <string name="rooms_count">대화방 %1$d개</string>
+    <string name="rooms_empty">아직 수집된 대화가 없습니다.
+알림 접근 권한을 켠 뒤 카톡을 받으면 여기에 표시됩니다.</string>
+    <string name="search_hint">메시지 내용·보낸 사람 검색</string>
+    <string name="search_count">검색 결과 %1$d건 (최신순)</string>
+    <string name="search_empty">검색 결과가 없습니다.</string>
+    <string name="load_older">이전 메시지 더 보기</string>
+    <string name="photo_desc">사진</string>
     <string name="room_filter_open">수집할 방 선택</string>
     <string name="room_filter_title">수집할 방 선택</string>
     <string name="room_mode_all">모든 방 수집</string>
@@ -22,8 +39,7 @@
     <string name="room_list_title">방 목록 (%1$d)</string>
     <string name="room_empty">아직 알림으로 확인된 방이 없습니다. 카톡을 받으면 여기에 표시됩니다.</string>
     <string name="test_connection">연결 테스트</string>
-    <string name="section_status">3. 상태</string>
-    <string name="upload_now">지금 전송</string>
+        <string name="upload_now">지금 전송</string>
     <string name="refresh">새로고침</string>
     <string name="restricted_hint">Android 13 이상에서 권한 스위치가 비활성이면: 설정 &gt; 애플리케이션 &gt; 카톡 수집기 &gt; 우측 상단 ⋮ &gt; \'제한된 설정 허용\' 후 다시 시도하십시오.</string>
 </resources>

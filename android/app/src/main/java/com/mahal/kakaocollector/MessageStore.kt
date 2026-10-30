@@ -8,11 +8,11 @@ import java.io.File
 import java.security.MessageDigest
 
 /**
- * 서버 전송 전까지 메시지를 보관하는 로컬 큐(SQLite).
- * 네트워크가 끊겨도 수집은 계속되고, 연결되면 UploadWorker 가 순서대로 전송한다.
+ * 수집한 메시지·사진의 휴대폰 내 저장소(SQLite). 앱 단독으로 조회·검색·내보내기가 가능하다.
+ * 서버 전송을 켠 경우에는 전송 대기열 역할도 겸한다(status: local → pending → sent/failed).
  */
 class MessageStore private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 2) {
+    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 3) {
 
     data class Row(
         val id: Long,
@@ -28,7 +28,18 @@ class MessageStore private constructor(context: Context) :
         val lastError: String?,
     )
 
-    data class Counts(val pending: Int, val sent: Int, val failed: Int)
+    data class Counts(val total: Int, val photos: Int, val local: Int, val pending: Int, val sent: Int, val failed: Int)
+
+    data class RoomSummary(
+        val room: String,
+        val isGroup: Boolean,
+        val messageCount: Int,
+        val photoCount: Int,
+        val lastSender: String,
+        val lastText: String,
+        val lastType: String,
+        val lastPostedAt: Long,
+    )
 
     data class SeenRoom(val room: String, val isGroup: Boolean, val lastSeen: Long, val notifications: Int)
 
@@ -52,6 +63,7 @@ class MessageStore private constructor(context: Context) :
             )"""
         )
         db.execSQL("CREATE INDEX idx_queue_status ON queue(status, id)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_queue_room ON queue(room, id)")
         createSeenRooms(db)
     }
 
@@ -62,6 +74,9 @@ class MessageStore private constructor(context: Context) :
                 "INSERT OR IGNORE INTO seen_rooms (room, is_group, last_seen, notifications) " +
                     "SELECT room, MAX(is_group), MAX(posted_at), COUNT(*) FROM queue GROUP BY room"
             )
+        }
+        if (oldVersion < 3) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_queue_room ON queue(room, id)")
         }
     }
 
@@ -98,8 +113,8 @@ class MessageStore private constructor(context: Context) :
                 }
             }
 
-    /** 이미 받은 메시지(같은 방·보낸 사람·내용·시각)면 false. */
-    fun insert(message: KakaoMessage, imagePath: String?): Boolean {
+    /** 이미 받은 메시지(같은 방·보낸 사람·내용·시각)면 false. [upload]=false 면 휴대폰에만 저장(local). */
+    fun insert(message: KakaoMessage, imagePath: String?, upload: Boolean = true): Boolean {
         val values = ContentValues().apply {
             put("dedup", dedupKey(message))
             put("room", message.room)
@@ -110,6 +125,7 @@ class MessageStore private constructor(context: Context) :
             put("posted_at", message.postedAt)
             put("notification_key", message.notificationKey)
             put("image_path", imagePath)
+            put("status", if (upload) PENDING else LOCAL)
             put("created_at", System.currentTimeMillis())
         }
         return writableDatabase.insertWithOnConflict("queue", null, values, SQLiteDatabase.CONFLICT_IGNORE) != -1L
@@ -122,32 +138,69 @@ class MessageStore private constructor(context: Context) :
 
     fun recent(limit: Int): List<Row> = query(null, null, "id DESC", limit)
 
-    fun markSent(row: Row) {
-        update(row.id, SENT, null)
-        row.imagePath?.let { File(it).delete() }
-    }
+    // 사진 파일은 전송 후에도 휴대폰에 보관한다(앱 안에서 조회)
+    fun markSent(row: Row) = update(row.id, SENT, null)
 
     fun markRetry(row: Row, error: String) {
         writableDatabase.execSQL("UPDATE queue SET attempts = attempts + 1, last_error = ? WHERE id = ?", arrayOf(error, row.id))
     }
 
-    fun markFailed(row: Row, error: String) {
-        update(row.id, FAILED, error)
-        row.imagePath?.let { File(it).delete() }
-    }
+    fun markFailed(row: Row, error: String) = update(row.id, FAILED, error)
+
+    /** 서버 전송을 켰을 때: 휴대폰에만 있던 메시지도 전송 대기열에 넣는다 */
+    fun queueLocalForUpload(): Int = writableDatabase.compileStatement(
+        "UPDATE queue SET status = '$PENDING' WHERE status = '$LOCAL'"
+    ).executeUpdateDelete()
 
     fun counts(): Counts = readableDatabase.rawQuery(
-        "SELECT SUM(status = '$PENDING'), SUM(status = '$SENT'), SUM(status = '$FAILED') FROM queue", null
+        "SELECT COUNT(*), SUM(image_path IS NOT NULL), SUM(status = '$LOCAL'), SUM(status = '$PENDING'), " +
+            "SUM(status = '$SENT'), SUM(status = '$FAILED') FROM queue",
+        null
     ).use { c ->
         c.moveToFirst()
-        Counts(c.getInt(0), c.getInt(1), c.getInt(2))
+        Counts(c.getInt(0), c.getInt(1), c.getInt(2), c.getInt(3), c.getInt(4), c.getInt(5))
     }
 
-    /** 전송 완료된 행은 최근 [keep] 건만 남긴다(중복 판별용). */
-    fun pruneSent(keep: Int = 2000) {
-        writableDatabase.execSQL(
-            "DELETE FROM queue WHERE status = '$SENT' AND id NOT IN (SELECT id FROM queue WHERE status = '$SENT' ORDER BY id DESC LIMIT $keep)"
-        )
+    // ---- 조회 (앱 내 대화 보기) ------------------------------------------------------------
+
+    /** 대화방 목록: 최근 대화순 */
+    fun roomSummaries(): List<RoomSummary> = readableDatabase.rawQuery(
+        """SELECT r.room, m.is_group, r.cnt, r.photos, m.sender, m.text, m.type, m.posted_at
+           FROM (SELECT room, COUNT(*) AS cnt, SUM(image_path IS NOT NULL) AS photos, MAX(id) AS last_id
+                 FROM queue GROUP BY room) r
+           JOIN queue m ON m.id = r.last_id
+           ORDER BY m.id DESC""",
+        null
+    ).use { c ->
+        buildList {
+            while (c.moveToNext()) {
+                add(RoomSummary(c.getString(0), c.getInt(1) == 1, c.getInt(2), c.getInt(3), c.getString(4), c.getString(5), c.getString(6), c.getLong(7)))
+            }
+        }
+    }
+
+    /** 방의 메시지(오래된 → 최신). beforeId 가 있으면 그보다 이전 것, afterId 가 있으면 그보다 이후 것 */
+    fun roomMessages(room: String, beforeId: Long? = null, afterId: Long? = null, limit: Int = 200): List<Row> {
+        val where = StringBuilder("room = ?")
+        val args = mutableListOf(room)
+        beforeId?.let { where.append(" AND id < ?"); args += it.toString() }
+        afterId?.let { where.append(" AND id > ?"); args += it.toString() }
+        val rows = query(where.toString(), args.toTypedArray(), if (afterId != null) "id ASC" else "id DESC", limit)
+        return if (afterId != null) rows else rows.reversed()
+    }
+
+    /** 내용·보낸 사람 검색 (최신순) */
+    fun search(term: String, limit: Int = 200): List<Row> {
+        val like = "%" + term.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+        return query("text LIKE ? ESCAPE '!' OR sender LIKE ? ESCAPE '!'", arrayOf(like, like), "id DESC", limit)
+    }
+
+    fun allMessages(): List<Row> = query(null, null, "id ASC", Int.MAX_VALUE)
+
+    /** 수집 데이터 전체 삭제 (사진 파일 포함). 방 선택 목록(seen_rooms)은 유지 */
+    fun deleteAll() {
+        query("image_path IS NOT NULL", null, "id ASC", Int.MAX_VALUE).forEach { r -> r.imagePath?.let { File(it).delete() } }
+        writableDatabase.execSQL("DELETE FROM queue")
     }
 
     private fun update(id: Long, status: String, error: String?) {
@@ -184,11 +237,19 @@ class MessageStore private constructor(context: Context) :
         const val PENDING = "pending"
         const val SENT = "sent"
         const val FAILED = "failed"
+        /** 서버 전송 꺼짐: 휴대폰에만 저장 */
+        const val LOCAL = "local"
 
         @Volatile private var instance: MessageStore? = null
 
         fun get(context: Context): MessageStore =
             instance ?: synchronized(this) { instance ?: MessageStore(context).also { instance = it } }
+
+        /** 테스트 전용: 싱글턴을 닫고 비운다 */
+        internal fun resetForTest() = synchronized(this) {
+            instance?.close()
+            instance = null
+        }
 
         fun dedupKey(m: KakaoMessage): String {
             val digest = MessageDigest.getInstance("SHA-256").digest("${m.room}|${m.sender}|${m.text}|${m.postedAt}".toByteArray())

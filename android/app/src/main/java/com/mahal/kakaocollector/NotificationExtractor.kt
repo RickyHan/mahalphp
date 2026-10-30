@@ -50,13 +50,13 @@ object NotificationExtractor {
     }
 
     /**
-     * 사진 메시지의 이미지를 앱 내부 저장소에 JPEG/원본 파일로 저장하고 경로를 반환한다.
+     * 사진 메시지의 이미지를 앱 내부 저장소(files/media)에 JPEG/원본 파일로 영구 저장하고 경로를 반환한다.
      * 1) MessagingStyle 메시지의 content:// URI (카카오톡이 권한을 열어 준 경우에만 읽힘)
      * 2) BigPictureStyle 미리보기 비트맵 (최신 메시지에만 해당)
      * 둘 다 없거나 읽을 수 없으면 null — 이 경우 텍스트("사진을 보냈습니다.")만 저장된다.
      */
     fun saveImage(context: Context, sbn: StatusBarNotification, message: KakaoMessage, isLatest: Boolean): String? {
-        val dir = File(context.filesDir, "pending_media").apply { mkdirs() }
+        val dir = File(context.filesDir, "media").apply { mkdirs() }
         message.imageUri?.let { uri ->
             runCatching {
                 val target = File(dir, "${UUID.randomUUID()}.img")
