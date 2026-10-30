@@ -20,7 +20,7 @@ object NotificationExtractor {
     private const val TAG = "NotificationExtractor"
     private const val EXTRA_PICTURE_ICON = "android.pictureIcon" // Notification.EXTRA_PICTURE_ICON (API 31+)
 
-    fun extract(sbn: StatusBarNotification): RawNotification {
+    fun extract(sbn: StatusBarNotification, shortcutLabel: String? = null): RawNotification {
         val n = sbn.notification
         val extras = n.extras
         val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)
@@ -47,6 +47,7 @@ object NotificationExtractor {
             hasPicture = extras.containsKey(Notification.EXTRA_PICTURE) || extras.containsKey(EXTRA_PICTURE_ICON),
             isGroupSummary = n.flags and Notification.FLAG_GROUP_SUMMARY != 0,
             summaryText = extras.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)?.toString(),
+            shortcutLabel = shortcutLabel,
         )
     }
 
@@ -54,10 +55,13 @@ object NotificationExtractor {
      * 진단용: 알림에 담긴 값을 사람이 읽을 수 있는 텍스트로 정리한다(비트맵 등은 크기만).
      * 카카오톡 버전별 알림 구조(방 이름·보낸 사람이 어느 키에 있는지)를 확인하는 데 쓴다.
      */
-    fun dump(sbn: StatusBarNotification): String {
+    fun dump(sbn: StatusBarNotification, shortcut: String? = null): String {
         val n = sbn.notification
         val sb = StringBuilder()
         sb.append("key=").append(sbn.key).append('\n')
+        sb.append("shortcut=").append(shortcut ?: "(없음)")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) sb.append(" shortcutId=").append(n.shortcutId).append(" channel=").append(n.channelId)
+        sb.append('\n')
         sb.append("category=").append(n.category).append(" flags=0x").append(Integer.toHexString(n.flags))
             .append(" group=").append(n.group).append('\n')
         fun describe(value: Any?): String = when (value) {

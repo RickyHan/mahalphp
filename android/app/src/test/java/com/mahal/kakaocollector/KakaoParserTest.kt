@@ -17,6 +17,7 @@ class KakaoParserTest {
         hasPicture: Boolean = false,
         isGroupSummary: Boolean = false,
         summaryText: String? = null,
+        shortcutLabel: String? = null,
     ) = RawNotification(
         key = "0|com.kakao.talk|2|null|10001",
         postTime = 2_000L,
@@ -30,6 +31,7 @@ class KakaoParserTest {
         hasPicture = hasPicture,
         isGroupSummary = isGroupSummary,
         summaryText = summaryText,
+        shortcutLabel = shortcutLabel,
     )
 
     @Test
@@ -162,5 +164,25 @@ class KakaoParserTest {
             raw(title = "홍길동", conversationTitle = "오픈채팅 개발자모임", subText = "다른값", messages = listOf(RawMessage("hi", "홍길동", 1L)))
         ).single()
         assertEquals("오픈채팅 개발자모임", m.room)
+    }
+
+    // 실제 사례(오픈채팅 "⛳골프는 노터치⛳"): 알림 본문엔 방 이름이 없고 대화 바로가기에만 있음.
+    // 수정 전에는 보낸 사람 대화명이 방 이름이 되었다.
+    @Test
+    fun openChatRoomFromConversationShortcut() {
+        val room = "⛳골프는 노터치⛳"
+        val a = KakaoParser.parse(raw(title = "버디왕", shortcutLabel = room, messages = listOf(RawMessage("내일 라운딩 몇 시죠", "버디왕", 1L)))).single()
+        val b = KakaoParser.parse(raw(title = "이글", shortcutLabel = room, messages = listOf(RawMessage("7시요", "이글", 2L)))).single()
+        assertEquals(room, a.room)
+        assertEquals(room, b.room)
+        assertEquals("버디왕", a.sender)
+        assertTrue(a.isGroupChat && b.isGroupChat)
+    }
+
+    @Test
+    fun oneToOneShortcutEqualsSenderStaysOneToOne() {
+        val m = KakaoParser.parse(raw(title = "이영희", shortcutLabel = "이영희", messages = listOf(RawMessage("안녕", "이영희", 1L)))).single()
+        assertEquals("이영희", m.room)
+        assertEquals(false, m.isGroupChat)
     }
 }

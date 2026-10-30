@@ -15,6 +15,11 @@ data class RawNotification(
     val isGroupSummary: Boolean,
     /** EXTRA_SUMMARY_TEXT. 일부 카카오톡 버전은 단톡방 이름을 여기에 넣는다 */
     val summaryText: String? = null,
+    /**
+     * Android 12+ 대화 바로가기(ShortcutInfo) 이름. 최신 카카오톡은 알림 본문에 방 이름을 넣지 않고
+     * 이 바로가기에만 방 이름(오픈채팅 포함)을 등록하는 경우가 있다. 1:1 대화면 상대방 이름.
+     */
+    val shortcutLabel: String? = null,
 )
 
 /** MessagingStyle 의 메시지 1개. sender 가 null 이면 내가 보낸 메시지다. */
@@ -60,7 +65,10 @@ object KakaoParser {
      * subText/summaryText(알림 상단 작은 글씨)에 들어온다. 없으면 1:1 대화.
      */
     private fun groupRoomName(raw: RawNotification): String? =
-        raw.conversationTitle.clean() ?: raw.subText.clean() ?: raw.summaryText.clean()
+        raw.conversationTitle.clean()
+            ?: raw.shortcutLabel.clean()?.takeIf { it != raw.title.clean() } // 1:1 이면 바로가기 이름 = 상대 이름
+            ?: raw.subText.clean()
+            ?: raw.summaryText.clean()
 
     private fun parseMessagingStyle(raw: RawNotification): List<KakaoMessage> {
         val groupRoom = groupRoomName(raw)
