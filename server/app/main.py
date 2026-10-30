@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import admin, db, media, store, worker
@@ -42,6 +42,12 @@ def _clip(value: str, max_bytes: int) -> str:
 
 def dedup_key(device_id: str, room: str, sender: str, text: str, posted_at_ms: int) -> str:
     return hashlib.sha256(f"{device_id}|{room}|{sender}|{text}|{posted_at_ms}".encode("utf-8")).hexdigest()
+
+
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    """주소만 입력해도 관리자 웹으로"""
+    return RedirectResponse("/admin", status_code=307)
 
 
 @app.get("/api/health")

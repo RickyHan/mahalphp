@@ -183,3 +183,8 @@ def test_photos_and_media_download_with_session(admin, seeded):
 
 def test_media_requires_auth(client, seeded):
     assert client.get(f"/api/media/{seeded['a3_media']}").status_code == 401
+
+
+def test_root_redirects_to_admin(client):
+    res = client.get("/", follow_redirects=False)
+    assert res.status_code == 307 and res.headers["location"] == "/admin"
