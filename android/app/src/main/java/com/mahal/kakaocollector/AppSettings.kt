@@ -22,6 +22,16 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_IMAGES, true)
         set(value) = prefs.edit().putBoolean(KEY_IMAGES, value).apply()
 
+    var roomFilterMode: RoomFilterMode
+        get() = runCatching { RoomFilterMode.valueOf(prefs.getString(KEY_ROOM_MODE, null) ?: "") }.getOrDefault(RoomFilterMode.ALL)
+        set(value) = prefs.edit().putString(KEY_ROOM_MODE, value.name).apply()
+
+    var selectedRooms: Set<String>
+        get() = prefs.getStringSet(KEY_ROOMS, emptySet())?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_ROOMS, value.map(RoomFilter::normalize).toSet()).apply()
+
+    fun allowsRoom(room: String): Boolean = RoomFilter.allows(room, roomFilterMode, selectedRooms)
+
     /** 설치마다 1회 생성되는 단말 식별자 */
     val deviceId: String
         get() = prefs.getString(KEY_DEVICE_ID, null) ?: UUID.randomUUID().toString().also {
@@ -37,5 +47,7 @@ class AppSettings(context: Context) {
         const val KEY_CAPTURE = "capture_enabled"
         const val KEY_IMAGES = "capture_images"
         const val KEY_DEVICE_ID = "device_id"
+        const val KEY_ROOM_MODE = "room_filter_mode"
+        const val KEY_ROOMS = "selected_rooms"
     }
 }

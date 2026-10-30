@@ -35,6 +35,8 @@ class KakaoNotificationListener : NotificationListenerService() {
             var queued = 0
             messages.forEachIndexed { index, message ->
                 if (store.contains(message)) return@forEachIndexed
+                store.recordSeenRoom(message.room, message.isGroupChat, message.postedAt)
+                if (!settings.allowsRoom(message.room)) return@forEachIndexed
                 val image = if (settings.captureImages && message.type == MessageType.PHOTO) {
                     NotificationExtractor.saveImage(this, sbn, message, isLatest = index == messages.lastIndex)
                 } else null

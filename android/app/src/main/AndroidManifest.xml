@@ -22,6 +22,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".RoomFilterActivity"
+            android:exported="false"
+            android:label="@string/room_filter_title" />
+
         <service
             android:name=".KakaoNotificationListener"
             android:exported="true"

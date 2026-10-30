@@ -11,6 +11,16 @@
     <string name="capture_enabled">수집 사용</string>
     <string name="capture_images">사진 미리보기 저장</string>
     <string name="save">저장</string>
+    <string name="room_filter_open">수집할 방 선택</string>
+    <string name="room_filter_title">수집할 방 선택</string>
+    <string name="room_mode_all">모든 방 수집</string>
+    <string name="room_mode_only">선택한 방만 수집</string>
+    <string name="room_mode_except">선택한 방은 제외하고 수집</string>
+    <string name="room_filter_hint">목록에는 카톡 알림이 한 번이라도 온 방이 자동으로 쌓입니다. 아직 알림이 오지 않은 방은 이름을 직접 추가하십시오 (카톡 방 이름과 똑같이). 제외된 방의 대화 내용은 저장되지 않습니다.</string>
+    <string name="room_manual_hint">방 이름 직접 추가</string>
+    <string name="room_add">추가</string>
+    <string name="room_list_title">방 목록 (%1$d)</string>
+    <string name="room_empty">아직 알림으로 확인된 방이 없습니다. 카톡을 받으면 여기에 표시됩니다.</string>
     <string name="test_connection">연결 테스트</string>
     <string name="section_status">3. 상태</string>
     <string name="upload_now">지금 전송</string>

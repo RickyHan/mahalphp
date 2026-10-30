@@ -12,7 +12,7 @@ import java.security.MessageDigest
  * 네트워크가 끊겨도 수집은 계속되고, 연결되면 UploadWorker 가 순서대로 전송한다.
  */
 class MessageStore private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 1) {
+    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 2) {
 
     data class Row(
         val id: Long,
@@ -29,6 +29,8 @@ class MessageStore private constructor(context: Context) :
     )
 
     data class Counts(val pending: Int, val sent: Int, val failed: Int)
+
+    data class SeenRoom(val room: String, val isGroup: Boolean, val lastSeen: Long, val notifications: Int)
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -50,9 +52,51 @@ class MessageStore private constructor(context: Context) :
             )"""
         )
         db.execSQL("CREATE INDEX idx_queue_status ON queue(status, id)")
+        createSeenRooms(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            createSeenRooms(db)
+            db.execSQL(
+                "INSERT OR IGNORE INTO seen_rooms (room, is_group, last_seen, notifications) " +
+                    "SELECT room, MAX(is_group), MAX(posted_at), COUNT(*) FROM queue GROUP BY room"
+            )
+        }
+    }
+
+    /** 알림으로 들어온 적 있는 방 목록 (수집 제외된 방 포함 — 방 선택 화면용, 내용은 저장하지 않음) */
+    private fun createSeenRooms(db: SQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS seen_rooms (
+                room TEXT PRIMARY KEY,
+                is_group INTEGER NOT NULL,
+                last_seen INTEGER NOT NULL,
+                notifications INTEGER NOT NULL DEFAULT 0
+            )"""
+        )
+    }
+
+    fun recordSeenRoom(room: String, isGroup: Boolean, time: Long) {
+        // UPSERT(ON CONFLICT DO UPDATE)는 SQLite 3.24+(Android 11+) 전용이라 두 문장으로 처리
+        val key = RoomFilter.normalize(room)
+        val group = if (isGroup) 1 else 0
+        writableDatabase.run {
+            execSQL("INSERT OR IGNORE INTO seen_rooms (room, is_group, last_seen, notifications) VALUES (?, ?, ?, 0)", arrayOf(key, group, time))
+            execSQL(
+                "UPDATE seen_rooms SET is_group = MAX(is_group, ?), last_seen = MAX(last_seen, ?), notifications = notifications + 1 WHERE room = ?",
+                arrayOf(group, time, key)
+            )
+        }
+    }
+
+    fun seenRooms(): List<SeenRoom> =
+        readableDatabase.rawQuery("SELECT room, is_group, last_seen, notifications FROM seen_rooms ORDER BY last_seen DESC", null)
+            .use { c ->
+                buildList {
+                    while (c.moveToNext()) add(SeenRoom(c.getString(0), c.getInt(1) == 1, c.getLong(2), c.getInt(3)))
+                }
+            }
 
     /** 이미 받은 메시지(같은 방·보낸 사람·내용·시각)면 false. */
     fun insert(message: KakaoMessage, imagePath: String?): Boolean {

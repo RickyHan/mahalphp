@@ -50,6 +50,9 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.openBatterySettings).setOnClickListener {
             startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         }
+        findViewById<Button>(R.id.openRoomFilter).setOnClickListener {
+            startActivity(Intent(this, RoomFilterActivity::class.java))
+        }
         findViewById<Button>(R.id.save).setOnClickListener { save() }
         findViewById<Button>(R.id.testConnection).setOnClickListener { save(); testConnection() }
         findViewById<Button>(R.id.uploadNow).setOnClickListener {
@@ -94,6 +97,8 @@ class MainActivity : Activity() {
         val granted = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
         permissionStatus.text = if (granted) "✅ 알림 접근 허용됨" else "❌ 알림 접근 권한이 필요합니다. 아래 버튼에서 '카톡 수집기'를 켜십시오."
         if (granted) requestRebindIfNeeded()
+        findViewById<TextView>(R.id.roomFilterStatus).text =
+            "현재: " + RoomFilterActivity.summary(settings.roomFilterMode, settings.selectedRooms.size)
 
         scope.launch {
             val (counts, rows) = withContext(Dispatchers.IO) {
