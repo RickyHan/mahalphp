@@ -35,6 +35,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ComplaintGroupActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ComplaintsActivity"
             android:exported="false" />
 

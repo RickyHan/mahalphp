@@ -226,10 +226,13 @@ class MainActivity : Activity() {
                 val store = MessageStore.get(this@MainActivity)
                 Triple(store.counts(), store.roomSummaries().size, store.recent(30))
             }
-            val cc = withContext(Dispatchers.IO) { MessageStore.get(this@MainActivity).complaintCounts() }
+            val (cc, issues) = withContext(Dispatchers.IO) {
+                val store = MessageStore.get(this@MainActivity)
+                store.complaintCounts() to ComplaintGrouping.group(store.complaints()).size
+            }
             complaintStatus.text = "대상 ${cc.eligible}건 · 분류 ${cc.checked - cc.failed} · 민원 ${cc.complaints} · 대기 ${cc.waiting} · 실패 ${cc.failed}" +
                 (settings.complaintStatus.takeIf { it.isNotEmpty() }?.let { "\n최근 실행: $it" } ?: "")
-            findViewById<Button>(R.id.openComplaints).text = getString(R.string.open_complaints) + if (cc.complaints > 0) " (${cc.complaints})" else ""
+            findViewById<Button>(R.id.openComplaints).text = getString(R.string.open_complaints) + if (issues > 0) " (${issues})" else ""
             storageSummary.text = "휴대폰 저장: 메시지 ${counts.total}건 · 대화방 ${rooms}개 · 사진 ${counts.photos}장"
             queueStatus.text = "서버 전송: 대기 ${counts.pending} · 완료 ${counts.sent} · 실패 ${counts.failed} · 미전송(휴대폰만) ${counts.local}\n단말 ID: ${settings.deviceId}"
             val fmt = SimpleDateFormat("MM-dd HH:mm:ss", Locale.KOREA)

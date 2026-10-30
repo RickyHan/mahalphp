@@ -286,11 +286,17 @@ class MessageStore private constructor(context: Context) :
         ComplaintCounts(c.getInt(0), c.getInt(1), c.getInt(2), c.getInt(3))
     }
 
+    /** 지정한 메시지들의 민원 정보 (묶음 상세 화면용) */
+    fun complaintsByIds(ids: LongArray): List<Complaint> =
+        if (ids.isEmpty()) emptyList()
+        else complaints(idIn = ids, limit = ids.size).sortedBy { it.row.postedAt }
+
     /** 민원 목록 (최신순). category 가 있으면 해당 분류만 */
-    fun complaints(category: String? = null, limit: Int = 500): List<Complaint> {
+    fun complaints(category: String? = null, limit: Int = 2000, idIn: LongArray? = null): List<Complaint> {
         val args = mutableListOf<String>()
         val where = StringBuilder("c.verdict = 1")
         category?.let { where.append(" AND c.category = ?"); args += it }
+        idIn?.let { ids -> where.append(" AND q.id IN (${ids.joinToString(",")})") }
         return readableDatabase.rawQuery(
             "SELECT q.*, c.category AS c_category, c.summary AS c_summary, c.confidence AS c_confidence, c.checked_at AS c_checked " +
                 "FROM complaint_check c JOIN queue q ON q.id = c.message_id WHERE $where ORDER BY q.id DESC LIMIT $limit",
