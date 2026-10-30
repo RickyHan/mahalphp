@@ -1,6 +1,6 @@
 package com.mahal.kakaocollector
 
-import android.app.Activity
+import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.view.View
 import android.widget.ArrayAdapter
@@ -15,7 +15,7 @@ import java.util.Date
 import java.util.Locale
 
 /** 수집할 대화방 선택. 목록은 알림으로 들어온 적 있는 방 + 직접 추가한 방. */
-class RoomFilterActivity : Activity() {
+class RoomFilterActivity : AppCompatActivity() {
 
     private lateinit var settings: AppSettings
     private val rooms = mutableListOf<String>()

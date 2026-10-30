@@ -7,7 +7,7 @@
     /admin, /api/admin/*           관리자 웹 (app/admin.py)
 
 POST /api/messages 는 헤더 X-Api-Key 가 .env 의 API_KEY 와 같아야 한다.
-조회 API 는 X-Api-Key 또는 관리자 로그인 세션 중 하나로 접근할 수 있다.
+조회 API(/api/messages, /api/media)는 관리자 로그인 세션으로만 접근한다(단말 API 키로는 읽기 불가).
 """
 
 from __future__ import annotations

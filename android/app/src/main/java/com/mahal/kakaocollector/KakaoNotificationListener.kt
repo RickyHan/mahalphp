@@ -13,6 +13,7 @@ class KakaoNotificationListener : NotificationListenerService() {
     private val worker = Executors.newSingleThreadExecutor()
 
     override fun onListenerConnected() {
+        StatusNotifier.update(this)
         // 권한을 막 켰거나 서비스가 재시작된 경우, 이미 떠 있는 알림도 수집한다(중복은 큐에서 걸러짐)
         runCatching { activeNotifications }.getOrNull()?.forEach(::onNotificationPosted)
     }
@@ -20,6 +21,10 @@ class KakaoNotificationListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName != KakaoParser.KAKAO_PACKAGE) return
         worker.execute { handle(sbn) }
+    }
+
+    override fun onListenerDisconnected() {
+        StatusNotifier.update(this)
     }
 
     override fun onDestroy() {
@@ -51,7 +56,11 @@ class KakaoNotificationListener : NotificationListenerService() {
                 } else null
                 if (store.insert(message, image)) queued++ else image?.let { File(it).delete() }
             }
-            if (queued > 0 && settings.isConfigured) UploadWorker.enqueue(this)
+            if (queued > 0) {
+                settings.lastCapturedAt = System.currentTimeMillis()
+                if (settings.isConfigured) UploadWorker.enqueue(this)
+                StatusNotifier.update(this)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "알림 처리 실패", e)
         }

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 카카오 브라운 기본색 + 노란 포인트 -->
+    <color name="brand">#3C1E1E</color>
+    <color name="brand_container">#F3E9E4</color>
+    <color name="brand_yellow">#FEE500</color>
+    <color name="surface">#F7F6F3</color>
+    <color name="card">#FFFFFF</color>
+    <color name="text_primary">#1D1B1A</color>
+    <color name="text_secondary">#5F5A57</color>
+    <color name="outline">#E2DDD9</color>
+    <!-- 상태 -->
+    <color name="good">#1E8E3E</color>
+    <color name="good_bg">#E6F4EA</color>
+    <color name="warn">#B06000</color>
+    <color name="warn_bg">#FEF3D6</color>
+    <color name="bad">#C5221F</color>
+    <color name="bad_bg">#FCE8E6</color>
+</resources>

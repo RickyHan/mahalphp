@@ -10,9 +10,15 @@ from PIL import Image
 from app import db
 from app.main import get_settings
 
-from .conftest import API_KEY
+from .conftest import ADMIN_PASSWORD, ADMIN_USER, API_KEY
 
 HEADERS = {"X-Api-Key": API_KEY}
+
+
+def _admin(client):
+    res = client.post("/admin/login", data={"username": ADMIN_USER, "password": ADMIN_PASSWORD}, follow_redirects=False)
+    assert res.status_code == 303
+    return client
 
 
 def _message(**overrides):
@@ -58,7 +64,9 @@ def test_text_message_saved_once(client):
     second = client.post("/api/messages", data=data, headers=HEADERS)
     assert second.json() == {**first.json(), "duplicate": True}
 
-    items = client.get("/api/messages", params={"room": "개발팀 단톡방"}, headers=HEADERS).json()["items"]
+    # 단말 API 키로는 조회 불가 (APK 에 키가 있어도 대화가 새지 않게)
+    assert client.get("/api/messages", params={"room": "개발팀 단톡방"}, headers=HEADERS).status_code == 401
+    items = _admin(client).get("/api/messages", params={"room": "개발팀 단톡방"}).json()["items"]
     row = next(i for i in items if i["id"] == first.json()["id"])
     assert row["sender_name"] == "홍길동"
     assert row["message_text"] == "안녕하세요 😀"
@@ -78,7 +86,8 @@ def test_photo_message_with_image(client):
     media_id = res.json()["media_id"]
     assert media_id
 
-    downloaded = client.get(f"/api/media/{media_id}", headers=HEADERS)
+    assert client.get(f"/api/media/{media_id}", headers=HEADERS).status_code == 401
+    downloaded = _admin(client).get(f"/api/media/{media_id}")
     assert downloaded.status_code == 200
     assert downloaded.content == png
     assert downloaded.headers["content-type"] == "image/png"

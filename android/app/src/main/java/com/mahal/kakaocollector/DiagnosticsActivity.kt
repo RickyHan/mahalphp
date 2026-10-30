@@ -1,6 +1,6 @@
 package com.mahal.kakaocollector
 
-import android.app.Activity
+import androidx.appcompat.app.AppCompatActivity
 import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
@@ -18,7 +18,7 @@ import java.util.Date
 import java.util.Locale
 
 /** 최근 카카오톡 알림의 원본 구조와 해석 결과. 방 이름·보낸 사람이 잘못 나올 때 원인 확인용. */
-class DiagnosticsActivity : Activity() {
+class DiagnosticsActivity : AppCompatActivity() {
     private val scope = MainScope()
     private var report = ""
 

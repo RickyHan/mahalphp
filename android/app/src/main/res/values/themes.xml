@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Collector" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">@color/brand_container</item>
+        <item name="colorOnPrimaryContainer">@color/brand</item>
+        <item name="colorSecondaryContainer">@color/brand_container</item>
+        <item name="colorOnSecondaryContainer">@color/brand</item>
+        <item name="colorSurface">@color/card</item>
+        <item name="android:colorBackground">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="colorOutline">@color/outline</item>
+        <item name="android:statusBarColor">@color/surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <!-- 하위 화면: 상단 바 있음 -->
+    <style name="Theme.Collector.WithBar" parent="Theme.Material3.Light">
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">@color/brand_container</item>
+        <item name="colorSurface">@color/card</item>
+        <item name="android:colorBackground">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="android:statusBarColor">@color/brand</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="actionBarStyle">@style/CollectorActionBar</item>
+        <item name="actionBarTheme">@style/CollectorActionBarTheme</item>
+    </style>
+
+    <style name="CollectorActionBar" parent="Widget.Material3.ActionBar.Solid">
+        <item name="background">@color/brand</item>
+        <item name="titleTextStyle">@style/CollectorActionBarTitle</item>
+        <item name="elevation">0dp</item>
+    </style>
+
+    <style name="CollectorActionBarTitle" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:textColor">#FFFFFF</item>
+    </style>
+
+    <style name="CollectorActionBarTheme" parent="ThemeOverlay.Material3.Dark.ActionBar">
+        <item name="colorControlNormal">#FFFFFF</item>
+    </style>
+
+    <style name="Card" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardBackgroundColor">@color/card</item>
+        <item name="strokeColor">@color/outline</item>
+        <item name="cardCornerRadius">16dp</item>
+        <item name="contentPadding">16dp</item>
+        <item name="android:layout_marginBottom">12dp</item>
+    </style>
+
+    <style name="CardTitle">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:layout_marginBottom">8dp</item>
+    </style>
+
+    <style name="Hint">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+</resources>

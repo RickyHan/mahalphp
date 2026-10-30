@@ -1,150 +1,266 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/surface"
     android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:paddingHorizontal="16dp"
+        android:paddingTop="20dp"
+        android:paddingBottom="24dp">
 
-        <Button
-            android:id="@+id/openWeb"
-            android:layout_width="match_parent"
-            android:layout_height="60dp"
-            android:text="@string/open_web"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="4dp"
-            android:paddingBottom="16dp"
-            android:text="@string/app_role"
-            android:textSize="12sp" />
-
-        <TextView style="@android:style/TextAppearance.Material.Subhead" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/section_permission" android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/permissionStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingVertical="8dp" />
-
-        <Button
-            android:id="@+id/openListenerSettings"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/open_listener_settings" />
-
-        <Button
-            android:id="@+id/openBatterySettings"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/open_battery_settings" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingBottom="16dp"
-            android:text="@string/restricted_hint"
-            android:textSize="12sp" />
-
-        <TextView style="@android:style/TextAppearance.Material.Subhead" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/section_server" android:textStyle="bold" />
-
-        <EditText
-            android:id="@+id/serverUrl"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="@string/hint_server_url"
-            android:importantForAutofill="no"
-            android:inputType="textUri" />
-
-        <EditText
-            android:id="@+id/apiKey"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="@string/hint_api_key"
-            android:importantForAutofill="no"
-            android:inputType="textPassword" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <Button android:id="@+id/save" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/save" />
-            <Button android:id="@+id/testConnection" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/test_connection" />
-            <Button android:id="@+id/uploadNow" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/upload_now" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/connectionStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingBottom="16dp" />
-
-        <TextView style="@android:style/TextAppearance.Material.Subhead" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/section_capture" android:textStyle="bold" />
-
-        <Switch
-            android:id="@+id/captureEnabled"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingVertical="8dp"
-            android:text="@string/capture_enabled" />
-
-        <Switch
-            android:id="@+id/captureImages"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingVertical="8dp"
-            android:text="@string/capture_images" />
-
-        <Button
-            android:id="@+id/openRoomFilter"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/room_filter_open" />
-
-        <TextView
-            android:id="@+id/roomFilterStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingBottom="16dp"
-            android:textSize="12sp" />
-
+        <!-- 머리말 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:paddingBottom="16dp">
 
-            <TextView style="@android:style/TextAppearance.Material.Subhead" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/section_status" android:textStyle="bold" />
-            <Button android:id="@+id/refresh" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/refresh" />
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_launcher" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/app_name"
+                    android:textColor="@color/text_primary"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/versionText"
+                    style="@style/Hint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/queueStatus"
+        <!-- 상태 카드: 정상 동작 신호 -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/statusCard"
+            style="@style/Card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingVertical="4dp" />
+            app:strokeWidth="0dp">
 
-        <Button
-            android:id="@+id/openDiagnostics"
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <View
+                        android:id="@+id/statusDot"
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:background="@drawable/status_dot" />
+
+                    <TextView
+                        android:id="@+id/statusTitle"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:layout_weight="1"
+                        android:textColor="@color/text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/statusDetail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="2dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/openWeb"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/open_web" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- 체크리스트 -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Card"
             android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView style="@style/CardTitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/section_checklist" />
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:minHeight="48dp" android:orientation="horizontal">
+                    <TextView android:id="@+id/checkPermission" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:textColor="@color/text_primary" android:textSize="14sp" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/openListenerSettings" style="@style/Widget.Material3.Button.TonalButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_turn_on" />
+                </LinearLayout>
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:minHeight="48dp" android:orientation="horizontal">
+                    <TextView android:id="@+id/checkBattery" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:textColor="@color/text_primary" android:textSize="14sp" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/openBatterySettings" style="@style/Widget.Material3.Button.TonalButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_settings" />
+                </LinearLayout>
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:minHeight="48dp" android:orientation="horizontal">
+                    <TextView android:id="@+id/checkServer" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:textColor="@color/text_primary" android:textSize="14sp" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/testConnection" style="@style/Widget.Material3.Button.TonalButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/test_connection" />
+                </LinearLayout>
+
+                <TextView style="@style/Hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/restricted_hint" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- 서버 연결 -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView style="@style/CardTitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/section_server" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/hint_server_url">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/serverUrl"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:importantForAutofill="no"
+                        android:inputType="textUri" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="@string/hint_api_key"
+                    app:endIconMode="password_toggle">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/apiKey"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:importantForAutofill="no"
+                        android:inputType="textPassword" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/save"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/save" />
+
+                <TextView
+                    android:id="@+id/connectionStatus"
+                    style="@style/Hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- 수집 설정 -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView style="@style/CardTitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/section_capture" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/captureEnabled" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/capture_enabled" />
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/captureImages" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/capture_images" />
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/statusNotification" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/status_notification" />
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:minHeight="48dp" android:orientation="horizontal">
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/room_filter_open" android:textColor="@color/text_primary" android:textSize="14sp" />
+                        <TextView android:id="@+id/roomFilterStatus" style="@style/Hint" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                    </LinearLayout>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/openRoomFilter" style="@style/Widget.Material3.Button.TonalButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_choose" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- 최근 수집 -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+                    <TextView style="@style/CardTitle" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginBottom="0dp" android:layout_weight="1" android:text="@string/section_recent" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/uploadNow" style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/upload_now" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/recentList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/openDiagnostics"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
             android:text="@string/open_diagnostics" />
 
         <TextView
-            android:id="@+id/recentMessages"
-            android:layout_width="match_parent"
+            android:id="@+id/deviceId"
+            style="@style/Hint"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:paddingTop="8dp"
-            android:textIsSelectable="true"
-            android:textSize="12sp" />
+            android:layout_gravity="center_horizontal"
+            android:textIsSelectable="true" />
     </LinearLayout>
 </ScrollView>

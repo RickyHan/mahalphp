@@ -27,16 +27,23 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             if (batch.isEmpty()) break
             for (row in batch) {
                 when (val result = api.upload(row)) {
-                    ApiClient.Result.Ok -> store.markSent(row)
+                    ApiClient.Result.Ok -> {
+                        store.markSent(row)
+                        settings.lastUploadAt = System.currentTimeMillis()
+                        settings.lastUploadError = null
+                    }
                     is ApiClient.Result.Rejected -> store.markFailed(row, result.reason)
                     is ApiClient.Result.Retry -> {
                         store.markRetry(row, result.reason)
+                        settings.lastUploadError = result.reason
+                        StatusNotifier.update(applicationContext)
                         return@withContext Result.retry()
                     }
                 }
             }
         }
         store.pruneSent()
+        StatusNotifier.update(applicationContext)
         // 서버가 방금 올린 메시지를 분류해 '접수 안내'를 정하면 가져가 전송한다
         ReplyWorker.enqueue(applicationContext)
         Result.success()

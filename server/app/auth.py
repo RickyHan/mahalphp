@@ -68,12 +68,11 @@ def require_admin(request: Request, settings: SettingsDep) -> str:
     return user
 
 
-def require_reader(request: Request, settings: SettingsDep, x_api_key: Annotated[str | None, Header()] = None) -> None:
-    """조회 API: 단말 API 키 또는 관리자 세션 중 하나면 허용"""
-    if _has_valid_api_key(settings, x_api_key):
-        return
+def require_reader(request: Request, settings: SettingsDep) -> None:
+    """조회 API: 관리자 로그인 세션만 허용.
+    단말 API 키로는 읽을 수 없다 — 앱(APK)에 키가 들어가도 수집된 대화가 노출되지 않도록."""
     if session_user(settings, request.cookies.get(SESSION_COOKIE)) is None:
-        raise HTTPException(401, "인증이 필요합니다.")
+        raise HTTPException(401, "관리자 로그인이 필요합니다.")
 
 
 # ---- 로그인 시도 제한 (프로세스 메모리 기준, IP 별) ----------------------------------

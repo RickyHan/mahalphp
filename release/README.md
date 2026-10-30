@@ -1,5 +1,12 @@
 # APK 다운로드
 
-- 최신 버전: [kakao-collector.apk](https://github.com/rickyhan/mahalphp/raw/claude/new-creation-dz2guv/release/kakao-collector.apk) (v2.0.0, Android 8.0 이상)
-- v2.0 부터 앱은 **수집 전용**입니다. 대화·민원·통계는 서버의 웹 관리 화면(`/admin`)에서 봅니다.
-- 이전 버전 위에 덮어 설치하면 휴대폰에만 있던 메시지도 서버로 자동 전송됩니다.
+- 최신 버전: [kakao-collector.apk](https://github.com/rickyhan/mahalphp/raw/claude/new-creation-dz2guv/release/kakao-collector.apk) (v2.1.0, Android 8.0 이상)
+- 앱은 **수집 전용**입니다. 대화·민원·통계는 서버의 웹 관리 화면(`/admin`)에서 봅니다.
+- 이전 버전 위에 덮어 설치하면 휴대폰에만 있던 메시지(전송 실패분 포함)도 서버로 자동 전송됩니다.
+- 공개 APK 에는 서버 주소·API 키가 들어 있지 않습니다. 설치 후 앱에서 직접 입력하십시오.
+
+## v2.1.0
+- 상태 신호: 앱 상단 상태 카드(🟢 정상 수집 중 / 🟡 전송 지연 / 🔴 권한·설정 필요)와 알림줄 상시 상태 표시
+- 화면 정리: Material 3 카드형 디자인, 체크리스트(알림 권한·배터리·서버 연결), 최근 수집 목록
+- 서버 주소·API 키 기본값을 빌드 시 `android/secrets.properties`(저장소 제외)로 넣을 수 있음
+- 서버: 단말 API 키로는 대화·사진을 조회할 수 없도록 변경(관리자 로그인 필요)

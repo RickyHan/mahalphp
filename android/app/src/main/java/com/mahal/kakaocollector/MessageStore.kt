@@ -74,8 +74,8 @@ class MessageStore private constructor(context: Context) :
             db.execSQL("DROP TABLE IF EXISTS room_members")
             db.execSQL("DROP TABLE IF EXISTS member_events")
             db.execSQL("ALTER TABLE queue ADD COLUMN sender_key TEXT")
-            // 휴대폰에만 저장돼 있던(local) 메시지도 서버로 올린다
-            db.execSQL("UPDATE queue SET status = '$PENDING' WHERE status = 'local'")
+            // 휴대폰에만 저장돼 있던(local) 메시지와 예전에 전송 실패한 메시지도 서버로 올린다
+            db.execSQL("UPDATE queue SET status = '$PENDING', last_error = NULL WHERE status IN ('local', '$FAILED')")
         }
     }
 

@@ -10,6 +10,14 @@ val keystoreProps = Properties().apply {
     rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 
+// 개인 빌드용 기본 서버 설정: android/secrets.properties (git 에 올리지 않음)
+//   serverUrl=http://...   apiKey=...
+// 파일이 없으면 빈 값 → 앱에서 직접 입력 (공개 APK)
+val secretProps = Properties().apply {
+    rootProject.file("secrets.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+fun secret(name: String): String = secretProps.getProperty(name, "").trim().replace("\"", "").replace("\\", "")
+
 android {
     namespace = "com.mahal.kakaocollector"
     compileSdk = 34
@@ -18,8 +26,10 @@ android {
         applicationId = "com.mahal.kakaocollector"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
-        versionName = "2.0.0"
+        versionCode = 15
+        versionName = "2.1.0"
+        buildConfigField("String", "DEFAULT_SERVER_URL", "\"${secret("serverUrl")}\"")
+        buildConfigField("String", "DEFAULT_API_KEY", "\"${secret("apiKey")}\"")
     }
 
     signingConfigs {
@@ -58,6 +68,8 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
