@@ -46,6 +46,16 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_COMPLAINT_STATUS, "") ?: ""
         set(value) = prefs.edit().putString(KEY_COMPLAINT_STATUS, value).apply()
 
+    /** 민원 접수 시 해당 채팅방에 안내 메시지 자동 전송 */
+    var autoReplyEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_REPLY, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_REPLY, value).apply()
+
+    /** 안내 문구. {분류} {요약} {보낸사람} {방} 치환 */
+    var replyTemplate: String
+        get() = prefs.getString(KEY_REPLY_TEMPLATE, null)?.takeIf { it.isNotBlank() } ?: DEFAULT_REPLY_TEMPLATE
+        set(value) = prefs.edit().putString(KEY_REPLY_TEMPLATE, value.trim()).apply()
+
     val shouldClassify: Boolean
         get() = complaintEnabled && geminiKey.isNotEmpty()
 
@@ -74,6 +84,9 @@ class AppSettings(context: Context) {
 
     companion object {
         const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
+        const val DEFAULT_REPLY_TEMPLATE = "[{분류}] 민원이 접수되었습니다."
+        private const val KEY_AUTO_REPLY = "auto_reply_enabled"
+        private const val KEY_REPLY_TEMPLATE = "reply_template"
         private const val KEY_COMPLAINT = "complaint_enabled"
         private const val KEY_GEMINI_KEY = "gemini_key"
         private const val KEY_GEMINI_MODEL = "gemini_model"

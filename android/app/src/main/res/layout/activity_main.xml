@@ -229,6 +229,27 @@
                 android:importantForAutofill="no"
                 android:inputType="textPassword" />
 
+            <Switch
+                android:id="@+id/autoReplyEnabled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingVertical="8dp"
+                android:text="@string/auto_reply_enabled" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/auto_reply_hint"
+                android:textSize="12sp" />
+
+            <EditText
+                android:id="@+id/replyTemplate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/hint_reply_template"
+                android:importantForAutofill="no"
+                android:inputType="text" />
+
             <EditText
                 android:id="@+id/geminiModel"
                 android:layout_width="match_parent"

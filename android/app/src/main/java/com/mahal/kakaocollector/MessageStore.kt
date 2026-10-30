@@ -13,7 +13,7 @@ import java.security.MessageDigest
  * 서버 전송을 켠 경우에는 전송 대기열 역할도 겸한다(status: local → pending → sent/failed).
  */
 class MessageStore private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 6) {
+    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 7) {
 
     data class Row(
         val id: Long,
@@ -43,7 +43,16 @@ class MessageStore private constructor(context: Context) :
     )
 
     /** 민원으로 분류된 메시지 */
-    data class Complaint(val row: Row, val category: String, val summary: String, val confidence: Double, val checkedAt: Long)
+    data class Complaint(
+        val row: Row,
+        val category: String,
+        val summary: String,
+        val confidence: Double,
+        val checkedAt: Long,
+        /** 접수 안내 답장: 0=없음, 1=보냄, -1=실패, 2=같은 문제로 생략, 3=오래된 메시지라 생략 */
+        val replyStatus: Int = 0,
+        val replyNote: String? = null,
+    )
 
     data class ComplaintCounts(val eligible: Int, val checked: Int, val complaints: Int, val failed: Int) {
         val waiting get() = eligible - checked
@@ -90,6 +99,7 @@ class MessageStore private constructor(context: Context) :
         createNotificationLog(db)
         createComplaintCheck(db)
         createMembers(db)
+        addReplyColumns(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -112,7 +122,32 @@ class MessageStore private constructor(context: Context) :
         if (oldVersion < 6) {
             createMembers(db)
         }
+        if (oldVersion < 7) {
+            addReplyColumns(db)
+        }
     }
+
+    private fun addReplyColumns(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE complaint_check ADD COLUMN reply_status INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE complaint_check ADD COLUMN reply_note TEXT")
+    }
+
+    /** 접수 안내 답장 결과 기록 */
+    fun setReplyStatus(messageId: Long, status: Int, note: String?) {
+        writableDatabase.execSQL("UPDATE complaint_check SET reply_status = ?, reply_note = ? WHERE message_id = ?", arrayOf(status, note, messageId))
+    }
+
+    /**
+     * 새 문제의 첫 민원인지: 같은 방·같은 사람·같은 분류의 이전 민원이 [ComplaintGrouping.WINDOW_MS] 이내에 없으면 true.
+     * (묶음 규칙과 동일 — 연쇄된 민원은 직전 민원과의 간격으로 판단)
+     */
+    fun isNewIssue(messageId: Long): Boolean = readableDatabase.rawQuery(
+        """SELECT COUNT(*) FROM complaint_check c JOIN queue q ON q.id = c.message_id
+           JOIN queue me ON me.id = ? JOIN complaint_check mc ON mc.message_id = me.id
+           WHERE c.verdict = 1 AND q.id != me.id AND q.room = me.room AND q.sender = me.sender AND c.category = mc.category
+             AND q.posted_at <= me.posted_at AND q.posted_at >= me.posted_at - ${ComplaintGrouping.WINDOW_MS}""",
+        arrayOf(messageId.toString())
+    ).use { c -> c.moveToFirst() && c.getInt(0) == 0 }
 
     /** 참여자(room_members)와 입장·퇴장·대화명 변경 이력(member_events) */
     private fun createMembers(db: SQLiteDatabase) {
@@ -240,7 +275,7 @@ class MessageStore private constructor(context: Context) :
     /** 아직 분류하지 않은 대상 메시지 (오래된 순) */
     fun unclassified(limit: Int): List<Complaints.Item> = readableDatabase.rawQuery(
         "SELECT q.id, q.room, q.sender, q.text FROM queue q LEFT JOIN complaint_check c ON c.message_id = q.id " +
-            "WHERE c.message_id IS NULL AND ${Complaints.eligibleSql("q.")} " +
+            "WHERE c.message_id IS NULL AND ${Complaints.eligibleSql("q.")} AND q.sender != '${KakaoParser.SELF_SENDER}' " +
             "ORDER BY q.id LIMIT $limit",
         null
     ).use { c -> buildList { while (c.moveToNext()) add(Complaints.Item(c.getLong(0), c.getString(1), c.getString(2), c.getString(3))) } }
@@ -276,7 +311,7 @@ class MessageStore private constructor(context: Context) :
         writableDatabase.compileStatement("DELETE FROM complaint_check WHERE verdict = -1").executeUpdateDelete()
 
     fun complaintCounts(): ComplaintCounts = readableDatabase.rawQuery(
-        "SELECT (SELECT COUNT(*) FROM queue WHERE ${Complaints.eligibleSql()}), " +
+        "SELECT (SELECT COUNT(*) FROM queue WHERE ${Complaints.eligibleSql()} AND sender != '${KakaoParser.SELF_SENDER}'), " +
             "(SELECT COUNT(*) FROM complaint_check), " +
             "(SELECT COUNT(*) FROM complaint_check WHERE verdict = 1), " +
             "(SELECT COUNT(*) FROM complaint_check WHERE verdict = -1)",
@@ -298,7 +333,8 @@ class MessageStore private constructor(context: Context) :
         category?.let { where.append(" AND c.category = ?"); args += it }
         idIn?.let { ids -> where.append(" AND q.id IN (${ids.joinToString(",")})") }
         return readableDatabase.rawQuery(
-            "SELECT q.*, c.category AS c_category, c.summary AS c_summary, c.confidence AS c_confidence, c.checked_at AS c_checked " +
+            "SELECT q.*, c.category AS c_category, c.summary AS c_summary, c.confidence AS c_confidence, c.checked_at AS c_checked, " +
+                "c.reply_status AS c_reply, c.reply_note AS c_reply_note " +
                 "FROM complaint_check c JOIN queue q ON q.id = c.message_id WHERE $where ORDER BY q.id DESC LIMIT $limit",
             args.toTypedArray()
         ).use { c ->
@@ -311,6 +347,8 @@ class MessageStore private constructor(context: Context) :
                             summary = c.getString(c.getColumnIndexOrThrow("c_summary")),
                             confidence = c.getDouble(c.getColumnIndexOrThrow("c_confidence")),
                             checkedAt = c.getLong(c.getColumnIndexOrThrow("c_checked")),
+                            replyStatus = c.getInt(c.getColumnIndexOrThrow("c_reply")),
+                            replyNote = c.getString(c.getColumnIndexOrThrow("c_reply_note")),
                         )
                     )
                 }

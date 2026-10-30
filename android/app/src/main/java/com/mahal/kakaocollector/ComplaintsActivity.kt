@@ -92,6 +92,13 @@ class ComplaintsActivity : Activity() {
         adapter.notifyDataSetChanged()
     }
 
+    private fun replyLabel(c: MessageStore.Complaint): String = when (c.replyStatus) {
+        1 -> "\n✅ 접수 안내 보냄"
+        -1 -> "\n⚠️ 안내 실패: ${c.replyNote.orEmpty()}"
+        3 -> "\n· 안내 생략 (오래된 메시지)"
+        else -> ""
+    }
+
     private val adapter = object : BaseAdapter() {
         override fun getCount() = items.size
         override fun getItem(position: Int) = items[position]
@@ -109,7 +116,7 @@ class ComplaintsActivity : Activity() {
             // 묶음이면 가장 최근 메시지를 미리 보여 준다
             v.findViewById<TextView>(R.id.original).text = g.latest.row.text
             val period = if (g.count > 1) "${Display.dateTime(g.startAt)} ~ ${Display.time(g.endAt)}" else Display.dateTime(g.startAt)
-            v.findViewById<TextView>(R.id.meta).text = "${g.room} · ${g.sender} · $period"
+            v.findViewById<TextView>(R.id.meta).text = "${g.room} · ${g.sender} · $period" + replyLabel(g.first)
             return v
         }
     }

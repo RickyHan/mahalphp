@@ -25,8 +25,8 @@ android {
         applicationId = "com.mahal.kakaocollector"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10
-        versionName = "1.5.0"
+        versionCode = 11
+        versionName = "1.6.0"
         buildConfigField("String", "DEFAULT_GEMINI_KEY", "\"$defaultGeminiKey\"")
     }
 

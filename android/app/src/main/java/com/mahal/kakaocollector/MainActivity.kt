@@ -73,6 +73,10 @@ class MainActivity : Activity() {
             geminiKey.setText(settings.geminiKey)
         }
         geminiModel.setText(settings.geminiModel)
+        val autoReply = findViewById<Switch>(R.id.autoReplyEnabled)
+        autoReply.isChecked = settings.autoReplyEnabled
+        autoReply.setOnCheckedChangeListener { _, checked -> settings.autoReplyEnabled = checked }
+        findViewById<EditText>(R.id.replyTemplate).setText(settings.replyTemplate)
         complaintEnabled.isChecked = settings.complaintEnabled
         complaintFields.visibility = if (settings.complaintEnabled) View.VISIBLE else View.GONE
         complaintEnabled.setOnCheckedChangeListener { _, checked ->
@@ -145,6 +149,7 @@ class MainActivity : Activity() {
     }
 
     private fun saveComplaintSettings() {
+        settings.replyTemplate = findViewById<EditText>(R.id.replyTemplate).text.toString()
         settings.geminiKey = geminiKey.text.toString()
         settings.geminiModel = geminiModel.text.toString()
         geminiModel.setText(settings.geminiModel)

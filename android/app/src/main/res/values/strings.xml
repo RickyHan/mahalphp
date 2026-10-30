@@ -35,6 +35,9 @@
     <string name="hint_gemini_key_builtin">앱에 내장된 키 사용 중 (바꾸려면 입력)</string>
     <string name="hint_gemini_model">모델 (기본: gemini-3.5-flash-lite)</string>
     <string name="classify_now">지금 분류</string>
+    <string name="auto_reply_enabled">민원 접수 시 채팅방에 안내 메시지 보내기</string>
+    <string name="auto_reply_hint">새 문제의 첫 민원에만, 수신 30분 이내일 때 카톡 \'답장\'으로 보냅니다. {분류} {요약} {보낸사람} {방} 을 넣을 수 있습니다.</string>
+    <string name="hint_reply_template">안내 문구 (기본: [{분류}] 민원이 접수되었습니다.)</string>
     <string name="retry_failed">실패 재시도</string>
     <string name="open_diagnostics">알림 구조 진단 (방 이름이 이상할 때)</string>
     <string name="diagnostics_title">알림 구조 진단</string>

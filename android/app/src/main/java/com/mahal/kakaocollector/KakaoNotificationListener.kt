@@ -45,6 +45,8 @@ class KakaoNotificationListener : NotificationListenerService() {
                 store.recordSeenRoom(message.room, message.isGroupChat, message.postedAt)
                 if (!settings.allowsRoom(message.room)) return@forEachIndexed
                 trackMembers(store, message)
+                // 민원 접수 안내를 보낼 수 있도록 이 방의 '답장' 수단을 기억
+                if (message.sender != KakaoParser.SELF_SENDER) ReplyRegistry.remember(message.room, sbn.notification)
                 val image = if (settings.captureImages && message.type == MessageType.PHOTO) {
                     NotificationExtractor.saveImage(this, sbn, message, isLatest = index == messages.lastIndex)
                 } else null
