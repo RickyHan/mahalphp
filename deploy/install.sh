@@ -10,6 +10,8 @@
 #
 # 환경변수로 바꿀 수 있는 값: APP_USER(기본: sudo 실행한 계정) PORT(8000) APP_DIR(/opt/kakao-collector)
 #   BRANCH, DB_NAME(kakao_collector), DB_PASS·GEMINI_API_KEY·ADMIN_PASSWORD(주면 묻지 않음)
+#   TRUSTED_PROXY: 앞단 nginx 의 IP(예: 192.168.0.26). 주면 실제 접속자 IP·https 여부를 그 프록시 헤더로 인식
+#                  (한 번 주면 서비스 설정에 남아 재실행 시 유지, 해제는 TRUSTED_PROXY=none)
 # =============================================================================
 set -euo pipefail
 
@@ -133,9 +135,16 @@ say 5/7 "테이블 생성"
 
 # ---- 6. 서비스 ---------------------------------------------------------------
 say 6/7 "서비스 등록: $SERVICE (포트 $PORT)"
+UNIT_FILE=/etc/systemd/system/$SERVICE.service
+if [[ -z "${TRUSTED_PROXY:-}" && -f "$UNIT_FILE" ]]; then   # 재실행 시 기존 값 유지
+  TRUSTED_PROXY=$(sed -n 's/.*--forwarded-allow-ips \([^ ]*\).*/\1/p' "$UNIT_FILE")
+fi
+[[ "${TRUSTED_PROXY:-}" == none ]] && TRUSTED_PROXY=""
+[[ -z "${TRUSTED_PROXY:-}" || "$TRUSTED_PROXY" =~ ^[0-9A-Fa-f.:,/]+$ ]] || die "TRUSTED_PROXY 형식 오류: $TRUSTED_PROXY"
 RUN_CMD="$SERVER_DIR/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+[[ -n "${TRUSTED_PROXY:-}" ]] && RUN_CMD+=" --proxy-headers --forwarded-allow-ips $TRUSTED_PROXY" && echo "프록시 신뢰: $TRUSTED_PROXY"
 if command -v systemctl >/dev/null && [[ -d /run/systemd/system ]]; then
-  cat > /etc/systemd/system/$SERVICE.service <<UNIT
+  cat > "$UNIT_FILE" <<UNIT
 [Unit]
 Description=Kakao notification collector (web + API + complaint worker)
 After=network-online.target mysql.service

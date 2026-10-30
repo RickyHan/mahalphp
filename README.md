@@ -44,6 +44,26 @@ curl -fsSL https://raw.githubusercontent.com/rickyhan/mahalphp/claude/new-creati
 - **업데이트**: 같은 설치 명령을 다시 실행 (설정·데이터 유지)
 - 휴대폰이 서버와 **같은 Wi-Fi 가 아니면** 공유기에서 외부 포트 → `서버IP:8000` 포워딩 후 앱에 `http://공인IP:외부포트` 입력
 
+## 1-1. 외부에서 접속하기 (nginx 경유)
+
+사내망 nginx 서버(예: `192.168.0.26`)를 거쳐 외부에 공개합니다. 기존 nginx 사이트 설정은 건드리지 않고 설정 파일 하나만 추가합니다.
+
+```bash
+# ① nginx 서버(192.168.0.26)에서 — 전용 포트 28000 으로 받아 68번 웹 서버로 전달
+curl -fsSL https://raw.githubusercontent.com/rickyhan/mahalphp/claude/new-creation-dz2guv/deploy/setup-nginx.sh | sudo bash
+
+# ② 웹 서버(192.168.0.68)에서 — nginx 를 거쳐 온 실제 접속자 IP 를 인식 (한 번만, 이후 유지)
+curl -fsSL https://raw.githubusercontent.com/rickyhan/mahalphp/claude/new-creation-dz2guv/deploy/install.sh | sudo env TRUSTED_PROXY=192.168.0.26 bash
+```
+
+③ 공유기 포트포워딩 추가: **외부 TCP 28000 → 192.168.0.26:28000**
+
+④ 외부 접속 주소: `http://<공인IP>:28000/admin` (휴대폰 앱 서버 주소: `http://<공인IP>:28000`). 공인 IP 는 ① 실행 결과에 표시됩니다(`curl ifconfig.me` 로도 확인 가능).
+
+- 포트·백엔드 변경: `sudo env LISTEN_PORT=28000 BACKEND=192.168.0.68:8000 bash setup-nginx.sh`
+- 도메인이 있으면 `SERVER_NAME=kakao.도메인` 으로 실행해 80 포트 가상호스트로 만들고 `certbot --nginx` 로 HTTPS 적용을 권장합니다(외부 공개 시 로그인 비밀번호 보호).
+- nginx 가 사진 업로드(최대 10MB)를 받도록 `client_max_body_size 20m`, 접속자 IP 위조 방지를 위해 `X-Forwarded-For` 를 nginx 가 덮어씁니다.
+
 ## 2. 앱 설치
 
 1. 휴대폰 브라우저로 [APK 다운로드](https://github.com/rickyhan/mahalphp/raw/claude/new-creation-dz2guv/release/kakao-collector.apk) → 설치
