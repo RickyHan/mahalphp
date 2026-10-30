@@ -28,6 +28,8 @@ os.environ.update(
     API_KEY=API_KEY,
     ADMIN_USER=ADMIN_USER,
     ADMIN_PASSWORD=ADMIN_PASSWORD,
+    GEMINI_API_KEY="test-gemini-key",
+    WORKER_ENABLED="0",  # 테스트는 분류를 직접 실행한다
 )
 
 from fastapi.testclient import TestClient  # noqa: E402

@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS kakao_messages (
   posted_at        TEXT    NOT NULL,
   received_at      TEXT    NOT NULL,
   notification_key TEXT,
+  sender_key       TEXT,
   dedup_key        TEXT    NOT NULL UNIQUE
 );
 CREATE INDEX IF NOT EXISTS idx_kakao_messages_room_time ON kakao_messages (room_name, posted_at);
@@ -34,3 +35,57 @@ CREATE TABLE IF NOT EXISTS kakao_media (
 );
 CREATE INDEX IF NOT EXISTS idx_kakao_media_message ON kakao_media (message_id);
 CREATE INDEX IF NOT EXISTS idx_kakao_media_sha256 ON kakao_media (sha256);
+
+CREATE TABLE IF NOT EXISTS complaint_check (
+  message_id   INTEGER PRIMARY KEY REFERENCES kakao_messages (id) ON DELETE CASCADE,
+  verdict      INTEGER NOT NULL,
+  category     TEXT    NOT NULL DEFAULT '',
+  summary      TEXT    NOT NULL DEFAULT '',
+  confidence   REAL    NOT NULL DEFAULT 0,
+  model        TEXT    NOT NULL DEFAULT '',
+  checked_at   TEXT    NOT NULL,
+  reply_status INTEGER NOT NULL DEFAULT 0,
+  reply_note   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_complaint_verdict ON complaint_check (verdict, category);
+
+CREATE TABLE IF NOT EXISTS room_members (
+  room_name     TEXT    NOT NULL,
+  member_key    TEXT    NOT NULL,
+  display_name  TEXT    NOT NULL,
+  keyed         INTEGER NOT NULL,
+  first_seen    TEXT    NOT NULL,
+  last_seen     TEXT    NOT NULL,
+  message_count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (room_name, member_key)
+);
+
+CREATE TABLE IF NOT EXISTS member_events (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_name TEXT NOT NULL,
+  type      TEXT NOT NULL,
+  member    TEXT NOT NULL,
+  old_name  TEXT,
+  actor     TEXT,
+  at        TEXT NOT NULL,
+  text      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_member_events_room ON member_events (room_name, at);
+
+CREATE TABLE IF NOT EXISTS reply_queue (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id INTEGER NOT NULL,
+  device_id  TEXT    NOT NULL,
+  room_name  TEXT    NOT NULL,
+  text       TEXT    NOT NULL,
+  status     TEXT    NOT NULL DEFAULT 'pending',
+  note       TEXT,
+  created_at TEXT    NOT NULL,
+  done_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_reply_queue_status ON reply_queue (status, device_id);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  name  TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);

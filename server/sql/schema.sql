@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS `kakao_messages` (
   `posted_at`        DATETIME(3)     NOT NULL COMMENT '메시지 수신 시각(단말 기준, KST)',
   `received_at`      DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '서버 저장 시각',
   `notification_key` VARCHAR(255)    NULL     COMMENT 'Android StatusBarNotification key',
+  `sender_key`       VARCHAR(255)    NULL     COMMENT '카톡 알림의 보낸 사람 고유 키(있을 때만, 대화명 변경 추적용)',
   `dedup_key`        CHAR(64)        NOT NULL COMMENT '중복 방지 SHA-256(device|room|sender|text|posted_at)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_kakao_messages_dedup` (`dedup_key`),
@@ -50,6 +51,70 @@ CREATE TABLE IF NOT EXISTS `kakao_media` (
     REFERENCES `kakao_messages` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='카카오톡 알림에서 수집한 사진';
+
+-- Gemini 민원 분류 결과 (메시지 1건당 1행). verdict: 1=민원, 0=아님, -1=분류 실패(재시도 대상)
+CREATE TABLE IF NOT EXISTS `complaint_check` (
+  `message_id`   BIGINT UNSIGNED NOT NULL,
+  `verdict`      TINYINT         NOT NULL,
+  `category`     VARCHAR(30)     NOT NULL DEFAULT '',
+  `summary`      VARCHAR(200)    NOT NULL DEFAULT '',
+  `confidence`   DOUBLE          NOT NULL DEFAULT 0,
+  `model`        VARCHAR(80)     NOT NULL DEFAULT '',
+  `checked_at`   DATETIME(3)     NOT NULL,
+  `reply_status` TINYINT         NOT NULL DEFAULT 0 COMMENT '0=없음 1=보냄 -1=실패 2=같은 문제 3=오래됨 4=발송 대기',
+  `reply_note`   VARCHAR(255)    NULL,
+  PRIMARY KEY (`message_id`),
+  KEY `idx_complaint_verdict` (`verdict`, `category`),
+  CONSTRAINT `fk_complaint_message` FOREIGN KEY (`message_id`) REFERENCES `kakao_messages` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='민원 분류';
+
+-- 방별 참여자(발언 기준)
+CREATE TABLE IF NOT EXISTS `room_members` (
+  `room_name`     VARCHAR(255) NOT NULL,
+  `member_key`    VARCHAR(255) NOT NULL,
+  `display_name`  VARCHAR(255) NOT NULL,
+  `keyed`         TINYINT(1)   NOT NULL,
+  `first_seen`    DATETIME(3)  NOT NULL,
+  `last_seen`     DATETIME(3)  NOT NULL,
+  `message_count` INT UNSIGNED NOT NULL DEFAULT 0,
+  PRIMARY KEY (`room_name`(191), `member_key`(191))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='참여자';
+
+-- 입장·퇴장·내보냄·초대·대화명 변경·첫 발언 이력
+CREATE TABLE IF NOT EXISTS `member_events` (
+  `id`        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `room_name` VARCHAR(255)    NOT NULL,
+  `type`      VARCHAR(20)     NOT NULL,
+  `member`    VARCHAR(255)    NOT NULL,
+  `old_name`  VARCHAR(255)    NULL,
+  `actor`     VARCHAR(255)    NULL,
+  `at`        DATETIME(3)     NOT NULL,
+  `text`      TEXT            NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_member_events_room` (`room_name`(191), `at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='참여자 이력';
+
+-- 휴대폰이 카톡 '답장'으로 보낼 안내 메시지 대기열 (서버가 만들고, 앱이 가져가 전송 후 결과 보고)
+CREATE TABLE IF NOT EXISTS `reply_queue` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `message_id` BIGINT UNSIGNED NOT NULL,
+  `device_id`  VARCHAR(64)     NOT NULL,
+  `room_name`  VARCHAR(255)    NOT NULL,
+  `text`       VARCHAR(500)    NOT NULL,
+  `status`     VARCHAR(10)     NOT NULL DEFAULT 'pending' COMMENT 'pending|sent|failed|expired',
+  `note`       VARCHAR(255)    NULL,
+  `created_at` DATETIME(3)     NOT NULL,
+  `done_at`    DATETIME(3)     NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_reply_queue_status` (`status`, `device_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='안내 발송 대기열';
+
+-- 웹에서 바꾸는 설정 (민원 분류 사용, 모델, 자동 안내, 안내 문구)
+CREATE TABLE IF NOT EXISTS `app_settings` (
+  `name`  VARCHAR(64) NOT NULL,
+  `value` TEXT        NOT NULL,
+  PRIMARY KEY (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='설정';
 
 -- 권장: DBA 계정 대신 이 스키마 전용 최소 권한 계정을 만들어 서버 .env에 사용
 -- CREATE USER 'kakao_app'@'%' IDENTIFIED BY '<강력한 비밀번호>';

@@ -9,7 +9,10 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
-from . import db
+from pydantic import BaseModel, Field
+
+from . import complaints as cp
+from . import db, store, worker
 from .auth import (
     SESSION_COOKIE,
     SettingsDep,
@@ -232,3 +235,135 @@ def photos(
         cur.execute(sql, (*params, limit + 1))
         rows = cur.fetchall()
     return {"ok": True, "items": rows[:limit], "has_more": len(rows) > limit}
+
+
+# ---- 민원·통계·참여자·설정 (웹 화면용) ------------------------------------------------------
+
+def _serialize(value: Any) -> Any:
+    return value.isoformat() if isinstance(value, datetime) else value
+
+
+def _ser_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {k: _serialize(v) for k, v in row.items()}
+
+
+@router.get("/api/admin/complaints", dependencies=[Admin])
+def complaint_groups(settings: SettingsDep, category: str | None = None) -> dict[str, Any]:
+    """민원을 '문제' 단위로 묶어 최근 순으로"""
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        rows = store.complaint_rows(cur, category=category or None)
+        counts = store.complaint_counts(cur)
+    groups = [{k: _serialize(v) for k, v in g.to_dict().items()} for g in cp.group_complaints(rows)]
+    return {
+        "ok": True,
+        "items": groups,
+        "messages": len(rows),
+        "counts": counts,
+        "worker": worker.status,
+        "gemini_configured": bool(settings.gemini_api_key),
+        "categories": cp.CATEGORIES,
+    }
+
+
+@router.get("/api/admin/complaints/group", dependencies=[Admin])
+def complaint_group(settings: SettingsDep, ids: Annotated[str, Query(pattern=r"^\d+(,\d+){0,199}$")]) -> dict[str, Any]:
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        rows = store.complaint_rows(cur, ids=[int(x) for x in ids.split(",")])
+    return {"ok": True, "items": [_ser_row(r) for r in rows]}
+
+
+@router.get("/api/admin/stats", dependencies=[Admin])
+def complaint_stats(settings: SettingsDep, period: Annotated[str, Query(pattern="^(today|week|month|all)$")] = "week") -> dict[str, Any]:
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        rows = store.complaint_rows(cur)
+    return {"ok": True, **cp.compute_stats(cp.group_complaints(rows), period, store.now_local(settings))}
+
+
+@router.get("/api/admin/member-events", dependencies=[Admin])
+def member_events(
+    settings: SettingsDep,
+    room: str | None = None,
+    type: Annotated[str | None, Query(pattern="^(join|leave|kick|invite|rename|first_seen)$")] = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 300,
+) -> dict[str, Any]:
+    where, params = [], []
+    if room:
+        where.append("room_name = %s")
+        params.append(room)
+    if type:
+        where.append("type = %s")
+        params.append(type)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, room_name, type, member, old_name, actor, at, text FROM member_events"
+            + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY at DESC, id DESC LIMIT %s",
+            (*params, limit),
+        )
+        items = [_ser_row(r) for r in cur.fetchall()]
+        cur.execute("SELECT room_name, MAX(at) AS t FROM member_events GROUP BY room_name ORDER BY t DESC")
+        rooms = [r["room_name"] for r in cur.fetchall()]
+    for i in items:
+        i["label"] = cp.EVENT_LABELS.get(i["type"], i["type"])
+    return {"ok": True, "items": items, "rooms": rooms}
+
+
+@router.get("/api/admin/members", dependencies=[Admin])
+def members(settings: SettingsDep, room: Annotated[str, Query(min_length=1)]) -> dict[str, Any]:
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT display_name, keyed, first_seen, last_seen, message_count FROM room_members WHERE room_name = %s ORDER BY last_seen DESC",
+            (room,),
+        )
+        items = [_ser_row(r) for r in cur.fetchall()]
+    for i in items:
+        i["keyed"] = bool(i["keyed"])
+    return {"ok": True, "items": items}
+
+
+class SettingsBody(BaseModel):
+    complaint_enabled: bool | None = None
+    gemini_model: str | None = Field(default=None, max_length=80, pattern=r"^[A-Za-z0-9._\-]+$")
+    auto_reply_enabled: bool | None = None
+    reply_template: str | None = Field(default=None, max_length=300)
+
+
+@router.get("/api/admin/settings", dependencies=[Admin])
+def get_app_settings(settings: SettingsDep) -> dict[str, Any]:
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        conf = store.get_settings_map(cur)
+    return {
+        "ok": True,
+        "complaint_enabled": conf["complaint_enabled"] == "1",
+        "gemini_model": conf["gemini_model"],
+        "auto_reply_enabled": conf["auto_reply_enabled"] == "1",
+        "reply_template": conf["reply_template"],
+        "gemini_configured": bool(settings.gemini_api_key),
+        "worker": worker.status,
+    }
+
+
+@router.put("/api/admin/settings", dependencies=[Admin])
+def put_app_settings(body: SettingsBody, settings: SettingsDep) -> dict[str, Any]:
+    values: dict[str, str] = {}
+    if body.complaint_enabled is not None:
+        values["complaint_enabled"] = "1" if body.complaint_enabled else "0"
+    if body.auto_reply_enabled is not None:
+        values["auto_reply_enabled"] = "1" if body.auto_reply_enabled else "0"
+    if body.gemini_model:
+        values["gemini_model"] = body.gemini_model
+    if body.reply_template is not None:
+        values["reply_template"] = body.reply_template.strip() or cp.DEFAULT_REPLY_TEMPLATE
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        store.put_settings(cur, values)
+    worker.wake()
+    return get_app_settings(settings)
+
+
+@router.post("/api/admin/classify", dependencies=[Admin])
+def classify_now(settings: SettingsDep, retry_failed: bool = False) -> dict[str, Any]:
+    reset = 0
+    if retry_failed:
+        with db.transaction(settings) as conn, conn.cursor() as cur:
+            reset = store.reset_failed(cur)
+    worker.wake()
+    return {"ok": True, "reset": reset}

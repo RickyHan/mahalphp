@@ -20,13 +20,13 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFi
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import admin, db, media
+from . import admin, db, media, store, worker
 from .auth import SettingsDep, get_settings, require_api_key, require_reader  # noqa: F401 (get_settings: 테스트에서 사용)
 
 MESSAGE_TYPES = {"text", "photo", "video", "emoticon", "file", "other"}
 MAX_TEXT_BYTES = 65535  # MySQL TEXT 한도
 
-app = FastAPI(title="Kakao Notification Collector", version="1.1.0")
+app = FastAPI(title="Kakao Notification Collector", version="2.0.0", lifespan=worker.lifespan)
 app.include_router(admin.router)
 app.mount("/admin/static", StaticFiles(directory=admin.STATIC_DIR), name="admin-static")
 
@@ -68,6 +68,7 @@ async def create_message(
     message_type: Annotated[str, Form()] = "text",
     is_group_chat: Annotated[bool, Form()] = False,
     notification_key: Annotated[str | None, Form(max_length=255)] = None,
+    sender_key: Annotated[str | None, Form(max_length=255)] = None,
     image: Annotated[UploadFile | None, File()] = None,
 ) -> dict[str, Any]:
     if message_type not in MESSAGE_TYPES:
@@ -86,12 +87,14 @@ async def create_message(
             cur.execute(
                 """INSERT INTO kakao_messages
                    (device_id, room_name, sender_name, message_text, message_type, is_group_chat,
-                    has_media, posted_at, received_at, notification_key, dedup_key)
-                   VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, %s, %s)""",
+                    has_media, posted_at, received_at, notification_key, sender_key, dedup_key)
+                   VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, %s, %s, %s)""",
                 (device_id, room_name, sender_name, text, message_type, int(is_group_chat), posted,
-                 datetime.now(settings.timezone).replace(tzinfo=None), notification_key, key),
+                 datetime.now(settings.timezone).replace(tzinfo=None), notification_key, sender_key or None, key),
             )
             message_id = cur.lastrowid
+            # 참여자 이력: 입장·퇴장 안내 메시지 또는 발언자(첫 발언·대화명 변경)
+            store.track_members(cur, room_name, sender_name, sender_key or None, text, is_group_chat, posted)
         except db.IntegrityError as exc:
             if not db.is_duplicate(exc):
                 raise
@@ -114,7 +117,34 @@ async def create_message(
                 media_id = cur.lastrowid
                 cur.execute("UPDATE kakao_messages SET has_media = 1 WHERE id = %s", (message_id,))
 
+    if not duplicate:
+        worker.wake()
     return {"ok": True, "id": message_id, "duplicate": duplicate, "media_id": media_id}
+
+
+# ---- 휴대폰 앱: 민원 접수 안내 대기열 -------------------------------------------------------
+
+@app.get("/api/replies/pending", dependencies=[Authorized])
+def replies_pending(settings: SettingsDep, device_id: Annotated[str, Query(min_length=1, max_length=64)]) -> dict[str, Any]:
+    """서버가 결정한 안내 메시지 중 이 휴대폰이 카톡 '답장'으로 보내야 할 것"""
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        items = store.pending_replies(cur, device_id, store.now_local(settings))
+    return {"ok": True, "items": items}
+
+
+@app.post("/api/replies/{reply_id}/result", dependencies=[Authorized])
+def reply_result(
+    reply_id: int,
+    settings: SettingsDep,
+    device_id: Annotated[str, Form(min_length=1, max_length=64)],
+    sent: Annotated[bool, Form()],
+    note: Annotated[str | None, Form(max_length=250)] = None,
+) -> dict[str, Any]:
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        ok = store.finish_reply(cur, reply_id, device_id, sent, note, store.now_local(settings))
+    if not ok:
+        raise HTTPException(404, "대기 중인 안내가 아닙니다.")
+    return {"ok": True}
 
 
 @app.get("/api/messages", dependencies=[Reader])

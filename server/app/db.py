@@ -147,6 +147,24 @@ def schema_statements(db_name: str) -> list[str]:
     return [stmt.strip() for stmt in sql.split(";") if stmt.strip()]
 
 
+def _add_column_if_missing(conn, settings: Settings, table: str, column: str, ddl: str) -> None:
+    """이전 버전 DB 업그레이드용: 컬럼이 없으면 추가"""
+    with conn.cursor() as cur:
+        if settings.db_engine == "sqlite":
+            cur.execute(f"PRAGMA table_info({table})")
+            exists = any(r["name"] == column for r in cur.fetchall())
+        else:
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = %s AND table_name = %s AND column_name = %s",
+                (settings.db_name, table, column),
+            )
+            exists = cur.fetchone()["n"] > 0
+        if not exists:
+            prefix = "" if settings.db_engine == "sqlite" else f"`{settings.db_name}`."
+            cur.execute(f"ALTER TABLE {prefix}{table} ADD COLUMN {column} {ddl}")
+            conn.commit()
+
+
 def install_schema(settings: Settings) -> list[str]:
     """스키마와 테이블을 생성(이미 있으면 유지)하고, 생성된 테이블 목록을 반환한다."""
     if settings.db_engine == "sqlite":
@@ -155,6 +173,7 @@ def install_schema(settings: Settings) -> list[str]:
             conn.executescript(SQLITE_SCHEMA_FILE.read_text(encoding="utf-8"))
             # 여러 요청이 동시에 읽고 쓰도록 WAL 모드 (DB 파일에 영구 설정됨)
             conn.executescript("PRAGMA journal_mode = WAL;")
+            _add_column_if_missing(conn, settings, "kakao_messages", "sender_key", "TEXT")
             with conn.cursor() as cur:
                 cur.execute("SELECT name AS t FROM sqlite_master WHERE type = 'table' AND name LIKE 'kakao!_%' ESCAPE '!' ORDER BY name")
                 return [row["t"] for row in cur.fetchall()]
@@ -167,6 +186,7 @@ def install_schema(settings: Settings) -> list[str]:
             for stmt in schema_statements(settings.db_name):
                 cur.execute(stmt)
             conn.commit()
+            _add_column_if_missing(conn, settings, "kakao_messages", "sender_key", "VARCHAR(255) NULL")
             cur.execute(
                 "SELECT table_name AS t FROM information_schema.tables WHERE table_schema = %s ORDER BY table_name",
                 (settings.db_name,),

@@ -39,6 +39,7 @@ class Settings:
     admin_password: str
     session_secret: bytes
     session_hours: int
+    gemini_api_key: str
 
     @classmethod
     def load(cls) -> "Settings":
@@ -69,4 +70,5 @@ class Settings:
                 (os.getenv("ADMIN_SESSION_SECRET") or f"{os.getenv('API_KEY', '')}|{os.getenv('ADMIN_PASSWORD', '')}").encode()
             ).digest(),
             session_hours=int(os.getenv("ADMIN_SESSION_HOURS", "12")),
+            gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
         )
