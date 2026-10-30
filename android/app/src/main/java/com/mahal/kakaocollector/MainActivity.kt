@@ -66,7 +66,12 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.openMembers).setOnClickListener { startActivity(Intent(this, MembersActivity::class.java)) }
         findViewById<Button>(R.id.openComplaints).setOnClickListener { startActivity(Intent(this, ComplaintsActivity::class.java)) }
 
-        geminiKey.setText(settings.geminiKey)
+        // 내장 키는 화면에 채우지 않고 안내만 표시 (직접 입력한 키만 표시)
+        if (settings.geminiKey == BuildConfig.DEFAULT_GEMINI_KEY && BuildConfig.DEFAULT_GEMINI_KEY.isNotEmpty()) {
+            geminiKey.setHint(R.string.hint_gemini_key_builtin)
+        } else {
+            geminiKey.setText(settings.geminiKey)
+        }
         geminiModel.setText(settings.geminiModel)
         complaintEnabled.isChecked = settings.complaintEnabled
         complaintFields.visibility = if (settings.complaintEnabled) View.VISIBLE else View.GONE

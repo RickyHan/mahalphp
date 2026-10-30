@@ -27,3 +27,4 @@ android/keystore.properties
 server/storage/*.db
 server/storage/*.db-*
 android/.kotlin/
+android/secrets.properties

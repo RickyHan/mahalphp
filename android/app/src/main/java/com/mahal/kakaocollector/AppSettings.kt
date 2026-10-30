@@ -29,12 +29,12 @@ class AppSettings(context: Context) {
 
     /** Gemini 민원 분류 사용 */
     var complaintEnabled: Boolean
-        get() = prefs.getBoolean(KEY_COMPLAINT, false)
+        get() = prefs.getBoolean(KEY_COMPLAINT, BuildConfig.DEFAULT_GEMINI_KEY.isNotEmpty()) // 내장 키가 있으면 기본 켜짐
         set(value) = prefs.edit().putBoolean(KEY_COMPLAINT, value).apply()
 
-    /** Gemini API 키 (휴대폰에만 저장, APK 에는 포함하지 않음) */
+    /** Gemini API 키. 직접 입력한 값이 없으면 개인 빌드에 내장된 기본 키(공개 빌드는 빈 값) */
     var geminiKey: String
-        get() = prefs.getString(KEY_GEMINI_KEY, "") ?: ""
+        get() = prefs.getString(KEY_GEMINI_KEY, null)?.takeIf { it.isNotBlank() } ?: BuildConfig.DEFAULT_GEMINI_KEY
         set(value) = prefs.edit().putString(KEY_GEMINI_KEY, value.trim()).apply()
 
     var geminiModel: String
