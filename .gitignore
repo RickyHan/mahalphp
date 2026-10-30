@@ -22,3 +22,7 @@ android/keystore.properties
 *.iml
 .vscode/
 .DS_Store
+
+# 수집 데이터 (SQLite DB)
+server/storage/*.db
+server/storage/*.db-*

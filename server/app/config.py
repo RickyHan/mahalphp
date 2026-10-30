@@ -24,6 +24,8 @@ def _require(key: str) -> str:
 
 @dataclass(frozen=True)
 class Settings:
+    db_engine: str  # "mysql" | "sqlite"
+    sqlite_path: Path
     db_host: str
     db_port: int
     db_user: str
@@ -44,10 +46,16 @@ class Settings:
         if not re.fullmatch(r"[A-Za-z0-9_]{1,64}", db_name):
             raise RuntimeError("DB_NAME 은 영문/숫자/밑줄만 사용할 수 있습니다.")
         media_root = Path(os.getenv("MEDIA_ROOT", str(SERVER_ROOT / "storage" / "media")))
+        engine = os.getenv("DB_ENGINE", "mysql").strip().lower()
+        if engine not in ("mysql", "sqlite"):
+            raise RuntimeError("DB_ENGINE 은 mysql 또는 sqlite 여야 합니다.")
+        mysql = engine == "mysql"
         return cls(
-            db_host=_require("DB_HOST"),
+            db_engine=engine,
+            sqlite_path=Path(os.getenv("SQLITE_PATH", str(SERVER_ROOT / "storage" / "kakao_collector.db"))).resolve(),
+            db_host=_require("DB_HOST") if mysql else "",
             db_port=int(os.getenv("DB_PORT", "3306")),
-            db_user=_require("DB_USER"),
+            db_user=_require("DB_USER") if mysql else "",
             db_pass=os.getenv("DB_PASS", ""),
             db_name=db_name,
             api_key=_require("API_KEY"),

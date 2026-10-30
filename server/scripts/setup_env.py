@@ -1,4 +1,4 @@
-"""대화형 초기 설정: DB 접속 정보를 묻고 server/.env 를 만든 뒤 스키마·테이블을 생성한다.
+"""대화형 초기 설정: DB 종류(SQLite/MySQL)와 접속 정보를 묻고 server/.env 를 만든 뒤 테이블을 생성한다.
 
     cd server && python -m scripts.setup_env
 
@@ -48,26 +48,30 @@ def main() -> int:
         print("기존 설정을 유지합니다.")
         return 0
 
-    db_host = ask("MySQL 호스트", "127.0.0.1")
-    db_port = ask("MySQL 포트", "3306")
-    db_user = ask("MySQL 계정")
-    db_pass = getpass.getpass("MySQL 비밀번호 (입력 내용은 표시되지 않음): ")
-    db_name = ask("스키마 이름", "kakao_collector")
+    print("DB 종류를 고르십시오.")
+    print("  1) SQLite - 설치 불필요, 이 PC의 파일 하나에 저장 (테스트용 권장)")
+    print("  2) MySQL/MariaDB - 운영용 DB 서버")
+    engine = "mysql" if ask("선택", "1") == "2" else "sqlite"
+
+    values: dict[str, str] = {"DB_ENGINE": engine}
+    if engine == "mysql":
+        values.update(
+            DB_HOST=ask("MySQL 호스트", "127.0.0.1"),
+            DB_PORT=ask("MySQL 포트", "3306"),
+            DB_USER=ask("MySQL 계정"),
+            DB_PASS=getpass.getpass("MySQL 비밀번호 (입력 내용은 표시되지 않음): "),
+            DB_NAME=ask("스키마 이름", "kakao_collector"),
+        )
     admin_user = ask("관리자 웹 아이디", "admin")
 
     api_key = secrets.token_urlsafe(32)
     admin_password = secrets.token_urlsafe(12)
-    values = {
-        "DB_HOST": db_host,
-        "DB_PORT": db_port,
-        "DB_USER": db_user,
-        "DB_PASS": db_pass,
-        "DB_NAME": db_name,
+    values.update({
         "API_KEY": api_key,
         "ADMIN_USER": admin_user,
         "ADMIN_PASSWORD": admin_password,
         "APP_TIMEZONE": "Asia/Seoul",
-    }
+    })
     ENV_PATH.write_text("".join(f"{k}={quote(v)}\n" for k, v in values.items()), encoding="utf-8")
     try:
         ENV_PATH.chmod(0o600)
@@ -76,17 +80,17 @@ def main() -> int:
     print(f"\n설정 파일 저장: {ENV_PATH}")
 
     # .env 를 쓴 뒤에 불러와야 새 값이 반영된다
-    import pymysql
-
     from app.config import Settings
-    from app.db import install_schema
+    from app.db import DatabaseError, install_schema
 
-    print(f"DB 접속 중: {db_user}@{db_host}:{db_port} ...")
+    settings = Settings.load()
+    target = str(settings.sqlite_path) if engine == "sqlite" else f"{settings.db_user}@{settings.db_host}:{settings.db_port}"
+    print(f"DB 준비 중: {target} ...")
     try:
-        tables = install_schema(Settings.load())
-    except pymysql.MySQLError as exc:
+        tables = install_schema(settings)
+    except DatabaseError as exc:
         code = exc.args[0] if exc.args else "?"
-        print(f"\n[실패] DB 접속/스키마 생성 오류 (MySQL 오류 코드 {code})\n  {exc}")
+        print(f"\n[실패] DB 접속/테이블 생성 오류 (오류 코드 {code})\n  {exc}")
         print("  · 2003: 호스트·포트가 틀렸거나 방화벽이 막고 있음")
         print("  · 1045: 계정 또는 비밀번호가 틀림")
         print("  · 1044/1142: 스키마 생성 권한이 없음")
@@ -94,7 +98,7 @@ def main() -> int:
         return 1
 
     ip = lan_ip()
-    print(f"[완료] 스키마 `{db_name}` 테이블: {', '.join(tables)}\n")
+    print(f"[완료] 테이블: {', '.join(tables)}  ({target})\n")
     print("=" * 60)
     print("아래 정보를 안전한 곳에 보관하십시오. (server/.env 에도 저장됨)")
     print(f"  관리자 웹   : http://{ip}:{PORT}/admin")

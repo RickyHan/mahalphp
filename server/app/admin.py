@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -99,10 +100,6 @@ def _is_https(request: Request) -> bool:
 
 # ---- 조회 API -------------------------------------------------------------------------
 
-def _like(term: str) -> str:
-    return "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-
-
 @router.get("/api/admin/me")
 def me(user: Annotated[str, Admin]) -> dict[str, Any]:
     return {"ok": True, "user": user}
@@ -111,10 +108,13 @@ def me(user: Annotated[str, Admin]) -> dict[str, Any]:
 @router.get("/api/admin/summary", dependencies=[Admin])
 def summary(settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
+        today = datetime.now(settings.timezone).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
         cur.execute(
             """SELECT COUNT(*) AS messages, COUNT(DISTINCT room_name) AS rooms, COUNT(DISTINCT device_id) AS devices,
-                      COALESCE(SUM(posted_at >= CURDATE()), 0) AS today, MAX(received_at) AS last_received_at
-               FROM kakao_messages"""
+                      COALESCE(SUM(CASE WHEN posted_at >= %s THEN 1 ELSE 0 END), 0) AS today,
+                      MAX(received_at) AS last_received_at
+               FROM kakao_messages""",
+            (today,),
         )
         row = cur.fetchone()
         cur.execute("SELECT COUNT(*) AS photos FROM kakao_media")
@@ -127,7 +127,7 @@ def summary(settings: SettingsDep) -> dict[str, Any]:
 def rooms(settings: SettingsDep, q: str | None = None) -> dict[str, Any]:
     where, params = "", []
     if q:
-        where, params = "WHERE room_name LIKE %s", [_like(q)]
+        where, params = "WHERE room_name LIKE %s ESCAPE '!'", [db.like(q)]
     sql = f"""
         SELECT r.room_name, r.message_count, r.photo_count, m.id AS last_id, m.sender_name AS last_sender,
                m.message_text AS last_message, m.message_type AS last_type, m.posted_at AS last_posted_at,
@@ -166,8 +166,8 @@ def messages(
             where.append(f"{column} = %s")
             params.append(value)
     if q:
-        where.append("(message_text LIKE %s OR sender_name LIKE %s)")
-        params += [_like(q), _like(q)]
+        where.append("(message_text LIKE %s ESCAPE '!' OR sender_name LIKE %s ESCAPE '!')")
+        params += [db.like(q), db.like(q)]
     if before_id:
         where.append("id < %s")
         params.append(before_id)

@@ -16,7 +16,6 @@ import hashlib
 from datetime import datetime
 from typing import Annotated, Any
 
-import pymysql
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -26,7 +25,6 @@ from .auth import SettingsDep, get_settings, require_api_key, require_reader  # 
 
 MESSAGE_TYPES = {"text", "photo", "video", "emoticon", "file", "other"}
 MAX_TEXT_BYTES = 65535  # MySQL TEXT 한도
-ER_DUP_ENTRY = 1062
 
 app = FastAPI(title="Kakao Notification Collector", version="1.1.0")
 app.include_router(admin.router)
@@ -54,7 +52,7 @@ def health(settings: SettingsDep) -> dict[str, Any]:
             cur.execute("SELECT COUNT(*) AS n FROM kakao_messages")
             count = cur.fetchone()["n"]
         conn.close()
-    except pymysql.MySQLError as exc:
+    except db.DatabaseError as exc:
         raise HTTPException(503, f"DB 연결 실패: {exc.args[0] if exc.args else exc}") from exc
     return {"ok": True, "db": settings.db_name, "messages": count}
 
@@ -88,13 +86,14 @@ async def create_message(
             cur.execute(
                 """INSERT INTO kakao_messages
                    (device_id, room_name, sender_name, message_text, message_type, is_group_chat,
-                    has_media, posted_at, notification_key, dedup_key)
-                   VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, %s)""",
-                (device_id, room_name, sender_name, text, message_type, int(is_group_chat), posted, notification_key, key),
+                    has_media, posted_at, received_at, notification_key, dedup_key)
+                   VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, %s, %s)""",
+                (device_id, room_name, sender_name, text, message_type, int(is_group_chat), posted,
+                 datetime.now(settings.timezone).replace(tzinfo=None), notification_key, key),
             )
             message_id = cur.lastrowid
-        except pymysql.err.IntegrityError as exc:
-            if exc.args[0] != ER_DUP_ENTRY:
+        except db.IntegrityError as exc:
+            if not db.is_duplicate(exc):
                 raise
             duplicate = True
             cur.execute("SELECT id FROM kakao_messages WHERE dedup_key = %s", (key,))
@@ -136,7 +135,7 @@ def list_messages(
         params.append(before_id)
     sql = (
         "SELECT m.id, m.room_name, m.sender_name, m.message_text, m.message_type, m.is_group_chat,"
-        " m.posted_at, m.received_at, GROUP_CONCAT(md.id ORDER BY md.id) AS media_ids"
+        " m.posted_at, m.received_at, GROUP_CONCAT(md.id) AS media_ids"
         " FROM kakao_messages m LEFT JOIN kakao_media md ON md.message_id = m.id"
         + (" WHERE " + " AND ".join(where) if where else "")
         + " GROUP BY m.id ORDER BY m.id DESC LIMIT %s"
@@ -146,7 +145,7 @@ def list_messages(
         rows = cur.fetchall()
     for row in rows:
         row["is_group_chat"] = bool(row["is_group_chat"])
-        row["media_ids"] = [int(x) for x in row["media_ids"].split(",")] if row["media_ids"] else []
+        row["media_ids"] = sorted(int(x) for x in str(row["media_ids"]).split(",")) if row["media_ids"] else []
     return {"ok": True, "items": rows}
 
 

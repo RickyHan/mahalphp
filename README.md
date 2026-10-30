@@ -18,7 +18,8 @@ Android 휴대폰에 오는 **카카오톡 알림**을 읽어 **누가 · 어느
 | `android/` | Android 앱 (Kotlin, minSdk 26 / targetSdk 34) |
 | `server/` | 수집 API (Python 3.10+, FastAPI, PyMySQL) |
 | `server/app/static/` | 관리자 웹 화면 (HTML/CSS/JS, 빌드 불필요) |
-| `server/sql/schema.sql` | 스키마·테이블 DDL |
+| `server/sql/schema.sql` | 스키마·테이블 DDL (MySQL) |
+| `server/sql/schema_sqlite.sql` | 같은 구성의 SQLite DDL (테스트·단일 PC용) |
 | `.github/workflows/ci.yml` | 서버 통합 테스트 + APK 빌드 (APK는 Actions 아티팩트로 내려받음) |
 
 ---
@@ -35,8 +36,10 @@ DB에 접속할 수 있는 PC에 Python 3.10 이상을 설치하고 아래 파�
 최초 실행 때는 다음 순서로 진행됩니다.
 
 1. 가상환경을 만들고 패키지를 설치합니다.
-2. DB 호스트·포트·계정·비밀번호를 묻고 `server/.env`를 만듭니다.
-3. 스키마와 테이블을 생성합니다.
+2. DB 종류를 고릅니다.
+   - **1) SQLite (기본, 테스트용):** DB 설치 없이 `server/storage/kakao_collector.db` 파일 하나에 저장합니다.
+   - **2) MySQL/MariaDB (운영용):** 호스트·포트·계정·비밀번호를 입력합니다.
+3. `server/.env`를 만들고 테이블을 생성합니다.
 4. 서버를 시작합니다.
 
 이때 **관리자 웹 주소·계정과 앱에 넣을 서버 주소·API 키가 화면에 표시**됩니다. 두 번째 실행부터는 바로 서버만 시작합니다. 설정을 다시 하려면 `python -m scripts.setup_env`를 실행하십시오. DB 접속에 실패하면 MySQL 오류 코드와 원인(2003 연결 불가 / 1045 비밀번호 오류 / 1044 권한 부족)을 안내합니다.
@@ -44,6 +47,8 @@ DB에 접속할 수 있는 PC에 Python 3.10 이상을 설치하고 아래 파�
 아래 1~3은 같은 과정을 수동으로 하는 방법입니다.
 
 ## 1. DB 스키마 생성
+
+테스트용으로 SQLite를 쓰면 이 단계는 필요 없습니다(`server/.env`에 `DB_ENGINE=sqlite`). 서버를 처음 켤 때 테이블이 자동으로 만들어집니다. SQLite 파일과 사진은 `server/storage/`에 저장되므로, 백업할 때는 이 폴더를 통째로 복사하면 됩니다.
 
 ```bash
 cd server
@@ -165,9 +170,11 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 ## 개발·테스트
 
 ```bash
-# 서버 통합 테스트 (MySQL/MariaDB 필요, 임시 스키마 kakao_collector_test 생성 후 삭제)
+# 서버 통합 테스트: SQLite(기본, 설치 불필요)
 cd server && pip install -r requirements-dev.txt
-TEST_DB_HOST=127.0.0.1 TEST_DB_USER=root TEST_DB_PASS=... pytest -q
+pytest -q
+# 같은 테스트를 MySQL/MariaDB 로 (임시 스키마 kakao_collector_test 생성 후 삭제)
+TEST_DB_ENGINE=mysql TEST_DB_HOST=127.0.0.1 TEST_DB_USER=root TEST_DB_PASS=... pytest -q
 
 # 앱 단위 테스트(알림 파서) + APK 빌드
 cd android && ./gradlew testDebugUnitTest assembleDebug
