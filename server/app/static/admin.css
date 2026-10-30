@@ -85,7 +85,7 @@ button, input, select { font: inherit; color: inherit; }
 .stats div { display: flex; flex-direction: column; }
 .stats dt { font-size: 11px; color: var(--muted); }
 .stats dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
-.logout { display: flex; align-items: center; gap: 8px; margin: 0; }
+.logout { display: flex; align-items: center; gap: 8px; margin: 0 0 0 auto; }
 
 /* ---- 레이아웃 ---- */
 .layout { flex: 1; display: grid; grid-template-columns: 320px 1fr; min-height: 0; }

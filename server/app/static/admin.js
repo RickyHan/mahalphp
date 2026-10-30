@@ -116,7 +116,14 @@
   }
 
   const mediaUrl = (id) => `/api/media/${encodeURIComponent(id)}`;
-  const preview = (type, text) => (type !== "text" && TYPE_LABEL[type] ? `${TYPE_LABEL[type]} ${text || ""}`.trim() : text || "");
+  // 카카오톡이 내용 대신 넣는 안내 문구("사진을 보냈습니다." 등)
+  const PLACEHOLDER = /(보냈습니다\.?|^(사진|동영상|이모티콘|photos?|video|emoticon))$/i;
+  const isPlaceholder = (type, text) => type !== "text" && type !== "file" && (!text || PLACEHOLDER.test(text.trim()));
+  function preview(type, text) {
+    if (type === "text" || !TYPE_LABEL[type]) return text || "";
+    return isPlaceholder(type, text) ? TYPE_LABEL[type] : `${TYPE_LABEL[type]} ${text}`;
+  }
+  const dims = (w, h) => (w && h ? ` · ${w}×${h}px` : "");
 
   function updateTitle() {
     $("panel-title").textContent = state.tab === "chat" ? state.room || "" : state.tab === "photos" ? "사진 모아보기" : "메시지 검색";
@@ -236,7 +243,7 @@
     const content = el("div", {});
     const text = m.message_text || "";
     if (m.media.length) {
-      if (m.message_type !== "photo" || !/^(사진|photo)/i.test(text)) content.append(el("div", { class: "bubble" }, linkify(text)));
+      if (text && !isPlaceholder(m.message_type, text)) content.append(el("div", { class: "bubble" }, linkify(text)));
       const thumbs = el("div", { class: "thumbs" });
       for (const media of m.media) {
         const ratio = media.width && media.height ? Math.min(1, 240 / Math.max(media.width, media.height)) : 1;
@@ -256,8 +263,9 @@
       }
       content.append(thumbs);
     } else if (m.message_type !== "text") {
-      const note = m.message_type === "photo" ? " (미리보기 없음)" : "";
-      content.append(el("div", { class: "bubble placeholder" }, el("span", { class: "badge", text: TYPE_LABEL[m.message_type] || m.message_type }), text + note));
+      const placeholder = isPlaceholder(m.message_type, text);
+      const body = placeholder ? (m.message_type === "photo" ? "미리보기 없음" : "") : text;
+      content.append(el("div", { class: "bubble placeholder" }, el("span", { class: "badge", text: TYPE_LABEL[m.message_type] || m.message_type }), body));
     } else {
       content.append(el("div", { class: "bubble" }, linkify(text)));
     }
@@ -299,7 +307,8 @@
       view.scrollTop = view.scrollHeight;
     } else {
       view.scrollTop = top;
-      if (state.tab === "chat") $("new-msg").hidden = false;
+      const unseenBelow = view.scrollHeight - view.scrollTop - view.clientHeight > 120;
+      if (state.tab === "chat" && unseenBelow) $("new-msg").hidden = false;
     }
   }
 
@@ -334,7 +343,7 @@
   }
 
   const galleryItems = () =>
-    state.photos.map((p) => ({ id: p.id, caption: `${p.room_name} · ${p.sender_name} · ${fmtDateTime(p.posted_at)}` }));
+    state.photos.map((p) => ({ id: p.id, caption: `${p.room_name} · ${p.sender_name} · ${fmtDateTime(p.posted_at)}${dims(p.width, p.height)}` }));
 
   // ---- 검색 ---------------------------------------------------------------------------
 
@@ -391,7 +400,9 @@
   function openChatLightbox(mediaId) {
     const items = [];
     for (const m of state.messages) {
-      for (const media of m.media) items.push({ id: media.id, caption: `${m.sender_name} · ${fmtDateTime(m.posted_at)}` });
+      for (const media of m.media) {
+        items.push({ id: media.id, caption: `${m.sender_name} · ${fmtDateTime(m.posted_at)}${dims(media.width, media.height)}` });
+      }
     }
     openLightbox(items, Math.max(0, items.findIndex((x) => x.id === mediaId)));
   }
