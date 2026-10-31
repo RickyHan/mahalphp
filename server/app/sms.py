@@ -11,7 +11,7 @@
        → {"token","type":"Bearer","expired":"yyyyMMddHHmmss","userIp"}
   POST https://message.ppurio.com/v1/message  Authorization: Bearer {token}
        {"account","messageType":"SMS|LMS","content","from","duplicateFlag","targetCount","targets":[{"to"}],"refKey","subject"?}
-       → {"code":"1000","description","refKey","messageKey"}
+       → {"code":1000 또는 "1000","description","refKey","messageKey"(예시 표기 "messsageKey")}
   SMS 90byte · LMS 2000byte (한글 2byte), 추가 필드 불허, 기본 초당 15회.
 """
 
@@ -101,6 +101,14 @@ def normalize_phone(raw: str) -> str:
 
 
 # ---- 뿌리오 클라이언트 -------------------------------------------------------------------------
+
+def _json(res: httpx.Response) -> dict[str, Any]:
+    try:
+        body = res.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
+
 
 class PpurioError(Exception):
     def __init__(self, message: str, retry: bool, code: str = ""):
@@ -203,8 +211,10 @@ class PpurioClient:
                 )
             except httpx.HTTPError as exc:
                 raise PpurioError(f"뿌리오 연결 실패: {exc}", retry=True) from exc
-            if res.status_code == 200 and str(res.json().get("code")) == "1000":
-                return SendResult(res.json().get("messageKey", ""), kind)
+            if res.status_code == 200 and str(_json(res).get("code")) == "1000":
+                data = _json(res)
+                # 규격 예시에는 'messsageKey'(s 3개)로 표기되어 있어 둘 다 받는다
+                return SendResult(str(data.get("messageKey") or data.get("messsageKey") or ""), kind)
             err = self._error(res)
             if attempt == 1 and err.code in ("3002", "3005"):
                 continue

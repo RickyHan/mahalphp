@@ -135,20 +135,27 @@ def test_send(body: TestBody, settings: SettingsDep) -> dict[str, Any]:
         raise HTTPException(422, "받을 휴대폰 번호를 정확히 입력하십시오 (예: 010-1234-5678).")
     with db.transaction(settings) as conn, conn.cursor() as cur:
         conf = store.get_settings_map(cur)
-    if not conf["sms_from"]:
-        raise HTTPException(422, "발신번호를 먼저 저장하십시오.")
     client = sms.client_for(settings)
-    if client is None:
-        raise HTTPException(422, "서버 .env 에 PPURIO_ACCOUNT 와 PPURIO_API_KEY 를 넣고 서비스를 재시작하십시오.")
     now = store.now_local(settings)
     text = "[테스트] " + _preview(body.template or conf["sms_template"], now)["text"]
+    # 설정이 덜 됐어도 이력에 남겨 원인을 화면에서 볼 수 있게 한다
+    problem = None
+    if not conf["sms_from"]:
+        problem = "발신번호가 저장되지 않았습니다 — 위 '발신번호' 입력 후 [저장]을 먼저 누르십시오."
+    elif client is None:
+        problem = "서버가 뿌리오 연동 정보를 읽지 못했습니다 — .env 의 PPURIO_ACCOUNT·PPURIO_API_KEY 확인 후 서비스 재시작."
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute(
-            """INSERT INTO sms_queue (message_id, vendor_id, vendor_name, phone, room_name, category, text, status, note, send_after, created_at)
-               VALUES (NULL, NULL, '테스트 발송', %s, %s, %s, %s, 'sending', NULL, %s, %s)""",
-            (to, SAMPLE["room"], SAMPLE["category"], text, now, now),
+            """INSERT INTO sms_queue (message_id, vendor_id, vendor_name, phone, room_name, category, text, status, attempts, note,
+                                      send_after, created_at, done_at)
+               VALUES (NULL, NULL, '테스트 발송', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (to, SAMPLE["room"], SAMPLE["category"], text, "failed" if problem else "sending", 0, problem, now, now,
+             now if problem else None),
         )
         sms_id = cur.lastrowid
+    if problem:
+        live.bump("sms")
+        return {"ok": False, "message": problem}
     try:
         result = client.send(sender=conf["sms_from"], to=to, text=text, ref_key=sms.new_ref_key(f"t{sms_id}"))
         row = ("sent", None, result.message_key, result.message_type)

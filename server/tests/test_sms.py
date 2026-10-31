@@ -77,6 +77,18 @@ def test_client_request_format(monkeypatch):
     assert r.message_type == "LMS" and fake.calls[-1][2]["subject"] == sms.DEFAULT_SUBJECT and fake.tokens == 1
 
 
+def test_success_response_variants(monkeypatch):
+    # 규격 예시: code 가 숫자, 키 이름이 messsageKey
+    def post(url, headers=None, json=None, timeout=None):
+        if url.endswith("/v1/token"):
+            return httpx.Response(200, json={"token": "t", "type": "Bearer", "expired": 29991231235959, "userIp": "1.1.1.1"})
+        return httpx.Response(200, json={"code": 1000, "description": "ok", "refKey": "r", "messsageKey": "221128133505801SMS"})
+
+    monkeypatch.setattr(sms.httpx, "post", post)
+    r = sms.PpurioClient("a", "b").send(sender="01087387240", to="01087387240", text="테스트", ref_key="r")
+    assert r.message_key == "221128133505801SMS" and r.message_type == "SMS"
+
+
 def test_client_errors(monkeypatch):
     fake = FakePpurio(message_codes=("3005", "1000"))  # 토큰 만료 → 새 토큰으로 한 번 더
     monkeypatch.setattr(sms.httpx, "post", fake)
@@ -215,6 +227,11 @@ def test_sms_admin_api(admin, settings, monkeypatch):
 
     assert admin.post("/api/admin/sms/check").json()["ok"] is False  # 연동 정보 없음
     assert admin.post("/api/admin/sms/test", json={"to": "0101"}).status_code == 422
+    # 설정이 덜 된 테스트 발송도 이력에 실패 사유로 남는다
+    r = admin.post("/api/admin/sms/test", json={"to": "010-5555-6666"}).json()
+    assert r["ok"] is False
+    top = admin.get("/api/admin/sms/history").json()["items"][0]
+    assert top["status"] == "failed" and top["note"] == r["message"]
 
     sender = FakeSender()
     monkeypatch.setattr(sms, "client_for", lambda _s: sender)
