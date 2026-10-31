@@ -16,4 +16,26 @@
     <color name="warn_bg">#FEF3D6</color>
     <color name="bad">#C5221F</color>
     <color name="bad_bg">#FCE8E6</color>
+    <!-- 바둑판 메뉴 타일 (그라데이션 시작·끝) -->
+    <color name="tile_blue_a">#5B8CFF</color>
+    <color name="tile_blue_b">#3366E6</color>
+    <color name="tile_green_a">#2ED19B</color>
+    <color name="tile_green_b">#10A374</color>
+    <color name="tile_orange_a">#FFA94D</color>
+    <color name="tile_orange_b">#F2761B</color>
+    <color name="tile_pink_a">#FF7AA8</color>
+    <color name="tile_pink_b">#E2457E</color>
+    <color name="tile_purple_a">#9B7BFF</color>
+    <color name="tile_purple_b">#6B47E6</color>
+    <color name="tile_teal_a">#2CCFE0</color>
+    <color name="tile_teal_b">#0E9DB0</color>
+    <color name="tile_amber_a">#F5B83D</color>
+    <color name="tile_amber_b">#DB8B0A</color>
+    <color name="tile_red_a">#FF6B6B</color>
+    <color name="tile_red_b">#D93636</color>
+    <color name="tile_slate_a">#6E7F99</color>
+    <color name="tile_slate_b">#4A5870</color>
+    <!-- 수집 시작/중지 버튼 -->
+    <color name="action_start">#1E8E3E</color>
+    <color name="action_stop">#3C1E1E</color>
 </resources>

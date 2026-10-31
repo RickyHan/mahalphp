@@ -28,6 +28,7 @@ class RoomFilterActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_room_filter)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
         title = getString(R.string.room_filter_title)
         settings = AppSettings(this)
 
@@ -115,5 +116,10 @@ class RoomFilterActivity : AppCompatActivity() {
             RoomFilterMode.ONLY_SELECTED -> "선택한 ${count}개 방만 수집"
             RoomFilterMode.EXCEPT_SELECTED -> "선택한 ${count}개 방 제외하고 수집"
         }
+    }
+
+    override fun onSupportNavigateUp(): Boolean {
+        finish()
+        return true
     }
 }

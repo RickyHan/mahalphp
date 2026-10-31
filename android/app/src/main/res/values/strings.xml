@@ -3,7 +3,9 @@
     <string name="app_name">카톡 수집기</string>
     <string name="listener_label">카톡 수집기 알림 수집</string>
     <string name="open_web">웹 관리 화면 열기</string>
-    <string name="section_checklist">체크리스트</string>
+    <string name="section_menu">메뉴</string>
+    <string name="capture_start">수집 시작</string>
+    <string name="capture_stop">수집 중지</string>
     <string name="action_turn_on">켜기</string>
     <string name="action_settings">설정</string>
     <string name="action_choose">선택</string>
@@ -19,7 +21,6 @@
     <string name="test_connection">연결 테스트</string>
     <string name="upload_now">지금 전송</string>
     <string name="section_capture">수집 설정</string>
-    <string name="capture_enabled">수집 사용</string>
     <string name="capture_images">사진 미리보기 수집</string>
     <string name="room_filter_open">수집할 방 선택</string>
     <string name="room_filter_title">수집할 방 선택</string>
@@ -35,4 +36,10 @@
     <string name="diagnostics_title">알림 구조 진단</string>
     <string name="diagnostics_share">이 내용 보내기 (카톡·메일 등)</string>
     <string name="diagnostics_empty">아직 기록된 카톡 알림이 없습니다.\n알림 접근 권한을 켠 뒤 카톡을 받으면 최근 30건이 여기에 기록됩니다.</string>
+    <string name="save_and_test">저장하고 연결 확인</string>
+    <string name="server_hint">서버 주소 예: http://61.83.189.246:28000 · API 키는 서버 설치 시 출력된 값입니다.</string>
+    <string name="capture_images_hint">카톡 알림에 붙은 사진 미리보기를 함께 저장합니다.</string>
+    <string name="status_notification_hint">알림줄에 🟢/🟡/🔴 상태와 수집 시작·중지 버튼을 항상 표시합니다.</string>
+    <string name="section_permission">권한</string>
+    <string name="section_options">수집 옵션 · 권한</string>
 </resources>

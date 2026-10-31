@@ -37,10 +37,17 @@ object StatusNotifier {
         val open = PendingIntent.getActivity(
             context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        val toggle = PendingIntent.getBroadcast(
+            context, 1,
+            Intent(context, CaptureToggleReceiver::class.java).setAction(CaptureToggleReceiver.ACTION),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val toggleLabel = if (settings.captureEnabled) "⏸ 수집 중지" else "▶ 수집 시작"
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_collector)
             .setContentTitle("$dot ${status.title}")
             .setContentText(status.detail.lines().last())
+            .setColor(ContextCompat.getColor(context, colorOf(status.level)))
             .setStyle(NotificationCompat.BigTextStyle().bigText(status.detail))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -48,8 +55,15 @@ object StatusNotifier {
             .setShowWhen(false)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(open)
+            .addAction(0, toggleLabel, toggle)
             .build()
         runCatching { nm.notify(ID, n) }
+    }
+
+    fun colorOf(level: CollectorStatus.Level): Int = when (level) {
+        CollectorStatus.Level.GOOD -> R.color.good
+        CollectorStatus.Level.WARN -> R.color.warn
+        CollectorStatus.Level.BAD -> R.color.bad
     }
 
     fun evaluate(context: Context): CollectorStatus.Status {

@@ -25,6 +25,7 @@ class DiagnosticsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         title = getString(R.string.diagnostics_title)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
         val pad = (12 * resources.displayMetrics.density).toInt()
         val body = TextView(this).apply {
             typeface = Typeface.MONOSPACE
@@ -61,5 +62,10 @@ class DiagnosticsActivity : AppCompatActivity() {
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
+    }
+
+    override fun onSupportNavigateUp(): Boolean {
+        finish()
+        return true
     }
 }

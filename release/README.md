@@ -1,9 +1,14 @@
 # APK 다운로드
 
-- 최신 버전: [kakao-collector.apk](https://github.com/rickyhan/mahalphp/raw/claude/new-creation-dz2guv/release/kakao-collector.apk) (v2.1.0, Android 8.0 이상)
+- 최신 버전: [kakao-collector.apk](https://github.com/rickyhan/mahalphp/raw/claude/new-creation-dz2guv/release/kakao-collector.apk) (v2.2.0, Android 8.0 이상)
 - 앱은 **수집 전용**입니다. 대화·민원·통계는 서버의 웹 관리 화면(`/admin`)에서 봅니다.
 - 이전 버전 위에 덮어 설치하면 휴대폰에만 있던 메시지(전송 실패분 포함)도 서버로 자동 전송됩니다.
 - 공개 APK 에는 서버 주소·API 키가 들어 있지 않습니다. 설치 후 앱에서 직접 입력하십시오.
+
+## v2.2.0
+- **수집 시작 / 중지** 버튼: 홈 상단 큰 버튼, 알림줄 상태 알림에도 '⏸ 수집 중지 / ▶ 수집 시작' 버튼
+- 홈 메뉴를 **컬러 바둑판 타일**로 변경: 웹 관리 화면 · 수집할 방 · 지금 전송 · 최근 수집 · 서버 연결 · 수집 옵션 · 권한 설정 · 알림 진단 (각 타일에 현재 상태 표시, 문제가 있으면 빨간색)
+- 서버 연결 · 수집 옵션/권한 · 최근 수집을 각각 별도 화면으로 분리
 
 ## v2.1.0
 - 상태 신호: 앱 상단 상태 카드(🟢 정상 수집 중 / 🟡 전송 지연 / 🔴 권한·설정 필요)와 알림줄 상시 상태 표시

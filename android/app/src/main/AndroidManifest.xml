@@ -16,8 +16,7 @@
         <activity
             android:name=".MainActivity"
             android:theme="@style/Theme.Collector"
-            android:exported="true"
-            android:windowSoftInputMode="adjustResize">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -32,6 +31,26 @@
             android:name=".RoomFilterActivity"
             android:exported="false"
             android:label="@string/room_filter_title" />
+
+        <activity
+            android:name=".ServerActivity"
+            android:exported="false"
+            android:label="@string/section_server"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".OptionsActivity"
+            android:exported="false"
+            android:label="@string/section_options" />
+
+        <activity
+            android:name=".RecentActivity"
+            android:exported="false"
+            android:label="@string/section_recent" />
+
+        <receiver
+            android:name=".CaptureToggleReceiver"
+            android:exported="false" />
 
         <service
             android:name=".KakaoNotificationListener"
