@@ -237,6 +237,12 @@ def finish_reply(cur, reply_id: int, device_id: str, sent: bool, note: str | Non
 
 # ---- 분류 1회 실행 (워커·수동 실행 공용) ----------------------------------------------------
 
+def enabled_for_prompt(cur) -> list[tuple[str, str]]:
+    from .categories import enabled_for_prompt as _f
+
+    return _f(cur)
+
+
 def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> dict[str, Any]:
     """대상 메시지 한 묶음을 분류하고, 새 문제의 첫 민원에 안내를 대기열에 넣는다."""
     with db.transaction(settings) as conn, conn.cursor() as cur:
@@ -244,10 +250,11 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
         if conf["complaint_enabled"] != "1" or not settings.gemini_api_key:
             return {"done": 0, "reason": "disabled"}
         batch = unclassified(cur, cp.BATCH, now_local(settings))
+        categories = enabled_for_prompt(cur) if batch else []
     if not batch:
         return {"done": 0}
 
-    client = client or cp.GeminiClient(settings.gemini_api_key, conf["gemini_model"])
+    client = client or cp.GeminiClient(settings.gemini_api_key, conf["gemini_model"], categories=categories)
     items = [cp.Item(r["id"], r["room_name"], r["sender_name"], r["message_text"]) for r in batch]
     now = now_local(settings)
     try:

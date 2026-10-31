@@ -5,7 +5,7 @@
   const $ = (id) => document.getElementById(id);
   const KC = window.KC;
   const { api, el, reportError, fmtDateTime } = KC;
-  const state = { items: [], rooms: [], editing: null };
+  const state = { items: [], rooms: [], categories: [], editing: null };
 
   async function send(method, path, body) {
     const res = await fetch(path, { method, credentials: "same-origin", headers: { Accept: "application/json" }, body });
@@ -25,15 +25,20 @@
     state.rooms = data.items.map((r) => ({ name: r.room_name, group: r.is_group_chat, last: r.last_posted_at }));
   }
 
+  async function loadCategories() {
+    const data = await api("/api/admin/categories");
+    state.categories = data.items;
+  }
+
   async function loadVendors() {
-    const [data] = await Promise.all([api("/api/admin/vendors"), loadRooms()]);
+    const [data] = await Promise.all([api("/api/admin/vendors"), loadRooms(), loadCategories()]);
     state.items = data.items;
     render();
   }
 
   function matches(v, q) {
     if (!q) return true;
-    return [v.name, v.phone, v.room_name, v.address, v.biz_no].some((x) => (x || "").toLowerCase().includes(q));
+    return [v.name, v.phone, v.room_name, v.address, v.biz_no, v.category_name].some((x) => (x || "").toLowerCase().includes(q));
   }
 
   function render() {
@@ -76,6 +81,7 @@
       el(
         "dl",
         {},
+        ...row("민원 카테고리", v.category_name ? el("span", { class: "chip-cat", text: v.category_name }) : null),
         ...row("담당 대화방", room),
         ...row("전화번호", tel),
         ...row("사업자번호", v.biz_no),
@@ -106,6 +112,15 @@
     sel.value = current || "";
   }
 
+  function fillCategorySelect(current) {
+    const sel = $("vd-category");
+    sel.replaceChildren(el("option", { value: "", text: "(지정 안 함)" }));
+    for (const c of state.categories) {
+      sel.append(el("option", { value: String(c.id), text: c.enabled ? c.name : `${c.name} (사용 안 함)` }));
+    }
+    sel.value = current ? String(current) : "";
+  }
+
   function openForm(v = null) {
     state.editing = v;
     $("vd-form-title").textContent = v ? `업체 수정 — ${v.name}` : "업체 등록";
@@ -119,6 +134,7 @@
     $("vd-doc-remove-wrap").hidden = !v?.has_doc;
     $("vd-error").textContent = "";
     fillRoomSelect(v?.room_name || "");
+    fillCategorySelect(v?.category_id || null);
     $("vd-form").hidden = false;
     $("vd-form").scrollIntoView({ block: "nearest" });
     $("vd-name").focus();
@@ -155,6 +171,7 @@
     form.append("phone", $("vd-phone").value.trim());
     form.append("address", $("vd-address").value.trim());
     form.append("room_name", $("vd-room").value);
+    form.append("category_id", $("vd-category").value);
     const file = $("vd-doc").files[0];
     if (file) form.append("doc", file);
     const editing = state.editing;
@@ -181,7 +198,7 @@
   // ---- 연결 -------------------------------------------------------------------------------
 
   KC.loaders = Object.assign(KC.loaders || {}, { vendors: loadVendors });
-  $("vd-new").addEventListener("click", () => loadRooms().then(() => openForm()).catch(reportError));
+  $("vd-new").addEventListener("click", () => Promise.all([loadRooms(), loadCategories()]).then(() => openForm()).catch(reportError));
   $("vd-cancel").addEventListener("click", closeForm);
   $("vd-form").addEventListener("submit", (e) => save(e).catch(reportError));
   $("vd-search").addEventListener("input", render);

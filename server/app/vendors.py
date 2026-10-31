@@ -1,4 +1,4 @@
-"""민원처리업체: 업체명 · 사업자등록번호 · 사업자등록증(이미지/PDF) · 전화번호 · 주소 · 담당 카톡 대화방.
+"""민원처리업체: 업체명 · 사업자등록번호 · 사업자등록증(이미지/PDF) · 전화번호 · 주소 · 담당 카톡 대화방 · 담당 민원 카테고리.
 
     GET    /api/admin/vendors              목록
     POST   /api/admin/vendors              등록 (multipart)
@@ -29,7 +29,9 @@ router = APIRouter(dependencies=[Depends(require_admin)])
 IMAGE_TYPES = {"JPEG": ("image/jpeg", "jpg"), "PNG": ("image/png", "png"), "WEBP": ("image/webp", "webp")}
 BIZ_NO = re.compile(r"^\d{3}-?\d{2}-?\d{5}$")
 PHONE = re.compile(r"^[0-9+\-() ]{0,20}$")
-COLUMNS = "id, name, biz_no, phone, address, room_name, doc_mime, doc_name, created_at, updated_at"
+COLUMNS = ("v.id, v.name, v.biz_no, v.phone, v.address, v.room_name, v.category_id, c.name AS category_name, "
+           "v.doc_mime, v.doc_name, v.created_at, v.updated_at")
+FROM = "vendors v LEFT JOIN complaint_categories c ON c.id = v.category_id"
 
 
 def docs_root(settings: Settings) -> Path:
@@ -77,6 +79,18 @@ def _store_doc(settings: Settings, upload: UploadFile, data: bytes) -> tuple[str
     return relative, mime, original
 
 
+def _category(cur, raw: str) -> int | None:
+    """선택한 민원 카테고리 id (빈 값이면 지정 안 함)"""
+    if not raw.strip():
+        return None
+    if not raw.strip().isdigit():
+        raise HTTPException(422, "민원 카테고리가 올바르지 않습니다.")
+    cur.execute("SELECT id FROM complaint_categories WHERE id = %s", (int(raw),))
+    if cur.fetchone() is None:
+        raise HTTPException(422, "없는 민원 카테고리입니다. 화면을 새로 고친 뒤 다시 선택하십시오.")
+    return int(raw)
+
+
 def _row(r: dict[str, Any]) -> dict[str, Any]:
     out = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in r.items()}
     out["has_doc"] = bool(out.pop("doc_mime", None))
@@ -90,7 +104,7 @@ def _now(settings: Settings) -> datetime:
 @router.get("/api/admin/vendors")
 def list_vendors(settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
-        cur.execute(f"SELECT {COLUMNS} FROM vendors ORDER BY name, id")
+        cur.execute(f"SELECT {COLUMNS} FROM {FROM} ORDER BY v.name, v.id")
         items = [_row(r) for r in cur.fetchall()]
     return {"ok": True, "items": items}
 
@@ -103,6 +117,7 @@ async def create_vendor(
     phone: Annotated[str, Form(max_length=20)] = "",
     address: Annotated[str, Form(max_length=300)] = "",
     room_name: Annotated[str, Form(max_length=255)] = "",
+    category_id: Annotated[str, Form(max_length=20)] = "",
     doc: Annotated[UploadFile | None, File()] = None,
 ) -> dict[str, Any]:
     values = _clean(name, biz_no, phone, address, room_name)
@@ -110,9 +125,9 @@ async def create_vendor(
     now = _now(settings)
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute(
-            """INSERT INTO vendors (name, biz_no, phone, address, room_name, doc_path, doc_mime, doc_name, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (*values.values(), *stored, now, now),
+            """INSERT INTO vendors (name, biz_no, phone, address, room_name, category_id, doc_path, doc_mime, doc_name, created_at, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (*values.values(), _category(cur, category_id), *stored, now, now),
         )
         vendor_id = cur.lastrowid
     live.bump("vendor")
@@ -128,6 +143,7 @@ async def update_vendor(
     phone: Annotated[str, Form(max_length=20)] = "",
     address: Annotated[str, Form(max_length=300)] = "",
     room_name: Annotated[str, Form(max_length=255)] = "",
+    category_id: Annotated[str, Form(max_length=20)] = "",
     remove_doc: Annotated[bool, Form()] = False,
     doc: Annotated[UploadFile | None, File()] = None,
 ) -> dict[str, Any]:
@@ -138,8 +154,8 @@ async def update_vendor(
         if cur.fetchone() is None:
             raise HTTPException(404, "업체가 없습니다.")
         cur.execute(
-            "UPDATE vendors SET name = %s, biz_no = %s, phone = %s, address = %s, room_name = %s, updated_at = %s WHERE id = %s",
-            (*values.values(), _now(settings), vendor_id),
+            "UPDATE vendors SET name = %s, biz_no = %s, phone = %s, address = %s, room_name = %s, category_id = %s, updated_at = %s WHERE id = %s",
+            (*values.values(), _category(cur, category_id), _now(settings), vendor_id),
         )
         if stored is not None or remove_doc:
             cur.execute(

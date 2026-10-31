@@ -174,6 +174,7 @@ def install_schema(settings: Settings) -> list[str]:
             # 여러 요청이 동시에 읽고 쓰도록 WAL 모드 (DB 파일에 영구 설정됨)
             conn.executescript("PRAGMA journal_mode = WAL;")
             _add_column_if_missing(conn, settings, "kakao_messages", "sender_key", "TEXT")
+            _add_column_if_missing(conn, settings, "vendors", "category_id", "INTEGER")
             with conn.cursor() as cur:
                 cur.execute("SELECT name AS t FROM sqlite_master WHERE type = 'table' AND name LIKE 'kakao!_%' ESCAPE '!' ORDER BY name")
                 return [row["t"] for row in cur.fetchall()]
@@ -187,6 +188,7 @@ def install_schema(settings: Settings) -> list[str]:
                 cur.execute(stmt)
             conn.commit()
             _add_column_if_missing(conn, settings, "kakao_messages", "sender_key", "VARCHAR(255) NULL")
+            _add_column_if_missing(conn, settings, "vendors", "category_id", "BIGINT UNSIGNED NULL")
             cur.execute(
                 "SELECT table_name AS t FROM information_schema.tables WHERE table_schema = %s ORDER BY table_name",
                 (settings.db_name,),

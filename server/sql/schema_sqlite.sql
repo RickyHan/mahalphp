@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS vendors (
   phone      TEXT NOT NULL DEFAULT '',
   address    TEXT NOT NULL DEFAULT '',
   room_name  TEXT,
+  category_id INTEGER,
   doc_path   TEXT,
   doc_mime   TEXT,
   doc_name   TEXT,
@@ -104,3 +105,12 @@ CREATE TABLE IF NOT EXISTS vendors (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_vendors_room ON vendors (room_name);
+
+CREATE TABLE IF NOT EXISTS complaint_categories (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT NOT NULL UNIQUE,
+  description TEXT NOT NULL DEFAULT '',
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL
+);

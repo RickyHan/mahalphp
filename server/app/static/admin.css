@@ -323,3 +323,61 @@ mark { background: var(--highlight); color: inherit; border-radius: 3px; padding
   .vd-grid { grid-template-columns: minmax(0, 1fr); }
   .live #live-text { display: none; }
 }
+
+/* 대화 선택 삭제 */
+.chat-tools { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.chat-tools-info { flex: 1; min-width: 120px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn-danger-solid { background: var(--danger); color: #fff; border-color: transparent; font-weight: 600; }
+.btn-danger-solid:hover { background: var(--danger); filter: brightness(0.92); }
+.btn-danger-solid:disabled, .btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+.chat.selecting .msg { cursor: pointer; position: relative; padding-left: 30px; border-radius: 10px; }
+.chat.selecting .msg.self { padding-left: 0; padding-right: 30px; }
+.chat.selecting .msg::before {
+  content: ""; position: absolute; left: 4px; top: 50%; width: 18px; height: 18px; margin-top: -9px;
+  border: 2px solid var(--muted); border-radius: 50%; background: var(--surface); box-sizing: border-box;
+}
+.chat.selecting .msg.self::before { left: auto; right: 4px; }
+.chat.selecting .msg.selected::before { border-color: var(--danger); background: var(--danger); box-shadow: inset 0 0 0 3px var(--surface); }
+.chat.selecting .msg.selected .bubble { outline: 2px solid var(--danger); }
+
+/* 민원 카테고리 */
+.ct-add input { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); }
+.ct-add #ct-name { width: 220px; }
+.ct-add #ct-desc { flex: 1; min-width: 200px; }
+.ct-error { margin: 0 16px; }
+.ct-list { list-style: none; margin: 0; padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.ct-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.ct-row.ct-off { opacity: 0.6; }
+.ct-order { display: flex; flex-direction: column; gap: 2px; }
+.btn-icon { padding: 0 6px; font-size: 10px; line-height: 16px; }
+.ct-fields { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px; }
+.ct-fields input { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); min-width: 0; }
+.ct-fields input:disabled { opacity: 0.8; }
+.ct-name { font-weight: 700; }
+.ct-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.ct-actions { display: flex; gap: 6px; }
+.ct-help { margin: 4px 16px 24px; font-size: 12px; }
+
+/* 데이터 관리 */
+.dm-table { width: calc(100% - 24px); margin: 8px 12px; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; font-size: 13px; }
+.dm-table th, .dm-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+.dm-table th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--surface-2); }
+.dm-table tr:last-child td { border-bottom: 0; }
+.dm-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.dm-check { width: 32px; }
+.dm-room { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linklike { border: 0; background: none; padding: 0; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
+.linklike:hover { text-decoration: underline; }
+.danger-zone { margin: 20px 12px 32px; padding: 16px; border: 1px solid var(--danger); border-radius: var(--radius); background: var(--alert-bg); }
+.danger-zone h3 { margin: 0 0 6px; font-size: 15px; color: var(--alert); }
+.danger-zone p { margin: 0 0 12px; font-size: 13px; }
+.danger-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.danger-row input { flex: 1; min-width: 200px; max-width: 320px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); }
+
+@media (max-width: 900px) {
+  .ct-row { grid-template-columns: auto minmax(0, 1fr); }
+  .ct-fields { grid-template-columns: minmax(0, 1fr); }
+  .ct-meta, .ct-enabled, .ct-actions { grid-column: 2; justify-self: start; }
+  .ct-meta { flex-direction: row; }
+  .dm-table th:nth-child(6), .dm-table td:nth-child(6), .dm-table th:nth-child(5), .dm-table td:nth-child(5) { display: none; }
+}

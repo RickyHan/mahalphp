@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Stre
 from pydantic import BaseModel, Field
 
 from . import complaints as cp
-from . import db, live, store, worker
+from . import categories, db, live, store, worker
 from .auth import (
     SESSION_COOKIE,
     SettingsDep,
@@ -293,6 +293,7 @@ def complaint_groups(settings: SettingsDep, category: str | None = None) -> dict
     with db.transaction(settings) as conn, conn.cursor() as cur:
         rows = store.complaint_rows(cur, category=category or None)
         counts = store.complaint_counts(cur)
+        names = [c["name"] for c in categories.all_categories(cur)]
     groups = [{k: _serialize(v) for k, v in g.to_dict().items()} for g in cp.group_complaints(rows)]
     return {
         "ok": True,
@@ -301,7 +302,7 @@ def complaint_groups(settings: SettingsDep, category: str | None = None) -> dict
         "counts": counts,
         "worker": worker.status,
         "gemini_configured": bool(settings.gemini_api_key),
-        "categories": cp.CATEGORIES,
+        "categories": names,
     }
 
 

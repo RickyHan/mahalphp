@@ -116,6 +116,18 @@ CREATE TABLE IF NOT EXISTS `app_settings` (
   PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='설정';
 
+-- 민원 분류 (웹 '민원 카테고리'에서 관리, Gemini 분류에 사용). '기타'는 삭제 불가
+CREATE TABLE IF NOT EXISTS `complaint_categories` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name`        VARCHAR(30)     NOT NULL,
+  `description` VARCHAR(200)    NOT NULL DEFAULT '' COMMENT 'Gemini 판정 기준 설명',
+  `sort_order`  INT             NOT NULL DEFAULT 0,
+  `enabled`     TINYINT         NOT NULL DEFAULT 1,
+  `created_at`  DATETIME(3)     NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_complaint_categories_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='민원 분류';
+
 -- 민원처리업체 (담당 카톡 대화방 1개 지정)
 CREATE TABLE IF NOT EXISTS `vendors` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -124,6 +136,7 @@ CREATE TABLE IF NOT EXISTS `vendors` (
   `phone`      VARCHAR(20)     NOT NULL DEFAULT '',
   `address`    VARCHAR(300)    NOT NULL DEFAULT '',
   `room_name`  VARCHAR(255)    NULL COMMENT '담당 카톡 대화방',
+  `category_id` BIGINT UNSIGNED NULL COMMENT '담당 민원 분류 (complaint_categories.id)',
   `doc_path`   VARCHAR(255)    NULL COMMENT '사업자등록증 파일 (storage/vendor-docs 기준)',
   `doc_mime`   VARCHAR(50)     NULL,
   `doc_name`   VARCHAR(200)    NULL,

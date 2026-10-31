@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>카톡 수집기 관리자</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%23FEE500%22/%3E%3Cpath d=%22M16 7C10.5 7 6 10.5 6 14.8c0 2.8 1.9 5.3 4.7 6.6l-1 3.7 4.4-2.9c.6.1 1.2.1 1.9.1 5.5 0 10-3.5 10-7.8S21.5 7 16 7z%22 fill=%22%233C1E1E%22/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/admin/static/admin.css?v=2.2">
+  <link rel="stylesheet" href="/admin/static/admin.css?v=2.3">
 </head>
 <body>
   <header class="topbar">
@@ -43,11 +43,21 @@
         <button role="tab" class="tab" data-tab="stats" aria-selected="false">통계</button>
         <button role="tab" class="tab" data-tab="members" aria-selected="false">참여자 이력</button>
         <button role="tab" class="tab" data-tab="vendors" aria-selected="false">민원처리업체</button>
+        <button role="tab" class="tab" data-tab="categories" aria-selected="false">민원 카테고리</button>
+        <button role="tab" class="tab" data-tab="data" aria-selected="false">데이터 관리</button>
         <button role="tab" class="tab" data-tab="settings" aria-selected="false">설정</button>
         <span class="panel-title" id="panel-title"></span>
       </nav>
 
       <section class="view" id="view-chat" role="tabpanel">
+        <div class="chat-tools" id="chat-tools" hidden>
+          <span class="chat-tools-info" id="chat-tools-info"></span>
+          <button class="btn btn-small" id="sel-start" type="button">선택 삭제</button>
+          <button class="btn btn-small btn-danger" id="room-delete" type="button">이 방 전체 삭제</button>
+          <button class="btn btn-small" id="sel-all" type="button" hidden>보이는 메시지 모두 선택</button>
+          <button class="btn btn-small btn-danger-solid" id="sel-delete" type="button" hidden disabled>삭제</button>
+          <button class="btn btn-small" id="sel-cancel" type="button" hidden>취소</button>
+        </div>
         <div class="chat" id="chat">
           <div class="empty" id="chat-empty">왼쪽에서 대화방을 선택하십시오.</div>
         </div>
@@ -137,6 +147,9 @@
             <label>담당 카톡 대화방
               <select id="vd-room" name="room_name"><option value="">(지정 안 함)</option></select>
             </label>
+            <label>담당 민원 카테고리
+              <select id="vd-category" name="category_id"><option value="">(지정 안 함)</option></select>
+            </label>
             <label class="vd-wide">주소<input id="vd-address" name="address" maxlength="300" autocomplete="off"></label>
             <div class="vd-wide vd-doc">
               <span class="vd-label">사업자등록증 <span class="muted">(이미지 또는 PDF, 10MB 이하)</span></span>
@@ -154,6 +167,38 @@
           </div>
         </form>
         <ul class="vd-list" id="vd-list"></ul>
+      </section>
+
+      <section class="view" id="view-categories" role="tabpanel" hidden>
+        <form class="view-toolbar ct-add" id="ct-form" novalidate>
+          <input id="ct-name" maxlength="30" placeholder="새 카테고리 이름 (예: 엘리베이터)" aria-label="카테고리 이름" autocomplete="off">
+          <input id="ct-desc" maxlength="200" placeholder="판정 기준 설명 (Gemini 가 참고, 선택)" aria-label="판정 기준 설명" autocomplete="off">
+          <button class="btn btn-primary" type="submit">+ 추가</button>
+        </form>
+        <p class="ops-status" id="ct-status"></p>
+        <p class="vd-error ct-error" id="ct-error" role="alert"></p>
+        <ul class="ct-list" id="ct-list"></ul>
+        <p class="muted ct-help">새로 들어오는 메시지부터 '사용' 중인 카테고리 중 하나로 분류됩니다. 이름을 바꾸면 기존 민원의 분류도 함께 바뀌고, 삭제하면 기존 민원은 '기타'로 옮겨집니다. '기타'는 삭제할 수 없습니다.</p>
+      </section>
+
+      <section class="view" id="view-data" role="tabpanel" hidden>
+        <div class="view-toolbar">
+          <label class="check"><input type="checkbox" id="dm-all"> 전체 선택</label>
+          <button class="btn btn-danger-solid" id="dm-delete" type="button" disabled>선택한 방 삭제</button>
+          <span class="muted" id="dm-status"></span>
+        </div>
+        <table class="dm-table">
+          <thead><tr><th class="dm-check"></th><th>대화방</th><th class="num">메시지</th><th class="num">사진</th><th class="num">민원</th><th>기간</th><th></th></tr></thead>
+          <tbody id="dm-rows"></tbody>
+        </table>
+        <section class="danger-zone">
+          <h3>전체 삭제</h3>
+          <p class="muted">수집된 모든 대화·사진·민원 분류·참여자 이력을 지웁니다. 민원처리업체·카테고리·설정은 남습니다. <strong>되돌릴 수 없습니다.</strong></p>
+          <form class="danger-row" id="dm-all-form" novalidate>
+            <input id="dm-confirm" placeholder="확인을 위해 '전체 삭제' 입력" autocomplete="off" aria-label="전체 삭제 확인">
+            <button class="btn btn-danger-solid" type="submit" id="dm-all-delete" disabled>전체 삭제</button>
+          </form>
+        </section>
       </section>
 
       <section class="view" id="view-settings" role="tabpanel" hidden>
@@ -184,8 +229,9 @@
     <button class="lb-btn lb-next" id="lb-next" type="button" aria-label="다음 사진">›</button>
   </div>
 
-  <script src="/admin/static/admin.js?v=2.2"></script>
-  <script src="/admin/static/admin-ops.js?v=2.2"></script>
-  <script src="/admin/static/admin-vendors.js?v=2.2"></script>
+  <script src="/admin/static/admin.js?v=2.3"></script>
+  <script src="/admin/static/admin-ops.js?v=2.3"></script>
+  <script src="/admin/static/admin-vendors.js?v=2.3"></script>
+  <script src="/admin/static/admin-manage.js?v=2.3"></script>
 </body>
 </html>

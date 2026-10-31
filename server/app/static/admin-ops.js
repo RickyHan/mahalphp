@@ -34,7 +34,10 @@
   async function loadComplaints() {
     const data = await api("/api/admin/complaints", { category: $("cp-category").value });
     const sel = $("cp-category");
-    if (sel.options.length === 1) for (const c of data.categories) sel.append(el("option", { value: c, text: c }));
+    // 카테고리가 바뀔 수 있으므로 매번 다시 채운다 (선택값 유지)
+    const chosen = sel.value;
+    sel.replaceChildren(el("option", { value: "", text: "전체 분류" }), ...data.categories.map((c) => el("option", { value: c, text: c })));
+    sel.value = data.categories.includes(chosen) ? chosen : "";
 
     const roomOnly = $("cp-room-only").checked && KC.currentRoom();
     const items = roomOnly ? data.items.filter((g) => g.room_name === KC.currentRoom()) : data.items;
@@ -244,7 +247,14 @@
     settings: loadSettings,
   }));
   // 실시간 신호가 왔을 때 다시 읽을 탭
-  const LIVE_TOPICS = { complaints: ["message", "complaint"], stats: ["complaint"], members: ["message"], vendors: ["vendor"] };
+  const LIVE_TOPICS = {
+    complaints: ["message", "complaint", "category", "delete"],
+    stats: ["complaint", "category", "delete"],
+    members: ["message", "delete"],
+    vendors: ["vendor", "category"],
+    categories: ["category", "complaint", "delete"],
+    data: ["message", "delete"],
+  };
 
   KC.onTab = (tab) => {
     const load = LOADERS[tab];
@@ -279,6 +289,6 @@
   // 실시간 신호와 별도로, 보고 있는 탭은 1분마다 새로고침 (설정·업체 탭 제외: 입력 중인 내용 보호)
   setInterval(() => {
     const tab = KC.currentTab();
-    if (!document.hidden && !["settings", "vendors"].includes(tab) && LOADERS[tab]) LOADERS[tab]().catch(reportError);
+    if (!document.hidden && !["settings", "vendors", "categories"].includes(tab) && LOADERS[tab]) LOADERS[tab]().catch(reportError);
   }, 60000);
 })();

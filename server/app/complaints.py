@@ -17,25 +17,47 @@ REPLY_MAX_AGE = timedelta(minutes=30)
 SELF_SENDER = "나"
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_REPLY_TEMPLATE = "[{분류}] 민원이 접수되었습니다."
-CATEGORIES = ["소음", "누수·하자", "주차", "청소·쓰레기", "시설·고장", "관리비", "보안·출입", "생활·이웃", "기타"]
+FALLBACK_CATEGORY = "기타"
+# 처음 설치 시 등록되는 기본 분류(이름, Gemini 판정 기준 설명). 이후에는 웹 '민원 카테고리'에서 관리한다.
+DEFAULT_CATEGORIES: list[tuple[str, str]] = [
+    ("소음", "층간소음·생활소음 등 소리 문제"),
+    ("누수·하자", "물 새는 문제, 결로, 시공 불량"),
+    ("주차", "주차 공간·불법주차·이중주차"),
+    ("청소·쓰레기", "청소 상태, 쓰레기·분리수거"),
+    ("시설·고장", "엘리베이터·조명·보일러·출입문 등 시설 고장"),
+    ("관리비", "관리비 문의·이의"),
+    ("보안·출입", "출입 통제, 보안, 택배"),
+    ("생활·이웃", "이웃 간 흡연·냄새·반려동물 등 생활 불편"),
+    (FALLBACK_CATEGORY, "위 분류에 해당하지 않는 민원"),
+]
+CATEGORIES = [name for name, _ in DEFAULT_CATEGORIES]  # 하위 호환: 기본 분류 이름
 
-SYSTEM_PROMPT = f"""너는 아파트·오피스텔 등 공동주택 관리사무소의 민원 분류 담당자다.
+
+def build_prompt(categories: list[tuple[str, str]] | None = None) -> str:
+    """분류 목록(이름, 설명)으로 Gemini 지시문을 만든다. '기타'는 항상 포함된다."""
+    cats = list(categories or DEFAULT_CATEGORIES)
+    if FALLBACK_CATEGORY not in {n for n, _ in cats}:
+        cats.append((FALLBACK_CATEGORY, "위 분류에 해당하지 않는 민원"))
+    guide = "\n".join(f'  - "{n}": {d}' if d else f'  - "{n}"' for n, d in cats)
+    names = "|".join(n for n, _ in cats)
+    return f"""너는 아파트·오피스텔 등 공동주택 관리사무소의 민원 분류 담당자다.
 카카오톡 대화방에서 수집한 메시지 각각이 "건물에 사는 입주민이 제기하는 민원"인지 판정하라.
 
 민원으로 본다: 입주민이 건물·시설·관리·생활 불편에 대해 해결·조치·개선을 요청하거나 불만·문제를 알리는 메시지.
-  예) 층간소음, 누수·결로·하자, 주차·불법주차, 청소·쓰레기·분리수거, 엘리베이터·조명·보일러 등 시설 고장,
-      관리비 문의·이의, 출입·보안·택배, 흡연·냄새·반려동물 등 이웃 간 생활 불편
 민원이 아니다: 인사·잡담·감사, 불편 제기가 아닌 단순 대화, 관리사무소·관리자의 공지나 답변,
   광고·홍보, 개인 간 거래, 건물과 무관한 내용. 애매하면 민원이 아닌 것으로 판정한다.
 
-분류 기준: 층간소음·생활소음 등 소리 문제는 "소음", 물 새는 문제·시공 불량은 "누수·하자",
-  이웃 간 흡연·냄새·반려동물 문제는 "생활·이웃", 해당 없는 민원은 "기타".
+분류는 아래 중 하나만 고른다 (해당 없는 민원은 "{FALLBACK_CATEGORY}"):
+{guide}
 
 반드시 아래 JSON 형식으로만 답하라. 입력의 모든 id 에 대해 결과를 하나씩 포함한다.
 {{"results":[{{"id":입력id,"is_complaint":true 또는 false,
-  "category":"{'|'.join(CATEGORIES)}",
+  "category":"{names}",
   "summary":"민원이면 핵심 내용을 25자 이내로, 아니면 빈 문자열",
   "confidence":0.0~1.0}}]}}"""
+
+
+SYSTEM_PROMPT = build_prompt()
 
 _WS = re.compile(r"[ \t\r\n]")
 
@@ -72,16 +94,17 @@ class GeminiError(Exception):
         self.retry = retry
 
 
-def request_body(items: list[Item]) -> dict[str, Any]:
+def request_body(items: list[Item], categories: list[tuple[str, str]] | None = None) -> dict[str, Any]:
     user = json.dumps([{"id": i.id, "room": i.room, "sender": i.sender, "text": i.text[:1000]} for i in items], ensure_ascii=False)
     return {
-        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "systemInstruction": {"parts": [{"text": build_prompt(categories)}]},
         "contents": [{"role": "user", "parts": [{"text": user}]}],
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
     }
 
 
-def parse_response(body: dict[str, Any], requested: set[int]) -> list[Verdict]:
+def parse_response(body: dict[str, Any], requested: set[int], allowed: set[str] | None = None) -> list[Verdict]:
+    allowed = (allowed or set(CATEGORIES)) | {FALLBACK_CATEGORY}
     try:
         parts = body["candidates"][0]["content"]["parts"]
         results = json.loads("".join(p.get("text", "") for p in parts))["results"]
@@ -97,7 +120,7 @@ def parse_response(body: dict[str, Any], requested: set[int]) -> list[Verdict]:
             continue
         if rid not in requested or rid in seen:
             continue
-        category = r.get("category") if r.get("category") in CATEGORIES else "기타"
+        category = r.get("category") if r.get("category") in allowed else FALLBACK_CATEGORY
         try:
             confidence = min(1.0, max(0.0, float(r.get("confidence", 0))))
         except (TypeError, ValueError):
@@ -109,21 +132,23 @@ def parse_response(body: dict[str, Any], requested: set[int]) -> list[Verdict]:
 class GeminiClient:
     BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-    def __init__(self, api_key: str, model: str, timeout: float = 90.0):
+    def __init__(self, api_key: str, model: str, timeout: float = 90.0, categories: list[tuple[str, str]] | None = None):
         self.api_key, self.model, self.timeout = api_key, model, timeout
+        self.categories = categories
 
     def classify(self, items: list[Item]) -> list[Verdict]:
         try:
             res = httpx.post(
                 f"{self.BASE}/{self.model}:generateContent",
                 headers={"x-goog-api-key": self.api_key},
-                json=request_body(items),
+                json=request_body(items, self.categories),
                 timeout=self.timeout,
             )
         except httpx.HTTPError as exc:
             raise GeminiError(f"네트워크 오류: {exc}", retry=True) from exc
         if res.status_code == 200:
-            return parse_response(res.json(), {i.id for i in items})
+            allowed = {n for n, _ in self.categories} if self.categories else None
+            return parse_response(res.json(), {i.id for i in items}, allowed)
         text = res.text[:200]
         if res.status_code == 400 and "API_KEY_INVALID" in text:
             raise GeminiError("Gemini API 키가 올바르지 않습니다", retry=False)

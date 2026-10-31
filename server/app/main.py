@@ -6,6 +6,8 @@
     GET  /api/media/{media_id}     저장된 사진 내려받기
     /admin, /api/admin/*           관리자 웹 (app/admin.py, 민원처리업체: app/vendors.py)
     GET  /api/admin/stream         실시간 갱신 신호 (Server-Sent Events)
+    /api/admin/categories          민원 카테고리 관리 (app/categories.py)
+    /api/admin/data/*              수집 데이터 삭제 (app/datamgmt.py)
 
 POST /api/messages 는 헤더 X-Api-Key 가 .env 의 API_KEY 와 같아야 한다.
 조회 API(/api/messages, /api/media)는 관리자 로그인 세션으로만 접근한다(단말 API 키로는 읽기 불가).
@@ -21,7 +23,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFi
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import admin, db, live, media, store, vendors, worker
+from . import admin, categories, datamgmt, db, live, media, store, vendors, worker
 from .auth import SettingsDep, get_settings, require_api_key, require_reader  # noqa: F401 (get_settings: 테스트에서 사용)
 
 MESSAGE_TYPES = {"text", "photo", "video", "emoticon", "file", "other"}
@@ -30,6 +32,8 @@ MAX_TEXT_BYTES = 65535  # MySQL TEXT 한도
 app = FastAPI(title="Kakao Notification Collector", version="2.0.0", lifespan=worker.lifespan)
 app.include_router(admin.router)
 app.include_router(vendors.router)
+app.include_router(categories.router)
+app.include_router(datamgmt.router)
 app.mount("/admin/static", StaticFiles(directory=admin.STATIC_DIR), name="admin-static")
 
 

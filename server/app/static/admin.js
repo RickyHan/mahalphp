@@ -24,6 +24,8 @@
     searchItems: [],
     lightbox: { items: [], index: 0 },
     busy: false,
+    selecting: false,
+    selected: new Set(),
   };
 
   // ---- 공통 ----------------------------------------------------------------------
@@ -40,6 +42,25 @@
     }
     if (!res.ok) throw new Error(`요청 실패 (HTTP ${res.status})`);
     return res.json();
+  }
+
+  async function postJson(path, body) {
+    const res = await fetch(path, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401) {
+      location.href = "/admin/login";
+      throw new Error("로그인이 필요합니다.");
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = Array.isArray(data.detail) ? data.detail.map((d) => d.msg).join(", ") : data.detail;
+      throw new Error(detail || `요청 실패 (HTTP ${res.status})`);
+    }
+    return data;
   }
 
   function el(tag, attrs = {}, ...children) {
@@ -126,7 +147,7 @@
   }
   const dims = (w, h) => (w && h ? ` · ${w}×${h}px` : "");
 
-  const TAB_TITLES = { photos: "사진 모아보기", search: "메시지 검색", complaints: "민원", stats: "민원 통계", members: "참여자 이력", vendors: "민원처리업체", settings: "설정" };
+  const TAB_TITLES = { photos: "사진 모아보기", search: "메시지 검색", complaints: "민원", stats: "민원 통계", members: "참여자 이력", vendors: "민원처리업체", categories: "민원 카테고리", data: "데이터 관리", settings: "설정" };
   function updateTitle() {
     $("panel-title").textContent = state.tab === "chat" ? state.room || "" : TAB_TITLES[state.tab] || "";
   }
@@ -179,6 +200,7 @@
   // ---- 대화 보기 -----------------------------------------------------------------------
 
   async function openRoom(room, focusId = null) {
+    if (state.room !== room) endSelect(false);
     state.room = room;
     state.focusId = focusId;
     state.messages = [];
@@ -211,6 +233,8 @@
   function renderChat() {
     const chat = $("chat");
     chat.replaceChildren();
+    renderChatTools();
+    chat.classList.toggle("selecting", state.selecting);
     if (!state.room) {
       chat.append(el("div", { class: "empty", text: "왼쪽에서 대화방을 선택하십시오." }));
       return;
@@ -239,7 +263,19 @@
   function renderMessage(m, continued, showTime) {
     const self = m.sender_name === SELF;
     const classes = ["msg", self && "self", continued && "cont", m.id === state.focusId && "highlight"].filter(Boolean).join(" ");
-    const node = el("div", { class: classes, "data-id": m.id });
+    const node = el("div", { class: classes + (state.selected.has(m.id) ? " selected" : ""), "data-id": m.id });
+    if (state.selecting) {
+      node.setAttribute("role", "checkbox");
+      node.setAttribute("aria-checked", String(state.selected.has(m.id)));
+      node.tabIndex = 0;
+      const toggle = (e) => {
+        e.preventDefault();
+        e.stopPropagation(); // 선택 중에는 사진 크게 보기·링크 이동 대신 선택
+        toggleSelect(m.id, node);
+      };
+      node.addEventListener("click", toggle, true);
+      node.addEventListener("keydown", (e) => (e.key === " " || e.key === "Enter") && toggle(e));
+    }
     if (!self && !continued && m.is_group_chat) node.append(el("div", { class: "msg-sender", text: m.sender_name }));
 
     const content = el("div", {});
@@ -274,6 +310,82 @@
 
     node.append(el("div", { class: "msg-row" }, content, showTime ? el("time", { class: "msg-time", datetime: m.posted_at, text: hhmm(m.posted_at) }) : null));
     return node;
+  }
+
+  // ---- 대화 선택 삭제 · 방 삭제 --------------------------------------------------------------
+
+  function renderChatTools() {
+    const open = Boolean(state.room);
+    $("chat-tools").hidden = !open;
+    if (!open) return;
+    const n = state.selected.size;
+    $("chat-tools-info").textContent = state.selecting
+      ? n ? `${n}개 선택됨` : "지울 메시지를 누르십시오"
+      : `${state.room}`;
+    for (const id of ["sel-start", "room-delete"]) $(id).hidden = state.selecting;
+    for (const id of ["sel-all", "sel-delete", "sel-cancel"]) $(id).hidden = !state.selecting;
+    $("sel-delete").disabled = n === 0;
+    $("sel-delete").textContent = n ? `${n}개 삭제` : "삭제";
+  }
+
+  function startSelect() {
+    state.selecting = true;
+    state.selected.clear();
+    renderChat();
+  }
+
+  function endSelect(render = true) {
+    state.selecting = false;
+    state.selected.clear();
+    if (render) renderChat();
+  }
+
+  function toggleSelect(id, node) {
+    if (state.selected.has(id)) state.selected.delete(id);
+    else state.selected.add(id);
+    node.classList.toggle("selected", state.selected.has(id));
+    node.setAttribute("aria-checked", String(state.selected.has(id)));
+    renderChatTools();
+  }
+
+  async function deleteSelected() {
+    const ids = [...state.selected];
+    if (!ids.length || !confirm(`선택한 메시지 ${ids.length}개를 삭제하시겠습니까?\n사진·민원 분류도 함께 지워지며 되돌릴 수 없습니다.`)) return;
+    const r = await postJson("/api/admin/data/delete", { scope: "messages", ids });
+    endSelect(false);
+    alert(`메시지 ${r.messages}개를 삭제했습니다.`);
+    await refreshAfterDelete();
+  }
+
+  async function deleteRoom(room) {
+    if (!confirm(`'${room}' 방의 수집 내용을 모두 삭제하시겠습니까?\n대화·사진·민원 분류·참여자 이력이 지워지며 되돌릴 수 없습니다.`)) return;
+    const r = await postJson("/api/admin/data/delete", { scope: "rooms", rooms: [room] });
+    alert(`'${room}' 방에서 메시지 ${r.messages}개를 삭제했습니다.`);
+    await refreshAfterDelete();
+  }
+
+  /** 삭제 뒤 화면 정리: 열린 방이 사라졌으면 닫고, 남아 있으면 다시 읽는다. */
+  async function refreshAfterDelete() {
+    state.photosKey = null; // 사진 탭은 다음에 열 때 새로 읽음
+    await Promise.all([loadSummary(), loadRooms()]);
+    if (state.room) {
+      const exists = document.querySelector(`.room[data-room="${CSS.escape(state.room)}"]`);
+      if (exists) {
+        const view = $("view-chat");
+        const top = view.scrollTop;
+        const data = await api("/api/admin/messages", { room: state.room, limit: Math.min(300, Math.max(PAGE, state.messages.length)) });
+        state.messages = data.items;
+        state.hasOlder = data.has_more;
+        renderChat();
+        view.scrollTop = top;
+      } else {
+        state.room = null;
+        state.messages = [];
+        endSelect(false);
+        renderChat();
+        updateTitle();
+      }
+    }
   }
 
   async function loadOlder() {
@@ -463,6 +575,14 @@
       const v = e.target;
       if (v.scrollHeight - v.scrollTop - v.clientHeight < 40) $("new-msg").hidden = true;
     });
+    $("sel-start").addEventListener("click", startSelect);
+    $("sel-cancel").addEventListener("click", () => endSelect());
+    $("sel-all").addEventListener("click", () => {
+      for (const m of state.messages) state.selected.add(m.id);
+      renderChat();
+    });
+    $("sel-delete").addEventListener("click", () => deleteSelected().catch(reportError));
+    $("room-delete").addEventListener("click", () => state.room && deleteRoom(state.room).catch(reportError));
     $("photos-room-only").addEventListener("change", () => loadPhotos(true).catch(reportError));
     $("photos-more").addEventListener("click", () => loadPhotos(false).catch(reportError));
     $("search-form").addEventListener("submit", (e) => {
@@ -510,7 +630,8 @@
     const topics = [...live.pending];
     live.pending.clear();
     const jobs = [];
-    if (topics.includes("message")) jobs.push(loadSummary(), loadRooms(), state.tab === "chat" ? pollNewer() : null);
+    if (topics.includes("delete")) jobs.push(refreshAfterDelete());
+    else if (topics.includes("message")) jobs.push(loadSummary(), loadRooms(), state.tab === "chat" && !state.selecting ? pollNewer() : null);
     jobs.push(window.KC.onLive?.(topics)); // 민원·통계·업체 탭 (admin-ops.js, admin-vendors.js)
     await Promise.all(jobs);
   }
@@ -583,7 +704,8 @@
 
   // admin-ops.js 에서 쓰는 공용 함수
   window.KC = Object.assign(window.KC || {}, {
-    api, el, reportError, fmtDateTime, openRoom: (room, id) => openRoom(room, id).catch(reportError),
+    api, el, postJson, reportError, fmtDateTime, openRoom: (room, id) => openRoom(room, id).catch(reportError),
+    refreshAfterDelete, deleteRoom,
     currentRoom: () => state.room, currentTab: () => state.tab,
   });
 
