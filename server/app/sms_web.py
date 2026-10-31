@@ -123,6 +123,8 @@ def check(settings: SettingsDep) -> dict[str, Any]:
         client.token(force=True)
     except sms.PpurioError as exc:
         return {"ok": False, "message": str(exc), "user_ip": client.user_ip}
+    except Exception as exc:  # 예상 못 한 오류도 화면에 보이게
+        return {"ok": False, "message": f"확인 중 오류: {type(exc).__name__}: {exc}", "user_ip": client.user_ip}
     return {"ok": True, "message": "뿌리오 연결 정상 (토큰 발급 성공)", "user_ip": client.user_ip}
 
 
@@ -152,6 +154,8 @@ def test_send(body: TestBody, settings: SettingsDep) -> dict[str, Any]:
         row = ("sent", None, result.message_key, result.message_type)
     except sms.PpurioError as exc:
         row = ("failed", str(exc)[:250], None, None)
+    except Exception as exc:
+        row = ("failed", f"{type(exc).__name__}: {exc}"[:250], None, None)
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute(
             "UPDATE sms_queue SET status = %s, attempts = 1, note = %s, message_key = %s, msg_type = %s, done_at = %s WHERE id = %s",

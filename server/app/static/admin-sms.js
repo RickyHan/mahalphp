@@ -125,7 +125,16 @@
   async function check() {
     const conn = $("sms-conn");
     conn.textContent = "확인 중…";
-    const r = await send("POST", "/api/admin/sms/check");
+    conn.dataset.ok = "unknown";
+    $("sms-check").disabled = true;
+    let r;
+    try {
+      r = await send("POST", "/api/admin/sms/check");
+    } catch (err) {
+      r = { ok: false, message: `서버 요청 실패: ${err.message}` };
+    } finally {
+      $("sms-check").disabled = false;
+    }
     checked = true;
     conn.dataset.ok = r.ok ? "true" : "false";
     conn.textContent = r.ok ? "연결 정상" : "연결 실패";

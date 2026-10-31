@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import sys
 import time
 from datetime import datetime
 
@@ -222,3 +223,41 @@ def test_sms_admin_api(admin, settings, monkeypatch):
     assert admin.get("/api/admin/sms/history").json()["items"][0]["vendor_name"] == "테스트 발송"
     # 다른 테스트에 영향이 없도록 끈다
     assert admin.put("/api/admin/sms", json={"enabled": False}).status_code == 200
+
+
+def test_token_expired_as_number_and_bad_values(monkeypatch):
+    # 가이드 예시처럼 expired 가 숫자로 와도 동작해야 한다
+    monkeypatch.setattr(sms.httpx, "post", lambda *a, **k: httpx.Response(
+        200, json={"token": "t", "type": "Bearer", "expired": 29991231235959, "userIp": "61.83.189.246"}))
+    c = sms.PpurioClient("nvr_0718444053", "key")
+    assert c.token() == "t" and c.user_ip == "61.83.189.246" and c._expires.year == 2999
+    with pytest.raises(sms.PpurioError) as exc:
+        sms.PpurioClient("아이디", "key").token()
+    assert not exc.value.retry and ".env" in str(exc.value)
+
+
+def test_cli_check_and_test_send(settings, monkeypatch, capsys):
+    from scripts import sms_check
+
+    fake = FakePpurio()
+    monkeypatch.setattr(sms.httpx, "post", fake)
+    monkeypatch.setattr(sms_check.Settings, "load", classmethod(lambda cls: settings))
+    monkeypatch.setattr(sys, "argv", ["sms_check"])
+    assert sms_check.main() == 1  # 연동 정보 없음
+    assert "PPURIO_API_KEY : (없음)" in capsys.readouterr().out
+
+    import dataclasses
+    configured = dataclasses.replace(settings, ppurio_account="nvr_0718444053", ppurio_api_key="k")
+    monkeypatch.setattr(sms_check.Settings, "load", classmethod(lambda cls: configured))
+    assert sms_check.main() == 0
+    assert "서버 IP 61.83.189.246" in capsys.readouterr().out
+
+    monkeypatch.setattr(sys, "argv", ["sms_check", "010 8738 7240", "--from", "010-8738-7240"])
+    assert sms_check.main() == 0
+    body = fake.calls[-1][2]
+    assert body["targets"] == [{"to": "01087387240"}] and body["from"] == "01087387240" and body["content"].startswith("[테스트]")
+    assert "발송 요청     : 성공" in capsys.readouterr().out
+
+    fake.codes = ["3003"]
+    assert sms_check.main() == 1
+    assert "연동관리에서" in capsys.readouterr().out

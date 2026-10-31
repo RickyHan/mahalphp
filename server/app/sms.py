@@ -156,6 +156,8 @@ class PpurioClient:
         with self._lock:
             if not force and self._token and self._expires and datetime.now() < self._expires:
                 return self._token
+            if not (self.account.isascii() and self.api_key.isascii()) or ":" in self.account:
+                raise PpurioError("PPURIO_ACCOUNT / PPURIO_API_KEY 값에 한글·공백·따옴표 등이 섞여 있습니다 (.env 확인)", retry=False)
             basic = base64.b64encode(f"{self.account}:{self.api_key}".encode()).decode()
             try:
                 res = httpx.post(f"{self.base_url}/v1/token", headers={"Authorization": f"Basic {basic}"}, timeout=self.timeout)
@@ -163,13 +165,17 @@ class PpurioClient:
                 raise PpurioError(f"뿌리오 연결 실패: {exc}", retry=True) from exc
             if res.status_code != 200:
                 raise self._error(res)
-            body = res.json()
-            self._token = body["token"]
-            self.user_ip = body.get("userIp", "")
-            # 만료 10분 전에 새로 받는다 (만료 표기를 못 읽으면 23시간)
             try:
-                self._expires = datetime.strptime(body["expired"], "%Y%m%d%H%M%S") - timedelta(minutes=10)
-            except (KeyError, ValueError):
+                body = res.json()
+                token = str(body["token"])
+            except (ValueError, KeyError, TypeError) as exc:
+                raise PpurioError(f"뿌리오 토큰 응답을 해석할 수 없습니다: {res.text[:120]}", retry=True) from exc
+            self._token = token
+            self.user_ip = str(body.get("userIp") or "")
+            # 만료 10분 전에 새로 받는다. expired 는 문자열 또는 숫자(yyyyMMddHHmmss), 못 읽으면 23시간
+            try:
+                self._expires = datetime.strptime(str(body["expired"]), "%Y%m%d%H%M%S") - timedelta(minutes=10)
+            except (KeyError, ValueError, TypeError):
                 self._expires = datetime.now() + timedelta(hours=23)
             return self._token
 

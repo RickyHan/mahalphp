@@ -303,7 +303,12 @@ def process_sms(settings: Settings, client: Any = None) -> dict[str, int]:
             update = ("failed", row["attempts"], "발신번호가 설정되지 않았습니다 (웹 '문자 발송' 탭)", None, None, now)
         else:
             try:
-                result = client.send(sender=conf["sms_from"], to=row["phone"], text=row["text"], ref_key=sms.new_ref_key(row["id"]))
+                try:
+                    result = client.send(sender=conf["sms_from"], to=row["phone"], text=row["text"], ref_key=sms.new_ref_key(row["id"]))
+                except sms.PpurioError:
+                    raise
+                except Exception as exc:  # 예상 못 한 오류도 재시도 후 실패로 기록
+                    raise sms.PpurioError(f"{type(exc).__name__}: {exc}", retry=True) from exc
                 update = ("sent", row["attempts"] + 1, None, result.message_key, result.message_type, now)
             except sms.PpurioError as exc:
                 attempts = row["attempts"] + 1

@@ -105,6 +105,7 @@ curl -fsSL https://raw.githubusercontent.com/rickyhan/mahalphp/claude/new-creati
 1. 뿌리오 기업회원 → 연동 > 연동신청관리에서 문자연동 신청(승인 1~2일) → **인증키 발급**, **서버 공인 IP 등록**(웹 '문자 발송' → '뿌리오 연결 확인'에 표시되는 IP), 발신번호 등록
 2. 서버 `.env` 에 추가 후 재시작: `PPURIO_ACCOUNT=뿌리오아이디`, `PPURIO_API_KEY=인증키`
 3. 웹 '민원처리업체'에서 업체마다 **민원 카테고리·전화번호** 지정 → '문자 발송' 탭에서 발신번호·문구 저장, **사용** 체크
+- 서버에서 직접 점검·테스트 발송: `cd /opt/kakao-collector/server && .venv/bin/python -m scripts.sms_check 받을번호 --from 발신번호` (연동 정보·토큰·서버 IP·발송 결과를 한 번에 출력)
 - 템플릿 항목: `{업체명}` `{방}` `{분류}` `{요약}` `{내용}` `{보낸사람}` `{시각}` — 90byte 이하는 SMS, 초과는 LMS(제목 '민원 처리 요청')
 
 ### 참여자 이력의 조건
