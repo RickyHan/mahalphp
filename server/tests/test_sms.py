@@ -275,6 +275,11 @@ def test_cli_check_and_test_send(settings, monkeypatch, capsys):
     assert body["targets"] == [{"to": "01087387240"}] and body["from"] == "01087387240" and body["content"].startswith("[테스트]")
     assert "발송 요청     : 성공" in capsys.readouterr().out
 
+    monkeypatch.setattr(sys, "argv", ["sms_check", "01087387240", "--from", "0212345678", "--text", "단문 테스트"])
+    assert sms_check.main() == 0
+    assert fake.calls[-1][2]["messageType"] == "SMS" and fake.calls[-1][2]["content"] == "단문 테스트"
+    capsys.readouterr()
+
     fake.codes = ["3003"]
     assert sms_check.main() == 1
     assert "연동관리에서" in capsys.readouterr().out

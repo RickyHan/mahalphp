@@ -4,6 +4,7 @@
     .venv/bin/python -m scripts.sms_check                              # 연동 정보·토큰 발급·서버 IP 확인만
     .venv/bin/python -m scripts.sms_check 01012345678                  # + 테스트 문자 (발신번호: 웹 '문자 발송' 설정값)
     .venv/bin/python -m scripts.sms_check 01012345678 --from 0212345678
+    .venv/bin/python -m scripts.sms_check 01012345678 --from 0212345678 --text "단문 테스트"   # 직접 문구(90byte 이하면 SMS)
 
 인증키는 화면에 출력하지 않는다. 결과는 웹 '문자 발송' 이력에도 남긴다.
 """
@@ -30,6 +31,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="뿌리오 문자 연동 점검")
     parser.add_argument("to", nargs="?", help="테스트 문자를 받을 휴대폰 번호")
     parser.add_argument("--from", dest="sender", help="발신번호 (기본: 웹 '문자 발송' 설정값)")
+    parser.add_argument("--text", help="보낼 문구 (기본: 템플릿 예시). 짧으면 단문(SMS)으로 발송")
     args = parser.parse_args()
 
     settings = Settings.load()
@@ -68,7 +70,7 @@ def main() -> int:
         return 1
 
     now = store.now_local(settings)
-    text = "[테스트] " + sms.render(
+    text = args.text.strip() if args.text and args.text.strip() else "[테스트] " + sms.render(
         conf["sms_template"], vendor="테스트업체", room="OO아파트 입주민방", category="누수·하자", summary="욕실 천장 누수",
         content="욕실 천장에서 물이 떨어집니다. 확인 부탁드립니다", sender="1203호", at=now,
     )
