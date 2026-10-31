@@ -111,9 +111,9 @@ def me(user: Annotated[str, Admin]) -> dict[str, Any]:
     return {"ok": True, "user": user}
 
 
-# 연결 하나를 이 시간만 유지하고 끊는다. 브라우저(EventSource)가 곧바로 다시 연결하며,
+# 연결 하나를 이 시간만 유지하고 끊는다(20초). 브라우저(EventSource)가 곧바로 다시 연결하며,
 # 서버 재시작이 열린 연결 때문에 오래 지연되지 않게 한다.
-STREAM_SECONDS = 55.0
+STREAM_SECONDS = 20.0
 STREAM_TICK = 0.5
 STREAM_PING = 15.0
 
