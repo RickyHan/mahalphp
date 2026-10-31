@@ -330,7 +330,24 @@ def complaint_group(settings: SettingsDep, ids: Annotated[str, Query(pattern=r"^
 def complaint_stats(settings: SettingsDep, period: Annotated[str, Query(pattern="^(today|week|month|all)$")] = "week") -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
         rows = store.complaint_rows(cur)
-    return {"ok": True, **cp.compute_stats(cp.group_complaints(rows), period, store.now_local(settings))}
+        order = [c["name"] for c in categories.all_categories(cur)]
+        stats = cp.compute_stats(cp.group_complaints(rows), period, store.now_local(settings))
+        # 업체 문자 (테스트 발송 제외)
+        start = stats.pop("range_start")
+        where, params = "message_id IS NOT NULL", []
+        if start is not None:
+            where += " AND created_at >= %s"
+            params.append(start)
+        cur.execute(f"SELECT status, COUNT(*) AS n FROM sms_queue WHERE {where} GROUP BY status", params)
+        sms_counts = {r["status"]: int(r["n"]) for r in cur.fetchall()}
+    return {
+        "ok": True,
+        **stats,
+        "category_order": order,  # 색은 이 순서로 고정 배정 (기간이 바뀌어도 같은 분류는 같은 색)
+        "sms_sent": sms_counts.get("sent", 0),
+        "sms_failed": sms_counts.get("failed", 0),
+        "sms_waiting": sms_counts.get("waiting", 0) + sms_counts.get("pending", 0),
+    }
 
 
 @router.get("/api/admin/member-events", dependencies=[Admin])

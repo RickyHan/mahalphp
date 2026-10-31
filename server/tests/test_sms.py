@@ -178,6 +178,10 @@ def test_complaint_reply_first_then_vendor_sms(admin, settings):
     store.classify_once(settings, client=FakeGemini())
     assert not _sms_rows(settings, again)
 
+    # 통계에 업체 문자 건수·분류 순서
+    st = admin.get("/api/admin/stats", params={"period": "today"}).json()
+    assert st["sms_sent"] >= 1 and st["category_order"][0] == "소음" and len(st["weekday_hour"]) == 7
+
     # 민원 카드에 문자 결과 표시
     group = next(g for g in admin.get("/api/admin/complaints").json()["items"] if g["ids"][0] == mid)
     assert {"vendor": "한빛설비", "status": "sent", "note": None} in group["sms"]

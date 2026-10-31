@@ -6,7 +6,6 @@
   const KC = window.KC;
   const { api, el, reportError, fmtDateTime } = KC;
   const loaded = {};
-  let statsPeriod = "week";
 
   async function send(method, path, body) {
     const res = await fetch(path, {
@@ -89,76 +88,6 @@
         ),
       );
     });
-  }
-
-  // ---- 통계 (단일 계열: 막대 한 가지 색, 글자는 텍스트 색) -----------------------------------------
-
-  function bars(rows, total) {
-    if (!rows.length) return el("p", { class: "muted", text: "데이터 없음" });
-    const max = Math.max(...rows.map((r) => r[1]), 1);
-    const wrap = el("div", { class: "hbars" });
-    for (const [name, v] of rows) {
-      const fill = el("span", { class: "hbar-fill" });
-      fill.style.width = `${(v / max) * 100}%`;
-      wrap.append(
-        el(
-          "div",
-          { class: "hbar", title: `${name}: ${v}건` },
-          el("span", { class: "hbar-label", text: name }),
-          el("span", { class: "hbar-track" }, fill),
-          el("span", { class: "hbar-value", text: `${v}건 (${total ? Math.round((v * 100) / total) : 0}%)` }),
-        ),
-      );
-    }
-    return wrap;
-  }
-
-  function columns(points, every) {
-    const max = Math.max(...points.map((p) => p[1]), 1);
-    const total = points.reduce((n, p) => n + p[1], 0);
-    const plot = el("div", { class: "cols" });
-    const axis = el("div", { class: "cols-axis" });
-    points.forEach(([label, v], i) => {
-      const bar = el("span", { class: "col-bar" });
-      bar.style.height = v ? `${Math.max((v / max) * 100, 3)}%` : "0";
-      plot.append(
-        el(
-          "div",
-          { class: "col", title: `${label}: ${v}건`, tabindex: "0" },
-          v ? el("span", { class: "col-value", text: String(v) }) : null,
-          bar,
-        ),
-      );
-      axis.append(el("span", { text: i % every === 0 || i === points.length - 1 ? label : "" }));
-    });
-    if (!total) return el("p", { class: "muted", text: "데이터 없음" });
-    return el("div", { class: "cols-wrap" }, plot, axis);
-  }
-
-  const card = (title, body, wide = false) =>
-    el("section", { class: `st-card${wide ? " st-wide" : ""}` }, el("h3", { text: title }), body);
-
-  async function loadStats() {
-    for (const b of $("st-periods").children) b.setAttribute("aria-pressed", String(b.dataset.period === statsPeriod));
-    const s = await api("/api/admin/stats", { period: statsPeriod });
-    const label = { today: "오늘", week: "최근 7일", month: "최근 30일", all: "전체" }[statsPeriod];
-    const tile = (k, v, cls = "") => el("div", { class: `tile ${cls}` }, el("strong", { text: Number(v).toLocaleString("ko-KR") }), el("span", { text: k }));
-    $("st-body").replaceChildren(
-      el(
-        "section",
-        { class: "st-card st-wide st-summary" },
-        tile(`${label} 접수된 문제`, s.issues, "tile-hero"),
-        tile("민원 메시지", s.messages),
-        tile("반복 민원", s.repeated_issues),
-        tile("안내 보냄", s.reply_sent),
-        tile("안내 실패", s.reply_failed, s.reply_failed ? "tile-alert" : ""),
-      ),
-      card("분류별 문제", bars(s.by_category, s.issues)),
-      card("방별 문제 TOP 10", bars(s.by_room, s.issues)),
-      card(statsPeriod === "all" ? "일별 추이 (최근 30일)" : "일별 추이", columns(s.daily, Math.max(1, Math.ceil(s.daily.length / 7))), true),
-      card("시간대별 (문제 시작 시각)", columns(s.hourly.map((v, h) => [`${h}시`, v]), 3), true),
-      card("민원 제기자 TOP 10", bars(s.by_sender, s.issues), true),
-    );
   }
 
   // ---- 참여자 이력 ----------------------------------------------------------------------------
@@ -244,14 +173,13 @@
   // 탭별 화면 읽기. admin-vendors.js 가 여기에 'vendors' 를 추가한다.
   const LOADERS = (KC.loaders = Object.assign(KC.loaders || {}, {
     complaints: loadComplaints,
-    stats: loadStats,
     members: loadMembers,
     settings: loadSettings,
   }));
   // 실시간 신호가 왔을 때 다시 읽을 탭
   const LIVE_TOPICS = {
     complaints: ["message", "complaint", "category", "delete", "sms"],
-    stats: ["complaint", "category", "delete"],
+    stats: ["complaint", "category", "delete", "sms"],
     members: ["message", "delete"],
     vendors: ["vendor", "category"],
     categories: ["category", "complaint", "delete"],
@@ -278,12 +206,6 @@
   $("cp-retry").addEventListener("click", () =>
     send("POST", "/api/admin/classify?retry_failed=true").then(() => setTimeout(() => loadComplaints().catch(reportError), 3000)).catch(reportError),
   );
-  for (const b of $("st-periods").children) {
-    b.addEventListener("click", () => {
-      statsPeriod = b.dataset.period;
-      loadStats().catch(reportError);
-    });
-  }
   $("mb-mode").addEventListener("change", () => loadMembers().catch(reportError));
   $("mb-type").addEventListener("change", () => loadMembers().catch(reportError));
   $("mb-room-only").addEventListener("change", () => loadMembers().catch(reportError));

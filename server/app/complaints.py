@@ -234,10 +234,40 @@ def compute_stats(groups: list[Group], period: str, now: datetime, top: int = 10
         day = first_day + timedelta(days=d)
         daily.append([day.strftime("%m/%d"), sum(1 for g in groups if day <= g.first["posted_at"] < day + timedelta(days=1))])
     hourly = [0] * 24
+    weekday_hour = [[0] * 24 for _ in range(7)]  # 월(0)~일(6) × 0~23시
     for g in in_range:
-        hourly[g.first["posted_at"].hour] += 1
+        at = g.first["posted_at"]
+        hourly[at.hour] += 1
+        weekday_hour[at.weekday()][at.hour] += 1
     firsts = [g.first for g in in_range]
+
+    # 분류별 세부: 일별 · 방별 (쌓은 막대용)
+    def by_cat(items) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for g in items:
+            out[g.first["category"]] = out.get(g.first["category"], 0) + 1
+        return out
+
+    daily_detail = []
+    for d in range(n_days):
+        day = first_day + timedelta(days=d)
+        items = [g for g in groups if day <= g.first["posted_at"] < day + timedelta(days=1)]
+        daily_detail.append([day.strftime("%m/%d"), len(items), by_cat(items), day.weekday()])
+    room_detail = [
+        [room, n, by_cat([g for g in in_range if g.first["room_name"] == room])]
+        for room, n in ranked(lambda g: g.first["room_name"])
+    ]
+    # 직전 같은 길이 기간 (전체 기간은 비교 없음)
+    prev_issues = None
+    if start is not None:
+        prev_start = start - timedelta(days=days)
+        prev_issues = sum(1 for g in groups if prev_start <= g.first["posted_at"] < start)
     return {
+        "range_start": start,
+        "prev_issues": prev_issues,
+        "weekday_hour": weekday_hour,
+        "daily_detail": daily_detail,
+        "room_detail": room_detail,
         "period": period,
         "issues": len(in_range),
         "messages": sum(len(g.items) for g in in_range),

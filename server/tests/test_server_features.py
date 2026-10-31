@@ -87,6 +87,11 @@ def test_parse_response_and_grouping_and_stats():
     stats = cp.compute_stats(groups, "today", t0 + timedelta(hours=5))
     assert stats["issues"] == 3 and stats["messages"] == 4 and stats["repeated_issues"] == 1
     assert stats["by_category"] == [["소음", 3]] and stats["hourly"][9] == 3
+    # 2025-10-30 은 목요일(3): 요일×시간, 일별·방별 분류 세부, 직전 기간 비교
+    assert stats["weekday_hour"][3][9] == 3 and sum(map(sum, stats["weekday_hour"])) == 3
+    assert stats["daily_detail"] == [["10/30", 3, {"소음": 3}, 3]]
+    assert stats["room_detail"] == [["A", 3, {"소음": 3}]] and stats["prev_issues"] == 0
+    assert cp.compute_stats(groups, "all", t0 + timedelta(hours=5))["prev_issues"] is None
 
 
 # ---- 수집 → 참여자 이력 ----------------------------------------------------------------------
