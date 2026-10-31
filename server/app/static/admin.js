@@ -1,6 +1,6 @@
 "use strict";
 
-// 카톡 수집기 관리자 화면. 서버 데이터는 모두 textContent/텍스트 노드로만 넣는다(innerHTML 사용 금지).
+// 민원 자동처리 시스템 관리자 화면. 서버 데이터는 모두 textContent/텍스트 노드로만 넣는다(innerHTML 사용 금지).
 (() => {
   const $ = (id) => document.getElementById(id);
   const PAGE = 100;

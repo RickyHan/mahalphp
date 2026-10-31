@@ -52,7 +52,7 @@ class DiagnosticsActivity : AppCompatActivity() {
             report = if (logs.isEmpty()) {
                 getString(R.string.diagnostics_empty)
             } else {
-                "카톡 수집기 ${BuildConfig.VERSION_NAME} · Android ${android.os.Build.VERSION.RELEASE} · 최근 알림 ${logs.size}건\n\n" +
+                "민원 카카오톡 메시지 자동 수집 ${BuildConfig.VERSION_NAME} · Android ${android.os.Build.VERSION.RELEASE} · 최근 알림 ${logs.size}건\n\n" +
                     logs.joinToString("\n") { (time, dump) -> "■ ${fmt.format(Date(time))}\n$dump" }
             }
             body.text = report

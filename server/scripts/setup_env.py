@@ -43,7 +43,7 @@ def lan_ip() -> str:
 
 
 def main() -> int:
-    print("=== 카톡 수집기 서버 초기 설정 ===\n")
+    print("=== 민원 자동처리 시스템 서버 초기 설정 ===\n")
     if ENV_PATH.exists() and ask("server/.env 가 이미 있습니다. 새로 만들까요? (y/n)", "n").lower() != "y":
         print("기존 설정을 유지합니다.")
         return 0

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# nginx 서버(예: 192.168.0.26)에서 실행: 외부 → nginx → 카톡 수집기 웹 서버(192.168.0.68:8000) 연결
+# nginx 서버(예: 192.168.0.26)에서 실행: 외부 → nginx → 민원 자동처리 시스템 웹 서버(192.168.0.68:8000) 연결
 #
 #   curl -fsSL https://raw.githubusercontent.com/rickyhan/mahalphp/claude/new-creation-dz2guv/deploy/setup-nginx.sh | sudo bash
 #
@@ -44,7 +44,7 @@ fi
 say 2/4 "nginx 설정 작성: $CONF (listen $LISTEN, server_name $HOST → $BACKEND)"
 [[ -f "$CONF" ]] && cp "$CONF" "$CONF.bak.$(date +%Y%m%d%H%M%S)"
 cat > "$CONF" <<NGINX
-# 카톡 수집기 웹·API 프록시 (deploy/setup-nginx.sh 가 생성)
+# 민원 자동처리 시스템 웹·API 프록시 (deploy/setup-nginx.sh 가 생성)
 server {
     listen $LISTEN;
     server_name $HOST;

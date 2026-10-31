@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 카톡 수집기 서버 설치 (Ubuntu 22.04 / 24.04)
+# 민원 자동처리 시스템 서버 설치 (Ubuntu 22.04 / 24.04)
 #
 #   curl -fsSL https://raw.githubusercontent.com/rickyhan/mahalphp/claude/new-creation-dz2guv/deploy/install.sh | sudo bash
 #

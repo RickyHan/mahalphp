@@ -1,9 +1,12 @@
-# mahalphp — 카카오톡 알림 수집 · 민원 관리
+# mahalphp — 민원 자동처리 시스템
+
+- 웹: **민원 자동처리 시스템** (`/admin`)
+- 앱: **민원 카카오톡 메시지 자동 수집** (Android)
 
 Android 휴대폰에 오는 **카카오톡 알림**을 수집해 서버(MySQL)에 저장하고, **웹 관리 화면**에서 대화·사진·민원·통계·참여자 이력을 봅니다. 민원 분류(Google Gemini)를 비롯한 **모든 처리는 서버가 하고, 앱은 수집만** 합니다.
 
 ```
-[휴대폰: 카톡 수집기 앱]                    [Ubuntu 서버: kakao-collector 서비스]            [MySQL]
+[휴대폰: 민원 카톡 수집 앱]                  [Ubuntu 서버: kakao-collector 서비스]            [MySQL]
  카톡 알림 수신 ──────── POST /api/messages ──▶  저장 · 참여자 이력 기록                 ─▶ kakao_collector
  (누가·어느 방·내용·사진)                       백그라운드 워커: Gemini 민원 분류·묶음
  '민원 접수 안내' 카톡 답장 ◀─ GET /api/replies ─  새 민원 → 접수 안내 대기열

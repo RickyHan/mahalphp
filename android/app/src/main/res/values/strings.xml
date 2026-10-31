@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">카톡 수집기</string>
-    <string name="listener_label">카톡 수집기 알림 수집</string>
+    <string name="app_name">민원 카카오톡 메시지 자동 수집</string>
+    <string name="listener_label">민원 카카오톡 메시지 자동 수집</string>
     <string name="open_web">웹 관리 화면 열기</string>
     <string name="section_menu">메뉴</string>
     <string name="capture_start">수집 시작</string>
@@ -13,7 +13,7 @@
     <string name="section_recent">최근 수집</string>
     <string name="open_listener_settings">알림 접근 권한 설정 열기</string>
     <string name="open_battery_settings">배터리 최적화 예외 설정 열기</string>
-    <string name="restricted_hint">Android 13 이상에서 권한 스위치가 비활성이면: 설정 &gt; 애플리케이션 &gt; 카톡 수집기 &gt; 우측 상단 ⋮ &gt; \'제한된 설정 허용\' 후 다시 시도하십시오.</string>
+    <string name="restricted_hint">Android 13 이상에서 권한 스위치가 비활성이면: 설정 &gt; 애플리케이션 &gt; 민원 카카오톡 메시지 자동 수집 &gt; 우측 상단 ⋮ &gt; \'제한된 설정 허용\' 후 다시 시도하십시오.</string>
     <string name="section_server">서버 연결</string>
     <string name="hint_server_url">서버 주소</string>
     <string name="hint_api_key">API 키</string>

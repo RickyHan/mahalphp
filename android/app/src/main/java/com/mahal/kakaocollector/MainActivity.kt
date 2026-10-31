@@ -55,7 +55,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         settings = AppSettings(this)
 
-        findViewById<TextView>(R.id.versionText).text = "v${BuildConfig.VERSION_NAME} · 카톡 알림 수집 → 서버 전송"
+        findViewById<TextView>(R.id.versionText).text = "v${BuildConfig.VERSION_NAME} · 카톡 알림 → 민원 자동처리 시스템"
         findViewById<TextView>(R.id.deviceId).text = "단말 ID ${settings.deviceId}"
         findViewById<MaterialButton>(R.id.captureToggle).setOnClickListener { onToggleCapture() }
         buildGrid()
