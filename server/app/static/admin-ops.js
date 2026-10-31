@@ -26,6 +26,7 @@
     3: () => "안내 생략 (30분 지난 메시지)",
     4: () => "⏳ 휴대폰 전송 대기",
   };
+  const SMS_LABEL = { waiting: "카톡 안내 후 발송 대기", pending: "발송 대기", sending: "발송 중", sent: "✅ 발송 완료", failed: "⚠️ 실패" };
   const replyLabel = (status, note) => (REPLY[status] ? REPLY[status](note) : "");
   const span = (s, e) => (s && e && s.slice(0, 16) !== e.slice(0, 16) ? `${fmtDateTime(s).slice(0, 16)} ~ ${e.slice(11, 16)}` : fmtDateTime(s).slice(0, 16));
 
@@ -64,6 +65,7 @@
         el("p", { class: "cp-text", text: g.latest_text || "" }),
         el("p", { class: "cp-meta", text: `${g.room_name} · ${g.sender_name} · ${span(g.start_at, g.end_at)}` }),
         replyLabel(g.reply_status, g.reply_note) ? el("p", { class: "cp-reply", text: replyLabel(g.reply_status, g.reply_note) }) : null,
+        ...(g.sms || []).map((m) => el("p", { class: "cp-reply", text: `📱 ${m.vendor} 문자: ${SMS_LABEL[m.status] || m.status}${m.status === "failed" && m.note ? ` (${m.note})` : ""}` })),
         detail,
       );
       list.append(card);
@@ -248,12 +250,13 @@
   }));
   // 실시간 신호가 왔을 때 다시 읽을 탭
   const LIVE_TOPICS = {
-    complaints: ["message", "complaint", "category", "delete"],
+    complaints: ["message", "complaint", "category", "delete", "sms"],
     stats: ["complaint", "category", "delete"],
     members: ["message", "delete"],
     vendors: ["vendor", "category"],
     categories: ["category", "complaint", "delete"],
     data: ["message", "delete"],
+    sms: ["sms", "delete"],
   };
 
   KC.onTab = (tab) => {

@@ -147,7 +147,7 @@
   }
   const dims = (w, h) => (w && h ? ` · ${w}×${h}px` : "");
 
-  const TAB_TITLES = { photos: "사진 모아보기", search: "메시지 검색", complaints: "민원", stats: "민원 통계", members: "참여자 이력", vendors: "민원처리업체", categories: "민원 카테고리", data: "데이터 관리", settings: "설정" };
+  const TAB_TITLES = { photos: "사진 모아보기", search: "메시지 검색", complaints: "민원", stats: "민원 통계", members: "참여자 이력", vendors: "민원처리업체", categories: "민원 카테고리", sms: "문자 발송", data: "데이터 관리", settings: "설정" };
   function updateTitle() {
     $("panel-title").textContent = state.tab === "chat" ? state.room || "" : TAB_TITLES[state.tab] || "";
   }

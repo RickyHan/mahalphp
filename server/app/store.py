@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from . import complaints as cp
 from . import db
+from . import sms
 from .config import Settings
 
 SETTING_DEFAULTS = {
@@ -14,6 +15,9 @@ SETTING_DEFAULTS = {
     "gemini_model": cp.DEFAULT_MODEL,
     "auto_reply_enabled": "1",
     "reply_template": cp.DEFAULT_REPLY_TEMPLATE,
+    "sms_enabled": "0",
+    "sms_from": "",
+    "sms_template": sms.DEFAULT_TEMPLATE,
 }
 
 
@@ -232,10 +236,96 @@ def finish_reply(cur, reply_id: int, device_id: str, sent: bool, note: str | Non
         ("sent" if sent else "failed", (note or "")[:250], now, reply_id),
     )
     set_reply_status(cur, row["message_id"], 1 if sent else -1, row["text"] if sent else (note or "전송 실패"))
+    # 카톡 안내가 끝났으니 업체 문자를 바로 보낸다
+    cur.execute("UPDATE sms_queue SET send_after = %s WHERE message_id = %s AND status = 'waiting'", (now, row["message_id"]))
     return True
 
 
 # ---- 분류 1회 실행 (워커·수동 실행 공용) ----------------------------------------------------
+
+# ---- 업체 문자 (뿌리오) ----------------------------------------------------------------------
+
+def enqueue_vendor_sms(cur, conf: dict[str, str], v: cp.Verdict, msg: dict[str, Any], now: datetime, wait_for_reply: bool) -> int:
+    """민원 카테고리에 연결된 업체마다 문자를 대기열에 넣는다. 카톡 안내를 기다릴 때는 'waiting'."""
+    cur.execute(
+        "SELECT v.id, v.name, v.phone FROM vendors v JOIN complaint_categories c ON c.id = v.category_id WHERE c.name = %s",
+        (v.category,),
+    )
+    count = 0
+    for vendor in cur.fetchall():
+        phone = sms.normalize_phone(vendor["phone"])
+        text = sms.render(
+            conf["sms_template"], vendor=vendor["name"], room=msg["room_name"], category=v.category, summary=v.summary,
+            content=msg["message_text"] or "", sender=msg["sender_name"], at=to_dt(msg["posted_at"]),
+        )
+        status, note = ("waiting", "카톡 안내 후 발송") if wait_for_reply else ("pending", None)
+        if not sms.PHONE.match(phone):
+            status, note = "failed", "업체 전화번호가 올바르지 않습니다"
+        cur.execute(
+            """INSERT INTO sms_queue (message_id, vendor_id, vendor_name, phone, room_name, category, text, status, note,
+                                      send_after, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (v.id, vendor["id"], vendor["name"], phone, msg["room_name"], v.category, text, status, note,
+             now + sms.SMS_WAIT if wait_for_reply else now, now),
+        )
+        count += 1
+    return count
+
+
+def due_sms(cur, now: datetime, limit: int = 20) -> list[dict[str, Any]]:
+    cur.execute(
+        "SELECT id, phone, text, attempts FROM sms_queue WHERE status IN ('waiting', 'pending') AND send_after <= %s ORDER BY id LIMIT %s",
+        (now, limit),
+    )
+    return cur.fetchall()
+
+
+def has_waiting_sms(cur) -> bool:
+    cur.execute("SELECT COUNT(*) AS n FROM sms_queue WHERE status IN ('waiting', 'pending')")
+    return cur.fetchone()["n"] > 0
+
+
+def process_sms(settings: Settings, client: Any = None) -> dict[str, int]:
+    """보낼 때가 된 문자를 뿌리오로 보낸다. 일시 오류는 점점 늦춰 최대 MAX_ATTEMPTS 회."""
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        conf = get_settings_map(cur)
+        rows = due_sms(cur, now_local(settings))
+    if not rows:
+        return {"sent": 0, "failed": 0}
+    client = client or sms.client_for(settings)
+    sent = failed = 0
+    for row in rows:
+        now = now_local(settings)
+        update: tuple
+        if client is None:
+            update = ("failed", row["attempts"], "뿌리오 연동 정보 없음 (서버 .env 의 PPURIO_ACCOUNT·PPURIO_API_KEY)", None, None, now)
+        elif not conf["sms_from"]:
+            update = ("failed", row["attempts"], "발신번호가 설정되지 않았습니다 (웹 '문자 발송' 탭)", None, None, now)
+        else:
+            try:
+                result = client.send(sender=conf["sms_from"], to=row["phone"], text=row["text"], ref_key=sms.new_ref_key(row["id"]))
+                update = ("sent", row["attempts"] + 1, None, result.message_key, result.message_type, now)
+            except sms.PpurioError as exc:
+                attempts = row["attempts"] + 1
+                if exc.retry and attempts < sms.MAX_ATTEMPTS:
+                    with db.transaction(settings) as conn, conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE sms_queue SET status = 'pending', attempts = %s, note = %s, send_after = %s WHERE id = %s",
+                            (attempts, f"재시도 대기: {exc}"[:250], now + timedelta(minutes=2 * attempts), row["id"]),
+                        )
+                    continue
+                update = ("failed", attempts, str(exc)[:250], None, None, now)
+        with db.transaction(settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE sms_queue SET status = %s, attempts = %s, note = %s, message_key = %s, msg_type = %s, done_at = %s WHERE id = %s",
+                (*update, row["id"]),
+            )
+        if update[0] == "sent":
+            sent += 1
+        else:
+            failed += 1
+    return {"sent": sent, "failed": failed}
+
 
 def enabled_for_prompt(cur) -> list[tuple[str, str]]:
     from .categories import enabled_for_prompt as _f
@@ -270,6 +360,7 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
 
     by_id = {r["id"]: r for r in batch}
     complaints = 0
+    sms_count = 0
     with db.transaction(settings) as conn, conn.cursor() as cur:
         save_verdicts(cur, verdicts, conf["gemini_model"], now)
         missing = set(by_id) - {v.id for v in verdicts}
@@ -278,14 +369,21 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
         for v in sorted((v for v in verdicts if v.is_complaint), key=lambda v: v.id):
             complaints += 1
             msg = by_id[v.id]
-            if conf["auto_reply_enabled"] != "1":
-                continue
-            if now - to_dt(msg["posted_at"]) > cp.REPLY_MAX_AGE:
-                set_reply_status(cur, v.id, 3, "30분 지난 메시지라 안내 생략")
-            elif not is_new_issue(cur, v.id):
-                set_reply_status(cur, v.id, 2, "같은 문제로 이미 안내")
-            else:
-                text = cp.format_reply(conf["reply_template"], msg["sender_name"], v.category, v.summary, msg["room_name"])
-                enqueue_reply(cur, v.id, msg["device_id"], msg["room_name"], text, now)
-                set_reply_status(cur, v.id, 4, "휴대폰 전송 대기")
-    return {"done": len(items), "complaints": complaints}
+            fresh = now - to_dt(msg["posted_at"]) <= cp.REPLY_MAX_AGE
+            new_issue = fresh and is_new_issue(cur, v.id)
+            replied = False
+            if conf["auto_reply_enabled"] == "1":
+                if not fresh:
+                    set_reply_status(cur, v.id, 3, "30분 지난 메시지라 안내 생략")
+                elif not new_issue:
+                    set_reply_status(cur, v.id, 2, "같은 문제로 이미 안내")
+                else:
+                    # 1) 그 방에 카톡 접수 안내 먼저
+                    text = cp.format_reply(conf["reply_template"], msg["sender_name"], v.category, v.summary, msg["room_name"])
+                    enqueue_reply(cur, v.id, msg["device_id"], msg["room_name"], text, now)
+                    set_reply_status(cur, v.id, 4, "휴대폰 전송 대기")
+                    replied = True
+            # 2) 이 카테고리를 맡은 업체에 문자 (같은 문제 반복·오래된 메시지는 보내지 않음)
+            if conf["sms_enabled"] == "1" and new_issue:
+                sms_count += enqueue_vendor_sms(cur, conf, v, msg, now, wait_for_reply=replied)
+    return {"done": len(items), "complaints": complaints, "sms": sms_count}

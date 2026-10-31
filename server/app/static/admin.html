@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>카톡 수집기 관리자</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%23FEE500%22/%3E%3Cpath d=%22M16 7C10.5 7 6 10.5 6 14.8c0 2.8 1.9 5.3 4.7 6.6l-1 3.7 4.4-2.9c.6.1 1.2.1 1.9.1 5.5 0 10-3.5 10-7.8S21.5 7 16 7z%22 fill=%22%233C1E1E%22/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/admin/static/admin.css?v=2.3">
+  <link rel="stylesheet" href="/admin/static/admin.css?v=2.4">
 </head>
 <body>
   <header class="topbar">
@@ -44,6 +44,7 @@
         <button role="tab" class="tab" data-tab="members" aria-selected="false">참여자 이력</button>
         <button role="tab" class="tab" data-tab="vendors" aria-selected="false">민원처리업체</button>
         <button role="tab" class="tab" data-tab="categories" aria-selected="false">민원 카테고리</button>
+        <button role="tab" class="tab" data-tab="sms" aria-selected="false">문자 발송</button>
         <button role="tab" class="tab" data-tab="data" aria-selected="false">데이터 관리</button>
         <button role="tab" class="tab" data-tab="settings" aria-selected="false">설정</button>
         <span class="panel-title" id="panel-title"></span>
@@ -181,6 +182,61 @@
         <p class="muted ct-help">새로 들어오는 메시지부터 '사용' 중인 카테고리 중 하나로 분류됩니다. 이름을 바꾸면 기존 민원의 분류도 함께 바뀌고, 삭제하면 기존 민원은 '기타'로 옮겨집니다. '기타'는 삭제할 수 없습니다.</p>
       </section>
 
+      <section class="view" id="view-sms" role="tabpanel" hidden>
+        <div class="sms-wrap">
+          <section class="st-card sms-status-card">
+            <div class="sms-status-row">
+              <span class="sms-badge" id="sms-conn" data-ok="unknown">연동 확인 전</span>
+              <span class="muted" id="sms-conn-text"></span>
+              <button class="btn btn-small" id="sms-check" type="button">뿌리오 연결 확인</button>
+            </div>
+            <p class="muted small" id="sms-flow">새 민원 → ① 그 방에 카톡 접수 안내 → ② 민원 카테고리에 연결된 업체 전화번호로 문자 (카톡 안내가 끝나면 바로, 늦어도 2분 뒤)</p>
+          </section>
+
+          <form class="st-card sms-form" id="sms-form" novalidate>
+            <h3>발송 설정</h3>
+            <label class="check sms-enabled"><input type="checkbox" id="sms-enabled"> 민원 발생 시 담당 업체에 문자 보내기</label>
+            <label class="sms-field">발신번호 <span class="muted">(뿌리오에 등록된 번호)</span>
+              <input id="sms-sender" maxlength="20" inputmode="tel" placeholder="예: 0212345678" autocomplete="off">
+            </label>
+
+            <div class="sms-editor">
+              <div class="sms-col">
+                <label class="sms-field" for="sms-template">문자 템플릿</label>
+                <textarea id="sms-template" rows="10" maxlength="1500" spellcheck="false"></textarea>
+                <div class="sms-chips" id="sms-chips" aria-label="넣을 수 있는 항목"></div>
+                <button class="btn btn-small" id="sms-reset" type="button">기본 문구로 되돌리기</button>
+              </div>
+              <div class="sms-col">
+                <span class="sms-field">미리보기 <span class="muted">(예시 값)</span></span>
+                <div class="phone-preview">
+                  <div class="phone-bubble" id="sms-preview"></div>
+                </div>
+                <p class="sms-meter"><span id="sms-type" class="sms-type">SMS</span> <span id="sms-bytes"></span></p>
+              </div>
+            </div>
+
+            <p class="vd-error" id="sms-error" role="alert"></p>
+            <div class="vd-actions">
+              <button class="btn btn-primary" type="submit" id="sms-save">저장</button>
+              <span class="muted" id="sms-saved"></span>
+            </div>
+
+            <h3>테스트 발송</h3>
+            <div class="danger-row">
+              <input id="sms-test-to" maxlength="20" inputmode="tel" placeholder="받을 휴대폰 번호 (예: 010-1234-5678)" autocomplete="off">
+              <button class="btn" type="button" id="sms-test">미리보기 문구로 테스트 발송</button>
+            </div>
+            <p class="muted small" id="sms-test-result"></p>
+          </form>
+
+          <section class="st-card st-wide">
+            <h3>발송 이력 <span class="muted small" id="sms-counts"></span></h3>
+            <ul class="sms-history" id="sms-history"></ul>
+          </section>
+        </div>
+      </section>
+
       <section class="view" id="view-data" role="tabpanel" hidden>
         <div class="view-toolbar">
           <label class="check"><input type="checkbox" id="dm-all"> 전체 선택</label>
@@ -229,9 +285,10 @@
     <button class="lb-btn lb-next" id="lb-next" type="button" aria-label="다음 사진">›</button>
   </div>
 
-  <script src="/admin/static/admin.js?v=2.3"></script>
-  <script src="/admin/static/admin-ops.js?v=2.3"></script>
-  <script src="/admin/static/admin-vendors.js?v=2.3"></script>
-  <script src="/admin/static/admin-manage.js?v=2.3"></script>
+  <script src="/admin/static/admin.js?v=2.4"></script>
+  <script src="/admin/static/admin-ops.js?v=2.4"></script>
+  <script src="/admin/static/admin-vendors.js?v=2.4"></script>
+  <script src="/admin/static/admin-manage.js?v=2.4"></script>
+  <script src="/admin/static/admin-sms.js?v=2.4"></script>
 </body>
 </html>

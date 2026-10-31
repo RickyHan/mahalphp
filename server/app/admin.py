@@ -295,6 +295,19 @@ def complaint_groups(settings: SettingsDep, category: str | None = None) -> dict
         counts = store.complaint_counts(cur)
         names = [c["name"] for c in categories.all_categories(cur)]
     groups = [{k: _serialize(v) for k, v in g.to_dict().items()} for g in cp.group_complaints(rows)]
+    # 문제(첫 민원)별 업체 문자 발송 결과
+    firsts = [g["ids"][0] for g in groups][:500]
+    sms_by_message: dict[int, list[dict[str, Any]]] = {}
+    if firsts:
+        with db.transaction(settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT message_id, vendor_name, status, note FROM sms_queue WHERE message_id IN ({', '.join(['%s'] * len(firsts))}) ORDER BY id",
+                firsts,
+            )
+            for r in cur.fetchall():
+                sms_by_message.setdefault(r["message_id"], []).append({"vendor": r["vendor_name"], "status": r["status"], "note": r["note"]})
+    for g in groups:
+        g["sms"] = sms_by_message.get(g["ids"][0], [])
     return {
         "ok": True,
         "items": groups,

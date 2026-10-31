@@ -4,7 +4,7 @@
     POST /api/admin/data/delete    {"scope": "messages"|"rooms"|"all", "ids": [...], "rooms": [...], "confirm": "..."}
 
 삭제는 되돌릴 수 없다. 메시지와 함께 사진(파일 포함)·민원 분류·안내 대기열을 지우고,
-방 단위·전체 삭제일 때는 그 방의 참여자 이력도 지운다. 민원처리업체·카테고리·설정은 유지한다.
+방 단위·전체 삭제일 때는 그 방의 참여자 이력도 지운다. 업체 문자 이력도 해당 메시지 것을 지운다(전체 삭제 시 테스트 발송 포함 전부). 민원처리업체·카테고리·설정은 유지한다.
 전체 삭제는 confirm 에 "전체 삭제" 를 정확히 넣어야 실행된다.
 """
 
@@ -71,6 +71,7 @@ def delete_data(cur, scope: str, ids: list[int], rooms: list[str]) -> dict[str, 
         cur.execute(f"SELECT COUNT(*) AS n FROM complaint_check WHERE verdict = 1 AND message_id IN ({marks})", part)
         counts["complaints"] += int(cur.fetchone()["n"])
         cur.execute(f"DELETE FROM reply_queue WHERE message_id IN ({marks})", part)
+        cur.execute(f"DELETE FROM sms_queue WHERE message_id IN ({marks})", part)
         cur.execute(f"DELETE FROM complaint_check WHERE message_id IN ({marks})", part)
         cur.execute(f"DELETE FROM kakao_media WHERE message_id IN ({marks})", part)
         cur.execute(f"SELECT COUNT(*) AS n FROM kakao_messages WHERE id IN ({marks})", part)
@@ -85,6 +86,7 @@ def delete_data(cur, scope: str, ids: list[int], rooms: list[str]) -> dict[str, 
             cur.execute("DELETE FROM member_events")
             cur.execute("DELETE FROM room_members")
             cur.execute("DELETE FROM reply_queue")
+            cur.execute("DELETE FROM sms_queue")
         else:
             for part in _chunks(rooms):
                 marks = _in(part)
