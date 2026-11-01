@@ -147,9 +147,10 @@
   }
   const dims = (w, h) => (w && h ? ` · ${w}×${h}px` : "");
 
-  const TAB_TITLES = { photos: "사진 모아보기", search: "메시지 검색", complaints: "민원", stats: "민원 통계", members: "참여자 이력", vendors: "민원처리업체", categories: "민원 카테고리", sms: "문자 발송", data: "데이터 관리", settings: "설정" };
+  const TAB_TITLES = { chat: "대화방 피드", photos: "사진 · 미디어", search: "메시지 검색", complaints: "민원 대시보드", stats: "통계 리포트", members: "참여자 이력", vendors: "민원처리업체", categories: "민원 카테고리", sms: "문자 발송", data: "데이터 관리", settings: "시스템 설정" };
   function updateTitle() {
-    $("panel-title").textContent = state.tab === "chat" ? state.room || "" : TAB_TITLES[state.tab] || "";
+    $("panel-title").textContent = TAB_TITLES[state.tab] || "";
+    document.title = `${TAB_TITLES[state.tab] || ""} · 민원 자동처리 시스템`;
   }
 
   // ---- 요약 · 대화방 목록 ------------------------------------------------------------------
@@ -220,7 +221,7 @@
     state.hasOlder = data.has_more;
     renderChat();
 
-    const view = $("view-chat");
+    const view = $("chat-scroll");
     if (focusId) {
       const target = document.querySelector(`.msg[data-id="${focusId}"]`);
       if (target) target.scrollIntoView({ block: "center" });
@@ -371,7 +372,7 @@
     if (state.room) {
       const exists = document.querySelector(`.room[data-room="${CSS.escape(state.room)}"]`);
       if (exists) {
-        const view = $("view-chat");
+        const view = $("chat-scroll");
         const top = view.scrollTop;
         const data = await api("/api/admin/messages", { room: state.room, limit: Math.min(300, Math.max(PAGE, state.messages.length)) });
         state.messages = data.items;
@@ -395,7 +396,7 @@
       const room = state.room;
       const data = await api("/api/admin/messages", { room, before_id: state.messages[0].id, limit: PAGE });
       if (state.room !== room) return;
-      const view = $("view-chat");
+      const view = $("chat-scroll");
       const before = view.scrollHeight;
       state.messages = data.items.concat(state.messages);
       state.hasOlder = data.has_more;
@@ -412,7 +413,7 @@
     const lastId = state.messages.length ? state.messages[state.messages.length - 1].id : 0;
     const data = await api("/api/admin/messages", { room, after_id: lastId, limit: PAGE });
     if (state.room !== room || !data.items.length) return;
-    const view = $("view-chat");
+    const view = $("chat-scroll");
     const nearBottom = view.scrollHeight - view.scrollTop - view.clientHeight < 120;
     const top = view.scrollTop;
     state.messages = state.messages.concat(data.items);
@@ -497,11 +498,26 @@
 
   // ---- 탭 · 라이트박스 --------------------------------------------------------------------
 
+  function closeNav() {
+    $("nav").classList.remove("open");
+    $("nav-scrim").hidden = true;
+  }
+
+  /** 왼쪽 메뉴 아래 AI 분류 상태 */
+  async function loadNavStatus() {
+    const s = await api("/api/admin/settings");
+    const state = !s.gemini_configured ? "키 없음" : !s.complaint_enabled ? "꺼짐" : s.worker.state;
+    $("nav-ai-state").textContent = state;
+    $("nav-ai-state").dataset.ok = String(s.gemini_configured && s.complaint_enabled && !/중단|재시도/.test(s.worker.state));
+    $("nav-ai-model").textContent = `${s.gemini_model}${s.worker.last ? ` · ${s.worker.last}` : ""}`;
+  }
+
   function switchTab(tab) {
     state.tab = tab;
     for (const b of document.querySelectorAll(".tab")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
     for (const v of document.querySelectorAll(".view")) v.hidden = v.id !== `view-${tab}`;
-    $("layout").classList.add("room-open");
+    if (tab === "chat") $("layout").classList.toggle("room-open", Boolean(state.room));
+    closeNav();
     $("new-msg").hidden = true;
     updateTitle();
     if (tab === "photos") {
@@ -567,11 +583,11 @@
     for (const b of document.querySelectorAll(".tab")) b.addEventListener("click", () => switchTab(b.dataset.tab));
     $("back-btn").addEventListener("click", () => $("layout").classList.remove("room-open"));
     $("new-msg").addEventListener("click", () => {
-      const view = $("view-chat");
+      const view = $("chat-scroll");
       view.scrollTop = view.scrollHeight;
       $("new-msg").hidden = true;
     });
-    $("view-chat").addEventListener("scroll", (e) => {
+    $("chat-scroll").addEventListener("scroll", (e) => {
       const v = e.target;
       if (v.scrollHeight - v.scrollTop - v.clientHeight < 40) $("new-msg").hidden = true;
     });
@@ -583,6 +599,21 @@
     });
     $("sel-delete").addEventListener("click", () => deleteSelected().catch(reportError));
     $("room-delete").addEventListener("click", () => state.room && deleteRoom(state.room).catch(reportError));
+    // 왼쪽 메뉴 (좁은 화면에서는 서랍처럼 열고 닫음)
+    $("menu-btn").addEventListener("click", () => {
+      $("nav").classList.add("open");
+      $("nav-scrim").hidden = false;
+    });
+    $("nav-scrim").addEventListener("click", closeNav);
+    // 상단 검색창 → 메시지 검색 화면에서 바로 검색
+    $("top-search").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = $("top-search-q").value.trim();
+      if (!q) return;
+      switchTab("search");
+      $("search-q").value = q;
+      runSearch(false).catch(reportError);
+    });
     $("photos-room-only").addEventListener("change", () => loadPhotos(true).catch(reportError));
     $("photos-more").addEventListener("click", () => loadPhotos(false).catch(reportError));
     $("search-form").addEventListener("submit", (e) => {
@@ -606,7 +637,7 @@
 
   async function tick() {
     if (document.hidden) return;
-    await Promise.all([loadSummary(), loadRooms(), state.tab === "chat" ? pollNewer() : null]);
+    await Promise.all([loadSummary(), loadRooms(), state.tab === "chat" ? pollNewer() : null, loadNavStatus()]);
   }
 
   // ---- 실시간 갱신 (Server-Sent Events) -------------------------------------------------------
@@ -681,7 +712,8 @@
     bind();
     const me = await api("/api/admin/me");
     $("whoami").textContent = me.user;
-    await Promise.all([loadSummary(), loadRooms()]);
+    await Promise.all([loadSummary(), loadRooms(), loadNavStatus().catch(() => null)]);
+    updateTitle();
     let saved = null;
     try {
       saved = localStorage.getItem("kc-room");

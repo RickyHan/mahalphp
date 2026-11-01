@@ -6,66 +6,97 @@
   <meta name="robots" content="noindex, nofollow">
   <title>민원 자동처리 시스템</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%23FEE500%22/%3E%3Cpath d=%22M16 7C10.5 7 6 10.5 6 14.8c0 2.8 1.9 5.3 4.7 6.6l-1 3.7 4.4-2.9c.6.1 1.2.1 1.9.1 5.5 0 10-3.5 10-7.8S21.5 7 16 7z%22 fill=%22%233C1E1E%22/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/admin/static/admin.css?v=2.8">
+  <link rel="stylesheet" href="/admin/static/admin.css?v=3.0">
 </head>
-<body>
-  <header class="topbar">
-    <div class="brand"><span class="brand-mark" aria-hidden="true">💬</span><span>민원 자동처리 시스템</span></div>
-    <dl class="stats" id="stats" aria-label="수집 현황">
-      <div><dt>메시지</dt><dd id="stat-messages">–</dd></div>
-      <div><dt>오늘</dt><dd id="stat-today">–</dd></div>
-      <div><dt>대화방</dt><dd id="stat-rooms">–</dd></div>
-      <div><dt>사진</dt><dd id="stat-photos">–</dd></div>
-      <div class="stat-wide"><dt>마지막 수신</dt><dd id="stat-last">–</dd></div>
-    </dl>
-    <span class="live" id="live" data-state="off" title="새 메시지가 들어오면 화면이 바로 갱신됩니다"><span class="live-dot" aria-hidden="true"></span><span id="live-text">연결 중</span></span>
-    <form method="post" action="/admin/logout" class="logout">
-      <span class="muted" id="whoami"></span>
-      <button type="submit" class="btn btn-ghost">로그아웃</button>
-    </form>
-  </header>
+<body class="app">
+  <aside class="nav" id="nav" aria-label="메뉴">
+    <div class="nav-brand">
+      <span class="brand-logo ms fill" aria-hidden="true">chat_bubble</span>
+      <span class="brand-text"><strong>민원 자동처리 시스템</strong><small>카카오톡 민원 통합 관제</small></span>
+    </div>
+    <nav class="nav-body" role="tablist" aria-orientation="vertical">
+      <p class="nav-label">통합 민원 관제</p>
+      <button role="tab" class="tab" data-tab="chat" aria-selected="true"><span class="ms" aria-hidden="true">forum</span>대화방 피드</button>
+      <button role="tab" class="tab" data-tab="photos" aria-selected="false"><span class="ms" aria-hidden="true">photo_library</span>사진 · 미디어</button>
+      <button role="tab" class="tab" data-tab="search" aria-selected="false"><span class="ms" aria-hidden="true">search_insights</span>메시지 검색</button>
+      <button role="tab" class="tab" data-tab="complaints" aria-selected="false"><span class="ms" aria-hidden="true">assignment</span>민원 대시보드</button>
+      <button role="tab" class="tab" data-tab="stats" aria-selected="false"><span class="ms" aria-hidden="true">insights</span>통계 리포트</button>
+      <button role="tab" class="tab" data-tab="members" aria-selected="false"><span class="ms" aria-hidden="true">manage_accounts</span>참여자 이력</button>
+      <p class="nav-label">처리 및 인프라 설정</p>
+      <button role="tab" class="tab" data-tab="vendors" aria-selected="false"><span class="ms" aria-hidden="true">domain</span>민원처리업체</button>
+      <button role="tab" class="tab" data-tab="categories" aria-selected="false"><span class="ms" aria-hidden="true">category</span>민원 카테고리</button>
+      <button role="tab" class="tab" data-tab="sms" aria-selected="false"><span class="ms" aria-hidden="true">send_to_mobile</span>문자 발송</button>
+      <button role="tab" class="tab" data-tab="data" aria-selected="false"><span class="ms" aria-hidden="true">database</span>데이터 관리</button>
+      <button role="tab" class="tab" data-tab="settings" aria-selected="false"><span class="ms" aria-hidden="true">settings</span>시스템 설정</button>
+    </nav>
+    <div class="nav-foot" id="nav-ai">
+      <div class="nav-ai-row"><span class="ms" aria-hidden="true">smart_toy</span><strong>AI 민원 분류</strong><span class="nav-ai-state" id="nav-ai-state">–</span></div>
+      <p class="nav-ai-model" id="nav-ai-model"></p>
+    </div>
+  </aside>
+  <div class="nav-scrim" id="nav-scrim" hidden></div>
 
-  <div class="layout" id="layout">
-    <aside class="sidebar" aria-label="대화방 목록">
-      <div class="sidebar-head">
-        <input type="search" id="room-search" placeholder="대화방 검색" aria-label="대화방 검색">
+  <div class="shell">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="메뉴 열기"><span class="ms">menu</span></button>
+      <h1 class="page-crumb" id="panel-title">대화방 피드</h1>
+      <div class="status-pill" id="stats" aria-label="수집 현황">
+        <span class="live" id="live" data-state="off" title="새 메시지가 들어오면 화면이 바로 갱신됩니다"><span class="live-dot" aria-hidden="true"></span><span id="live-text">연결 중</span></span>
+        <span class="sp-item">수신 메시지 <b id="stat-messages">–</b></span>
+        <span class="sp-item">오늘 <b id="stat-today">–</b></span>
+        <span class="sp-item">대화방 <b id="stat-rooms">–</b></span>
+        <span class="sp-item">사진 <b id="stat-photos">–</b></span>
+        <span class="sp-item stat-wide">마지막 수신 <b id="stat-last">–</b></span>
       </div>
-      <ul class="room-list" id="room-list"></ul>
-    </aside>
+      <form class="top-search" id="top-search" role="search">
+        <span class="ms" aria-hidden="true">search</span>
+        <input type="search" id="top-search-q" placeholder="보낸 사람, 내용 검색…" aria-label="메시지 검색">
+      </form>
+      <form method="post" action="/admin/logout" class="profile">
+        <span class="avatar-sm ms fill" aria-hidden="true">person</span>
+        <span class="profile-text"><strong id="whoami">관리자</strong><small><span class="dot-on" aria-hidden="true"></span>온라인</small></span>
+        <button type="submit" class="icon-btn" title="로그아웃" aria-label="로그아웃"><span class="ms">logout</span></button>
+      </form>
+    </header>
 
     <main class="panel">
-      <nav class="tabs" role="tablist">
-        <button class="back-btn" id="back-btn" type="button" aria-label="대화방 목록으로">‹</button>
-        <button role="tab" class="tab" data-tab="chat" aria-selected="true">대화</button>
-        <button role="tab" class="tab" data-tab="photos" aria-selected="false">사진</button>
-        <button role="tab" class="tab" data-tab="search" aria-selected="false">검색</button>
-        <button role="tab" class="tab" data-tab="complaints" aria-selected="false">민원</button>
-        <button role="tab" class="tab" data-tab="stats" aria-selected="false">통계</button>
-        <button role="tab" class="tab" data-tab="members" aria-selected="false">참여자 이력</button>
-        <button role="tab" class="tab" data-tab="vendors" aria-selected="false">민원처리업체</button>
-        <button role="tab" class="tab" data-tab="categories" aria-selected="false">민원 카테고리</button>
-        <button role="tab" class="tab" data-tab="sms" aria-selected="false">문자 발송</button>
-        <button role="tab" class="tab" data-tab="data" aria-selected="false">데이터 관리</button>
-        <button role="tab" class="tab" data-tab="settings" aria-selected="false">설정</button>
-        <span class="panel-title" id="panel-title"></span>
-      </nav>
-
       <section class="view" id="view-chat" role="tabpanel">
-        <div class="chat-tools" id="chat-tools" hidden>
-          <span class="chat-tools-info" id="chat-tools-info"></span>
-          <button class="btn btn-small" id="sel-start" type="button">선택 삭제</button>
-          <button class="btn btn-small btn-danger" id="room-delete" type="button">이 방 전체 삭제</button>
-          <button class="btn btn-small" id="sel-all" type="button" hidden>보이는 메시지 모두 선택</button>
-          <button class="btn btn-small btn-danger-solid" id="sel-delete" type="button" hidden disabled>삭제</button>
-          <button class="btn btn-small" id="sel-cancel" type="button" hidden>취소</button>
+        <div class="chat-layout" id="layout">
+          <aside class="rooms-pane" aria-label="대화방 목록">
+            <div class="rooms-head">
+              <h2><span class="ms" aria-hidden="true">forum</span>대화방</h2>
+              <label class="field-icon"><span class="ms" aria-hidden="true">search</span><input type="search" id="room-search" placeholder="대화방 검색…" aria-label="대화방 검색"></label>
+            </div>
+            <ul class="room-list" id="room-list"></ul>
+          </aside>
+          <div class="thread-pane">
+            <div class="thread-head">
+              <button class="icon-btn back-btn" id="back-btn" type="button" aria-label="대화방 목록으로"><span class="ms">arrow_back</span></button>
+              <div class="chat-tools" id="chat-tools" hidden>
+                <span class="chat-tools-info" id="chat-tools-info"></span>
+                <button class="btn btn-small" id="sel-start" type="button"><span class="ms">checklist</span>선택 삭제</button>
+                <button class="btn btn-small btn-danger" id="room-delete" type="button"><span class="ms">delete</span>이 방 전체 삭제</button>
+                <button class="btn btn-small" id="sel-all" type="button" hidden>보이는 메시지 모두 선택</button>
+                <button class="btn btn-small btn-danger-solid" id="sel-delete" type="button" hidden disabled>삭제</button>
+                <button class="btn btn-small" id="sel-cancel" type="button" hidden>취소</button>
+              </div>
+            </div>
+            <div class="thread-scroll" id="chat-scroll">
+              <div class="chat" id="chat">
+                <div class="empty" id="chat-empty">왼쪽에서 대화방을 선택하십시오.</div>
+              </div>
+              <button class="btn new-msg" id="new-msg" type="button" hidden>새 메시지 ↓</button>
+            </div>
+          </div>
         </div>
-        <div class="chat" id="chat">
-          <div class="empty" id="chat-empty">왼쪽에서 대화방을 선택하십시오.</div>
-        </div>
-        <button class="btn new-msg" id="new-msg" type="button" hidden>새 메시지 ↓</button>
       </section>
 
       <section class="view" id="view-photos" role="tabpanel" hidden>
+        <div class="page-head">
+          <span class="page-icon ms" aria-hidden="true">photo_library</span>
+          <div class="page-title"><h2>사진 · 미디어</h2><p>카카오톡 알림으로 수집한 사진 미리보기를 모아 봅니다.</p></div>
+          
+        </div>
         <div class="view-toolbar">
           <label class="check"><input type="checkbox" id="photos-room-only" checked> 선택한 대화방만</label>
         </div>
@@ -74,6 +105,11 @@
       </section>
 
       <section class="view" id="view-search" role="tabpanel" hidden>
+        <div class="page-head">
+          <span class="page-icon ms" aria-hidden="true">search_insights</span>
+          <div class="page-title"><h2>메시지 검색</h2><p>보낸 사람이나 내용으로 수집된 메시지를 찾고, 해당 대화 위치로 바로 이동합니다.</p></div>
+          
+        </div>
         <form class="view-toolbar search-form" id="search-form">
           <input type="search" id="search-q" placeholder="내용 또는 보낸 사람" aria-label="검색어" required>
           <select id="search-type" aria-label="메시지 종류">
@@ -92,6 +128,11 @@
       </section>
 
       <section class="view" id="view-complaints" role="tabpanel" hidden>
+        <div class="page-head">
+          <span class="page-icon ms" aria-hidden="true">assignment</span>
+          <div class="page-title"><h2>민원 대시보드</h2><p>Gemini 가 민원으로 분류한 메시지를 같은 방·사람·분류의 30분 연쇄 단위로 묶어 문제별로 보여 줍니다.</p></div>
+          
+        </div>
         <div class="view-toolbar">
           <select id="cp-category" aria-label="민원 분류"><option value="">전체 분류</option></select>
           <label class="check"><input type="checkbox" id="cp-room-only"> 선택한 대화방만</label>
@@ -103,6 +144,11 @@
       </section>
 
       <section class="view" id="view-stats" role="tabpanel" hidden>
+        <div class="page-head">
+          <span class="page-icon ms" aria-hidden="true">insights</span>
+          <div class="page-title"><h2>통계 리포트</h2><p>접수 추이, 분류·방·시간대별 분포, 카톡 안내와 업체 문자 처리 현황을 한눈에 봅니다.</p></div>
+          
+        </div>
         <div class="view-toolbar" role="radiogroup" aria-label="기간" id="st-periods">
           <button class="btn chip" type="button" data-period="today">오늘</button>
           <button class="btn chip" type="button" data-period="week" aria-pressed="true">7일</button>
@@ -113,6 +159,11 @@
       </section>
 
       <section class="view" id="view-members" role="tabpanel" hidden>
+        <div class="page-head">
+          <span class="page-icon ms" aria-hidden="true">manage_accounts</span>
+          <div class="page-title"><h2>참여자 이력</h2><p>입장·퇴장·내보냄·초대·대화명 변경·첫 발언 기록을 확인합니다.</p></div>
+          
+        </div>
         <div class="view-toolbar">
           <select id="mb-mode" aria-label="보기">
             <option value="events">이력</option>
@@ -134,6 +185,11 @@
       </section>
 
       <section class="view" id="view-vendors" role="tabpanel" hidden>
+        <div class="page-head">
+          <span class="page-icon ms" aria-hidden="true">domain</span>
+          <div class="page-title"><h2>민원처리업체</h2><p>업체 정보와 담당 카톡 대화방·민원 카테고리를 연결해, 민원 발생 시 문자로 처리를 요청합니다.</p></div>
+          
+        </div>
         <div class="view-toolbar">
           <input type="search" id="vd-search" placeholder="업체명 · 전화번호 · 대화방 검색" aria-label="업체 검색">
           <button class="btn btn-primary" id="vd-new" type="button">+ 업체 등록</button>
@@ -171,18 +227,44 @@
       </section>
 
       <section class="view" id="view-categories" role="tabpanel" hidden>
-        <form class="view-toolbar ct-add" id="ct-form" novalidate>
-          <input id="ct-name" maxlength="30" placeholder="새 카테고리 이름 (예: 엘리베이터)" aria-label="카테고리 이름" autocomplete="off">
-          <input id="ct-desc" maxlength="200" placeholder="판정 기준 설명 (Gemini 가 참고, 선택)" aria-label="판정 기준 설명" autocomplete="off">
-          <button class="btn btn-primary" type="submit">+ 추가</button>
-        </form>
-        <p class="ops-status" id="ct-status"></p>
-        <p class="vd-error ct-error" id="ct-error" role="alert"></p>
-        <ul class="ct-list" id="ct-list"></ul>
-        <p class="muted ct-help">새로 들어오는 메시지부터 '사용' 중인 카테고리 중 하나로 분류됩니다. 이름을 바꾸면 기존 민원의 분류도 함께 바뀌고, 삭제하면 기존 민원은 '기타'로 옮겨집니다. '기타'는 삭제할 수 없습니다.</p>
+        <div class="page-head">
+          <span class="page-icon ms" aria-hidden="true">category</span>
+          <div class="page-title"><h2>민원 카테고리</h2><p>카카오톡 민원을 Gemini 가 분류할 기준과, 담당 처리업체로의 문자 연결을 관리합니다.</p></div>
+          
+        </div>
+        <div class="kpi-row" id="ct-kpis"></div>
+        <div class="card ct-add-card">
+          <div class="card-head"><h3><span class="ms ico-yellow" aria-hidden="true">add_circle</span>카테고리 신규 등록 <small>Gemini 판정 기준 설명과 함께 등록</small></h3></div>
+          <form class="ct-add" id="ct-form" novalidate>
+            <label class="field"><span>카테고리 이름</span><input id="ct-name" maxlength="30" placeholder="예: 승강기, 택배 분실" autocomplete="off"></label>
+            <label class="field grow"><span>판정 기준 설명 (Gemini 가 참고)</span><input id="ct-desc" maxlength="200" placeholder="예: 승강기 고장·갇힘·운행 중 소음" autocomplete="off"></label>
+            <button class="btn btn-kakao btn-lg" type="submit"><span class="ms">add</span>카테고리 추가</button>
+          </form>
+          <p class="vd-error ct-error" id="ct-error" role="alert"></p>
+        </div>
+        <div class="card table-card">
+          <div class="card-head"><h3>등록 카테고리 목록</h3><span class="pill" id="ct-status"></span><span class="card-hint">▲▼ 로 순서 변경 · 순서대로 통계 색이 정해집니다</span></div>
+          <div class="table-scroll">
+            <table class="data-table ct-table">
+              <thead><tr><th class="w-order">순서</th><th class="w-name">카테고리</th><th>Gemini 판정 기준</th><th class="num">접수 민원</th><th>연결 처리업체</th><th class="center-col">사용</th><th class="right-col">관리</th></tr></thead>
+              <tbody id="ct-list"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="callout">
+          <span class="ms" aria-hidden="true">smart_toy</span>
+          <div><strong>Gemini 자동 분류 · 업체 연결 안내</strong>
+            <p>새로 들어오는 카카오톡 메시지부터 <b>'사용'</b> 중인 카테고리 중 하나로 분류됩니다. 이름을 바꾸면 기존 민원의 분류도 함께 바뀌고, 삭제하면 기존 민원은 <b>'기타'</b>로 옮겨집니다. 업체 연결은 '민원처리업체'에서 업체마다 담당 카테고리를 지정합니다.</p>
+          </div>
+        </div>
       </section>
 
       <section class="view" id="view-sms" role="tabpanel" hidden>
+        <div class="page-head">
+          <span class="page-icon ms" aria-hidden="true">send_to_mobile</span>
+          <div class="page-title"><h2>문자 발송</h2><p>뿌리오 연동 상태, 발신번호, 업체 문자 템플릿과 발송 이력을 관리합니다.</p></div>
+          
+        </div>
         <div class="sms-wrap">
           <section class="st-card sms-status-card">
             <div class="sms-status-row">
@@ -238,6 +320,11 @@
       </section>
 
       <section class="view" id="view-data" role="tabpanel" hidden>
+        <div class="page-head">
+          <span class="page-icon ms" aria-hidden="true">database</span>
+          <div class="page-title"><h2>데이터 관리</h2><p>수집된 대화를 방별·선택·전체로 삭제합니다. 삭제는 되돌릴 수 없습니다.</p></div>
+          
+        </div>
         <div class="view-toolbar">
           <label class="check"><input type="checkbox" id="dm-all"> 전체 선택</label>
           <button class="btn btn-danger-solid" id="dm-delete" type="button" disabled>선택한 방 삭제</button>
@@ -258,6 +345,11 @@
       </section>
 
       <section class="view" id="view-settings" role="tabpanel" hidden>
+        <div class="page-head">
+          <span class="page-icon ms" aria-hidden="true">settings</span>
+          <div class="page-title"><h2>시스템 설정</h2><p>민원 자동 분류(Gemini)와 카톡 접수 안내 동작을 설정합니다.</p></div>
+          
+        </div>
         <form class="settings" id="settings-form">
           <h3>민원 자동 분류 (Gemini)</h3>
           <p class="muted" id="set-gemini"></p>
@@ -285,11 +377,11 @@
     <button class="lb-btn lb-next" id="lb-next" type="button" aria-label="다음 사진">›</button>
   </div>
 
-  <script src="/admin/static/admin.js?v=2.8"></script>
-  <script src="/admin/static/admin-ops.js?v=2.8"></script>
-  <script src="/admin/static/admin-vendors.js?v=2.8"></script>
-  <script src="/admin/static/admin-manage.js?v=2.8"></script>
-  <script src="/admin/static/admin-sms.js?v=2.8"></script>
-  <script src="/admin/static/admin-stats.js?v=2.8"></script>
+  <script src="/admin/static/admin.js?v=3.0"></script>
+  <script src="/admin/static/admin-ops.js?v=3.0"></script>
+  <script src="/admin/static/admin-vendors.js?v=3.0"></script>
+  <script src="/admin/static/admin-manage.js?v=3.0"></script>
+  <script src="/admin/static/admin-sms.js?v=3.0"></script>
+  <script src="/admin/static/admin-stats.js?v=3.0"></script>
 </body>
 </html>

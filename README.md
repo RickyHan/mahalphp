@@ -96,6 +96,9 @@ curl -fsSL https://raw.githubusercontent.com/rickyhan/mahalphp/claude/new-creati
 - 상단 오른쪽 **● 실시간** 표시: 서버와 실시간 연결 중이면 초록색이고, 새 메시지가 들어올 때마다 깜빡입니다. 연결이 끊기면 회색 '재연결 중'으로 바뀌고 10초 주기 새로고침으로 대신합니다. (nginx 경유 시에도 동작: 응답에 `X-Accel-Buffering: no`)
 - 사업자등록증 파일은 서버 `storage/vendor-docs/` 에 저장됩니다.
 
+- 화면 구성: 왼쪽 메뉴(통합 민원 관제 / 처리 및 인프라 설정) + 상단 실시간 현황·검색 바 + 페이지별 머리말·지표 카드·표. 디자인 기준은 Slate 중립색 + Tech Blue(#2563EB) + Kakao Yellow(#FEE500)
+- 아이콘은 Material Symbols(Apache-2.0) 일부를 `server/app/static/fonts/` 에 포함해 외부 요청 없이 표시합니다
+
 ### 민원 자동 분류와 접수 안내
 - 대상: 공백 제외 5자 이상 텍스트 메시지(내가 보낸 메시지 제외). 서버 워커가 새 메시지마다 Gemini 로 20건씩 판정
 - 분류: 웹 '민원 카테고리'에 등록된 분류 중 '사용' 중인 것 + 한 줄 요약 (기본값: 소음 · 누수·하자 · 주차 · 청소·쓰레기 · 시설·고장 · 관리비 · 보안·출입 · 생활·이웃 · 기타)

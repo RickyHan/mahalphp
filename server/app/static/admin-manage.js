@@ -31,22 +31,48 @@
   }
 
   async function loadCategories() {
-    const data = await api("/api/admin/categories");
+    const [data, vendors] = await Promise.all([api("/api/admin/categories"), api("/api/admin/vendors")]);
     categories = data.items;
+    const vendorsByCat = new Map();
+    for (const v of vendors.items) {
+      if (!v.category_id) continue;
+      vendorsByCat.set(v.category_id, [...(vendorsByCat.get(v.category_id) || []), v.name]);
+    }
     const active = categories.filter((c) => c.enabled).length;
-    $("ct-status").textContent = `카테고리 ${categories.length}개 · 사용 ${active}개`;
+    const total = categories.reduce((n, c) => n + c.complaints, 0);
+    const etc = categories.find((c) => c.protected);
+    const linked = categories.filter((c) => vendorsByCat.has(c.id)).length;
+    $("ct-status").textContent = `${active}개 사용 / ${categories.length - active}개 사용 안 함`;
+    $("ct-kpis").replaceChildren(
+      kpi("folder_special", "blue", "전체 카테고리", categories.length, "개 등록"),
+      kpi("toggle_on", "indigo", "분류에 사용 중", active, `/ ${categories.length}`),
+      kpi("domain", "green", "업체 연결된 카테고리", linked, `/ ${categories.length}`),
+      kpi("pending_actions", etc && etc.complaints ? "rose" : "slate", "'기타'로 분류된 민원", etc ? etc.complaints : 0, total ? `건 · 전체 민원 ${total}건` : "건"),
+    );
+    // 통계 화면과 같은 색: '기타' 제외 등록 순서대로 1~8번 색, 그 뒤는 회색
+    let slot = 0;
     const list = $("ct-list");
     list.replaceChildren();
-    categories.forEach((c, i) => list.append(categoryRow(c, i)));
+    categories.forEach((c, i) => list.append(categoryRow(c, i, c.protected ? 0 : ++slot > 8 ? 0 : slot, vendorsByCat.get(c.id) || [])));
   }
 
-  function categoryRow(c, index) {
+  function kpi(icon, tone, label, value, unit) {
+    return el(
+      "div",
+      { class: `kpi-card tone-${tone}` },
+      el("div", { class: "kpi-text" }, el("span", { class: "kpi-label", text: label }), el("div", { class: "kpi-num" }, el("strong", { text: String(value) }), el("span", { text: unit }))),
+      el("span", { class: "kpi-ico ms", "aria-hidden": "true", text: icon }),
+    );
+  }
+
+  function categoryRow(c, index, slot, vendorNames) {
     const name = el("input", { class: "ct-name", value: c.name, maxlength: "30", "aria-label": "카테고리 이름", disabled: c.protected });
     const desc = el("input", { class: "ct-desc", value: c.description, maxlength: "200", placeholder: "판정 기준 설명 (선택)", "aria-label": "판정 기준 설명" });
-    const enabled = el("input", { type: "checkbox", checked: c.enabled, disabled: c.protected, "aria-label": "사용" });
+    const enabled = el("input", { type: "checkbox", class: "switch", checked: c.enabled, disabled: c.protected, "aria-label": `${c.name} 사용` });
     const save = el("button", { class: "btn btn-small", type: "button", text: "저장", disabled: true });
     const dirty = () => {
       save.disabled = name.value.trim() === c.name && desc.value.trim() === c.description && enabled.checked === c.enabled;
+      row.classList.toggle("dirty", !save.disabled);
     };
     for (const input of [name, desc]) input.addEventListener("input", dirty);
     enabled.addEventListener("change", dirty);
@@ -66,9 +92,9 @@
     const remove = el("button", {
       class: "btn btn-small btn-danger",
       type: "button",
-      text: "삭제",
+      text: c.protected ? "삭제 불가" : "삭제",
       disabled: c.protected,
-      title: c.protected ? "'기타'는 삭제할 수 없습니다" : "",
+      title: c.protected ? "'기타'는 분류할 곳이 없는 민원을 받는 기본값이라 삭제할 수 없습니다" : "",
       onclick: async () => {
         const notes = [c.complaints && `기존 민원 ${c.complaints}건은 '기타'로 옮겨집니다.`, c.vendors && `업체 ${c.vendors}곳의 카테고리 지정이 해제됩니다.`].filter(Boolean);
         if (!confirm(`'${c.name}' 카테고리를 삭제하시겠습니까?${notes.length ? `\n${notes.join("\n")}` : ""}`)) return;
@@ -91,20 +117,30 @@
       await loadCategories();
     };
 
-    return el(
-      "li",
-      { class: `ct-row${c.enabled ? "" : " ct-off"}` },
-      el(
-        "div",
-        { class: "ct-order" },
-        el("button", { class: "btn btn-icon", type: "button", text: "▲", "aria-label": "위로", disabled: index === 0, onclick: () => move(-1)().catch(reportError) }),
-        el("button", { class: "btn btn-icon", type: "button", text: "▼", "aria-label": "아래로", disabled: index === categories.length - 1, onclick: () => move(1)().catch(reportError) }),
-      ),
-      el("div", { class: "ct-fields" }, name, desc),
-      el("div", { class: "ct-meta" }, el("span", { class: "chip-count", text: `민원 ${c.complaints}` }), c.vendors ? el("span", { class: "muted small", text: `업체 ${c.vendors}` }) : null),
-      el("label", { class: "check ct-enabled" }, enabled, " 사용"),
-      el("div", { class: "ct-actions" }, save, remove),
+    const order = c.protected
+      ? el("span", { class: "ms lock", title: "기본값", text: "lock" })
+      : el(
+          "div",
+          { class: "ct-order" },
+          el("button", { class: "icon-btn sm", type: "button", "aria-label": "위로", disabled: index === 0, onclick: () => move(-1)().catch(reportError) }, el("span", { class: "ms", text: "expand_less" })),
+          el("button", { class: "icon-btn sm", type: "button", "aria-label": "아래로", disabled: index === categories.length - 1, onclick: () => move(1)().catch(reportError) }, el("span", { class: "ms", text: "expand_more" })),
+        );
+    const count = el("span", { class: `count-pill${c.complaints ? " has" : ""}`, text: `${c.complaints}건` });
+    const vendorsCell = vendorNames.length
+      ? el("div", { class: "chips" }, ...vendorNames.map((n) => el("span", { class: "chip-soft", text: n })))
+      : el("span", { class: "muted small", text: "미지정" });
+    const row = el(
+      "tr",
+      { class: `${c.enabled ? "" : "row-off"}${c.protected ? " row-locked" : ""}` },
+      el("td", { class: "w-order" }, order),
+      el("td", { class: "w-name" }, el("div", { class: "ct-name-cell" }, el("span", { class: `dot c${slot}`, "aria-hidden": "true" }), name)),
+      el("td", {}, desc),
+      el("td", { class: "num" }, count),
+      el("td", {}, vendorsCell),
+      el("td", { class: "center-col" }, enabled),
+      el("td", { class: "right-col" }, el("div", { class: "ct-actions" }, save, remove)),
     );
+    return row;
   }
 
   async function addCategory(e) {
