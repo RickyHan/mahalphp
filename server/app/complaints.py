@@ -17,6 +17,24 @@ REPLY_MAX_AGE = timedelta(minutes=30)
 SELF_SENDER = "나"
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_REPLY_TEMPLATE = "[{분류}] 민원이 접수되었습니다."
+# 담당 업체 카톡방으로 보내는 처리 요청. {업체명} {방} {분류} {요약} {내용} {보낸사람} {시각}
+DEFAULT_VENDOR_TEMPLATE = (
+    "[민원 처리 요청] {업체명} 담당자님,\n"
+    "'{방}' 대화방에서 [{분류}] 민원이 접수되었습니다.\n"
+    "- 요약: {요약}\n"
+    "- 내용: {내용}\n"
+    "- 접수: {시각} ({보낸사람})\n"
+    "빠른 처리 부탁드립니다."
+)
+VENDOR_PLACEHOLDERS = {
+    "{업체명}": "민원처리업체 이름",
+    "{방}": "민원이 발생한 카톡 대화방",
+    "{분류}": "민원 카테고리",
+    "{요약}": "Gemini 한 줄 요약",
+    "{내용}": "민원 메시지 원문(최대 300자)",
+    "{보낸사람}": "민원을 올린 사람",
+    "{시각}": "민원 시각 (MM/DD HH:mm)",
+}
 FALLBACK_CATEGORY = "기타"
 # 처음 설치 시 등록되는 기본 분류(이름, Gemini 판정 기준 설명). 이후에는 웹 '민원 카테고리'에서 관리한다.
 DEFAULT_CATEGORIES: list[tuple[str, str]] = [
@@ -159,6 +177,22 @@ class GeminiClient:
         if res.status_code == 429 or res.status_code >= 500:
             raise GeminiError(f"Gemini 일시 오류 (HTTP {res.status_code})", retry=True)
         raise GeminiError(f"HTTP {res.status_code}: {text}", retry=False)
+
+
+def format_vendor_message(template: str, *, vendor: str, room: str, category: str, summary: str, content: str, sender: str, at: datetime) -> str:
+    values = {
+        "{업체명}": vendor,
+        "{방}": room,
+        "{분류}": category,
+        "{요약}": summary or "-",
+        "{내용}": re.sub(r"\s+", " ", content or "").strip()[:300],
+        "{보낸사람}": sender,
+        "{시각}": at.strftime("%m/%d %H:%M"),
+    }
+    text = template
+    for key, value in values.items():
+        text = text.replace(key, value)
+    return text.strip()[:1000]
 
 
 def format_reply(template: str, sender: str, category: str, summary: str, room: str) -> str:

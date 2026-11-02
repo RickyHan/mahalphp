@@ -147,7 +147,7 @@
   }
   const dims = (w, h) => (w && h ? ` · ${w}×${h}px` : "");
 
-  const TAB_TITLES = { chat: "대화방 피드", photos: "사진 · 미디어", search: "메시지 검색", complaints: "민원 대시보드", stats: "통계 리포트", members: "참여자 이력", vendors: "민원처리업체", categories: "민원 카테고리", sms: "문자 발송", data: "데이터 관리", settings: "시스템 설정" };
+  const TAB_TITLES = { chat: "대화방 피드", photos: "사진 · 미디어", search: "메시지 검색", complaints: "민원 대시보드", stats: "통계 리포트", members: "참여자 이력", vendors: "민원처리업체", categories: "민원 카테고리", data: "데이터 관리", settings: "시스템 설정" };
   function updateTitle() {
     $("panel-title").textContent = TAB_TITLES[state.tab] || "";
     document.title = `${TAB_TITLES[state.tab] || ""} · 민원 자동처리 시스템`;

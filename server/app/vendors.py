@@ -5,6 +5,8 @@
     PUT    /api/admin/vendors/{id}         수정 (multipart, remove_doc=true 면 등록증 삭제)
     DELETE /api/admin/vendors/{id}         삭제
     GET    /api/admin/vendors/{id}/doc     사업자등록증 보기
+    GET    /api/admin/vendor-dispatch      업체 카톡방 전달 이력
+    POST   /api/admin/vendor-dispatch/{id}/retry   실패·만료된 전달 다시 보내기
 """
 
 from __future__ import annotations
@@ -197,3 +199,42 @@ def vendor_doc(vendor_id: int, settings: SettingsDep) -> FileResponse:
             **({} if row["doc_mime"] == "application/pdf" else {"Content-Security-Policy": "sandbox"}),
         },
     )
+
+
+# ---- 업체 카톡방 전달 이력 ------------------------------------------------------------------
+
+@router.get("/api/admin/vendor-dispatch")
+def dispatch_history(settings: SettingsDep, limit: int = 100) -> dict[str, Any]:
+    limit = max(1, min(limit, 500))
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            """SELECT q.id, q.message_id, q.vendor_id, q.vendor_name, q.room_name AS vendor_room, q.text, q.status, q.note,
+                      q.created_at, q.done_at, m.room_name AS complaint_room, c.category
+               FROM reply_queue q
+               LEFT JOIN kakao_messages m ON m.id = q.message_id
+               LEFT JOIN complaint_check c ON c.message_id = q.message_id
+               WHERE q.kind = 'vendor' ORDER BY q.id DESC LIMIT %s""",
+            (limit,),
+        )
+        items = [{k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in r.items()} for r in cur.fetchall()]
+        cur.execute("SELECT status, COUNT(*) AS n FROM reply_queue WHERE kind = 'vendor' GROUP BY status")
+        counts = {r["status"]: int(r["n"]) for r in cur.fetchall()}
+    return {"ok": True, "items": items, "counts": counts}
+
+
+@router.post("/api/admin/vendor-dispatch/{dispatch_id}/retry")
+def dispatch_retry(dispatch_id: int, settings: SettingsDep) -> dict[str, Any]:
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT status FROM reply_queue WHERE id = %s AND kind = 'vendor'", (dispatch_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(404, "전달 기록이 없습니다.")
+        if row["status"] not in ("failed", "expired"):
+            raise HTTPException(422, "실패하거나 만료된 전달만 다시 보낼 수 있습니다.")
+        cur.execute(
+            "UPDATE reply_queue SET status = 'pending', note = '다시 보내기', created_at = %s, done_at = NULL WHERE id = %s",
+            (_now(settings), dispatch_id),
+        )
+    live.bump("vendor")
+    return {"ok": True}
+

@@ -175,6 +175,9 @@ def install_schema(settings: Settings) -> list[str]:
             conn.executescript("PRAGMA journal_mode = WAL;")
             _add_column_if_missing(conn, settings, "kakao_messages", "sender_key", "TEXT")
             _add_column_if_missing(conn, settings, "vendors", "category_id", "INTEGER")
+            _add_column_if_missing(conn, settings, "reply_queue", "kind", "TEXT NOT NULL DEFAULT 'ack'")
+            _add_column_if_missing(conn, settings, "reply_queue", "vendor_id", "INTEGER")
+            _add_column_if_missing(conn, settings, "reply_queue", "vendor_name", "TEXT")
             with conn.cursor() as cur:
                 cur.execute("SELECT name AS t FROM sqlite_master WHERE type = 'table' AND name LIKE 'kakao!_%' ESCAPE '!' ORDER BY name")
                 return [row["t"] for row in cur.fetchall()]
@@ -189,6 +192,9 @@ def install_schema(settings: Settings) -> list[str]:
             conn.commit()
             _add_column_if_missing(conn, settings, "kakao_messages", "sender_key", "VARCHAR(255) NULL")
             _add_column_if_missing(conn, settings, "vendors", "category_id", "BIGINT UNSIGNED NULL")
+            _add_column_if_missing(conn, settings, "reply_queue", "kind", "VARCHAR(10) NOT NULL DEFAULT 'ack'")
+            _add_column_if_missing(conn, settings, "reply_queue", "vendor_id", "BIGINT UNSIGNED NULL")
+            _add_column_if_missing(conn, settings, "reply_queue", "vendor_name", "VARCHAR(100) NULL")
             cur.execute(
                 "SELECT table_name AS t FROM information_schema.tables WHERE table_schema = %s ORDER BY table_name",
                 (settings.db_name,),

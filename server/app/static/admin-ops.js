@@ -25,7 +25,7 @@
     3: () => "안내 생략 (30분 지난 메시지)",
     4: () => "⏳ 휴대폰 전송 대기",
   };
-  const SMS_LABEL = { waiting: "카톡 안내 후 발송 대기", pending: "발송 대기", sending: "발송 중", sent: "✅ 발송 완료", failed: "⚠️ 실패" };
+  const DISPATCH_LABEL = { pending: "⏳ 휴대폰 전송 대기", sent: "✅ 보냄", failed: "⚠️ 실패", expired: "⚠️ 만료(앱이 가져가지 않음)" };
   const replyLabel = (status, note) => (REPLY[status] ? REPLY[status](note) : "");
   const span = (s, e) => (s && e && s.slice(0, 16) !== e.slice(0, 16) ? `${fmtDateTime(s).slice(0, 16)} ~ ${e.slice(11, 16)}` : fmtDateTime(s).slice(0, 16));
 
@@ -64,7 +64,9 @@
         el("p", { class: "cp-text", text: g.latest_text || "" }),
         el("p", { class: "cp-meta", text: `${g.room_name} · ${g.sender_name} · ${span(g.start_at, g.end_at)}` }),
         replyLabel(g.reply_status, g.reply_note) ? el("p", { class: "cp-reply", text: replyLabel(g.reply_status, g.reply_note) }) : null,
-        ...(g.sms || []).map((m) => el("p", { class: "cp-reply", text: `📱 ${m.vendor} 문자: ${SMS_LABEL[m.status] || m.status}${m.status === "failed" && m.note ? ` (${m.note})` : ""}` })),
+        ...(g.vendor_dispatch || []).map((m) =>
+          el("p", { class: "cp-reply", text: `🏢 ${m.vendor} 톡방(${m.room}) 처리 요청: ${DISPATCH_LABEL[m.status] || m.status}${m.status !== "sent" && m.status !== "pending" && m.note ? ` — ${m.note}` : ""}` }),
+        ),
         detail,
       );
       list.append(card);
@@ -149,10 +151,27 @@
     $("set-model").value = s.gemini_model;
     $("set-reply").checked = s.auto_reply_enabled;
     $("set-template").value = s.reply_template;
+    $("set-vendor").checked = s.vendor_enabled;
+    $("set-vendor-template").value = s.vendor_template;
+    const chips = $("set-vendor-chips");
+    if (!chips.childElementCount) {
+      for (const [key, desc] of Object.entries(s.vendor_placeholders)) {
+        chips.append(el("button", { class: "chip-insert", type: "button", title: desc, text: key, onclick: () => insertToken($("set-vendor-template"), key) }));
+      }
+      chips.append(el("button", { class: "chip-insert chip-reset", type: "button", text: "기본 문구", title: "기본 문구로 되돌리기 (저장해야 적용)", onclick: () => ($("set-vendor-template").value = s.vendor_default_template) }));
+    }
     $("set-gemini").textContent = s.gemini_configured
       ? "서버에 Gemini API 키가 설정되어 있습니다. (키는 서버 .env 의 GEMINI_API_KEY)"
       : "⚠️ 서버에 Gemini API 키가 없습니다. 서버의 server/.env 에 GEMINI_API_KEY 를 넣고 서비스를 재시작하십시오.";
     $("set-worker").textContent = `${s.worker.state}${s.worker.last ? ` — ${s.worker.last}` : ""}`;
+  }
+
+  function insertToken(area, text) {
+    const start = area.selectionStart ?? area.value.length;
+    const end = area.selectionEnd ?? area.value.length;
+    area.value = area.value.slice(0, start) + text + area.value.slice(end);
+    area.focus();
+    area.selectionStart = area.selectionEnd = start + text.length;
   }
 
   async function saveSettings(e) {
@@ -162,6 +181,8 @@
       gemini_model: $("set-model").value.trim(),
       auto_reply_enabled: $("set-reply").checked,
       reply_template: $("set-template").value,
+      vendor_enabled: $("set-vendor").checked,
+      vendor_template: $("set-vendor-template").value,
     });
     $("set-saved").textContent = "저장했습니다.";
     setTimeout(() => ($("set-saved").textContent = ""), 3000);
@@ -178,13 +199,12 @@
   }));
   // 실시간 신호가 왔을 때 다시 읽을 탭
   const LIVE_TOPICS = {
-    complaints: ["message", "complaint", "category", "delete", "sms"],
-    stats: ["complaint", "category", "delete", "sms"],
+    complaints: ["message", "complaint", "category", "delete", "vendor"],
+    stats: ["complaint", "category", "delete", "vendor"],
     members: ["message", "delete"],
-    vendors: ["vendor", "category"],
+    vendors: ["vendor", "category", "complaint"],
     categories: ["category", "complaint", "delete"],
     data: ["message", "delete"],
-    sms: ["sms", "delete"],
   };
 
   KC.onTab = (tab) => {

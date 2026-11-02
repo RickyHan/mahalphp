@@ -31,9 +31,52 @@
   }
 
   async function loadVendors() {
-    const [data] = await Promise.all([api("/api/admin/vendors"), loadRooms(), loadCategories()]);
+    const [data, dispatch] = await Promise.all([api("/api/admin/vendors"), api("/api/admin/vendor-dispatch", { limit: 50 }), loadRooms(), loadCategories()]);
     state.items = data.items;
     render();
+    renderDispatch(dispatch);
+  }
+
+  // ---- 업체 카톡방 전달 이력 -------------------------------------------------------------------
+
+  const DISPATCH = { pending: ["대기", "wait"], sent: ["보냄", "ok"], failed: ["실패", "bad"], expired: ["만료", "bad"] };
+
+  function renderDispatch(data) {
+    const c = data.counts;
+    $("vd-dispatch-counts").textContent = `보냄 ${c.sent || 0} · 대기 ${c.pending || 0} · 실패 ${(c.failed || 0) + (c.expired || 0)}`;
+    const list = $("vd-dispatch");
+    list.replaceChildren();
+    if (!data.items.length) {
+      list.append(el("li", { class: "empty-row", text: "아직 업체 톡방으로 보낸 처리 요청이 없습니다." }));
+      return;
+    }
+    for (const d of data.items) {
+      const [label, tone] = DISPATCH[d.status] || [d.status, "wait"];
+      const retry =
+        d.status === "failed" || d.status === "expired"
+          ? el("button", {
+              class: "btn btn-small",
+              type: "button",
+              onclick: () => send("POST", `/api/admin/vendor-dispatch/${d.id}/retry`).then(loadVendors).catch(reportError),
+            }, el("span", { class: "ms", text: "refresh" }), "다시 보내기")
+          : null;
+      list.append(
+        el(
+          "li",
+          { class: "dispatch-item" },
+          el("span", { class: `status-badge ${tone}`, text: label }),
+          el(
+            "div",
+            { class: "dispatch-main" },
+            el("div", { class: "dispatch-title" }, el("strong", { text: d.vendor_name || "-" }), el("span", { class: "muted", text: ` → 💬 ${d.vendor_room}` })),
+            el("div", { class: "muted small", text: `민원: ${d.complaint_room || "-"}${d.category ? ` · ${d.category}` : ""} · ${fmtDateTime(d.done_at || d.created_at).slice(0, 16)}` }),
+            d.note && d.status !== "sent" ? el("div", { class: `small ${tone === "bad" ? "note-bad" : "muted"}`, text: d.note }) : null,
+            el("details", {}, el("summary", { text: "보낸 문구" }), el("pre", { class: "dispatch-text", text: d.text })),
+          ),
+          retry,
+        ),
+      );
+    }
   }
 
   function matches(v, q) {
@@ -82,7 +125,7 @@
         "dl",
         {},
         ...row("민원 카테고리", v.category_name ? el("span", { class: "chip-cat", text: v.category_name }) : null),
-        ...row("담당 대화방", room),
+        ...row("처리 요청 톡방", room || el("span", { class: "warn-text", text: "미지정 — 요청을 보낼 수 없음" })),
         ...row("전화번호", tel),
         ...row("사업자번호", v.biz_no),
         ...row("주소", v.address),
@@ -129,6 +172,7 @@
     $("vd-phone").value = v?.phone || "";
     $("vd-address").value = v?.address || "";
     $("vd-doc").value = "";
+    $("vd-doc-name").textContent = "선택된 파일 없음";
     $("vd-doc-remove").checked = false;
     $("vd-doc-current").textContent = v?.has_doc ? "현재 등록증 있음 — 새 파일을 고르면 교체됩니다." : "";
     $("vd-doc-remove-wrap").hidden = !v?.has_doc;
@@ -198,6 +242,10 @@
   // ---- 연결 -------------------------------------------------------------------------------
 
   KC.loaders = Object.assign(KC.loaders || {}, { vendors: loadVendors });
+  $("vd-doc").addEventListener("change", () => {
+    const f = $("vd-doc").files[0];
+    $("vd-doc-name").textContent = f ? `${f.name} (${Math.ceil(f.size / 1024)}KB)` : "선택된 파일 없음";
+  });
   $("vd-new").addEventListener("click", () => Promise.all([loadRooms(), loadCategories()]).then(() => openForm()).catch(reportError));
   $("vd-cancel").addEventListener("click", closeForm);
   $("vd-form").addEventListener("submit", (e) => save(e).catch(reportError));

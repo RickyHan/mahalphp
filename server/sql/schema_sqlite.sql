@@ -81,7 +81,10 @@ CREATE TABLE IF NOT EXISTS reply_queue (
   status     TEXT    NOT NULL DEFAULT 'pending',
   note       TEXT,
   created_at TEXT    NOT NULL,
-  done_at    TEXT
+  done_at    TEXT,
+  kind        TEXT NOT NULL DEFAULT 'ack',
+  vendor_id   INTEGER,
+  vendor_name TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reply_queue_status ON reply_queue (status, device_id);
 
@@ -115,23 +118,3 @@ CREATE TABLE IF NOT EXISTS complaint_categories (
   created_at  TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS sms_queue (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  message_id  INTEGER,
-  vendor_id   INTEGER,
-  vendor_name TEXT NOT NULL DEFAULT '',
-  phone       TEXT NOT NULL,
-  room_name   TEXT NOT NULL DEFAULT '',
-  category    TEXT NOT NULL DEFAULT '',
-  text        TEXT NOT NULL,
-  status      TEXT NOT NULL DEFAULT 'waiting',
-  attempts    INTEGER NOT NULL DEFAULT 0,
-  note        TEXT,
-  message_key TEXT,
-  msg_type    TEXT,
-  send_after  TEXT NOT NULL,
-  created_at  TEXT NOT NULL,
-  done_at     TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_sms_queue_status ON sms_queue (status, send_after);
-CREATE INDEX IF NOT EXISTS idx_sms_queue_message ON sms_queue (message_id);

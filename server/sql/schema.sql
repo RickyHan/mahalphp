@@ -105,6 +105,9 @@ CREATE TABLE IF NOT EXISTS `reply_queue` (
   `note`       VARCHAR(255)    NULL,
   `created_at` DATETIME(3)     NOT NULL,
   `done_at`    DATETIME(3)     NULL,
+  `kind`        VARCHAR(10)     NOT NULL DEFAULT 'ack' COMMENT 'ack=민원 방 접수 안내, vendor=업체 카톡방 처리 요청',
+  `vendor_id`   BIGINT UNSIGNED NULL,
+  `vendor_name` VARCHAR(100)    NULL,
   PRIMARY KEY (`id`),
   KEY `idx_reply_queue_status` (`status`, `device_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='안내 발송 대기열';
@@ -115,29 +118,6 @@ CREATE TABLE IF NOT EXISTS `app_settings` (
   `value` TEXT        NOT NULL,
   PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='설정';
-
--- 민원처리업체 문자 발송 대기열·이력 (뿌리오). status: waiting|pending|sent|failed
-CREATE TABLE IF NOT EXISTS `sms_queue` (
-  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `message_id`  BIGINT UNSIGNED NULL COMMENT '민원 메시지 (테스트 발송은 NULL)',
-  `vendor_id`   BIGINT UNSIGNED NULL,
-  `vendor_name` VARCHAR(100)    NOT NULL DEFAULT '',
-  `phone`       VARCHAR(20)     NOT NULL,
-  `room_name`   VARCHAR(255)    NOT NULL DEFAULT '',
-  `category`    VARCHAR(30)     NOT NULL DEFAULT '',
-  `text`        TEXT            NOT NULL,
-  `status`      VARCHAR(10)     NOT NULL DEFAULT 'waiting',
-  `attempts`    INT             NOT NULL DEFAULT 0,
-  `note`        VARCHAR(255)    NULL,
-  `message_key` VARCHAR(40)     NULL,
-  `msg_type`    VARCHAR(3)      NULL,
-  `send_after`  DATETIME(3)     NOT NULL,
-  `created_at`  DATETIME(3)     NOT NULL,
-  `done_at`     DATETIME(3)     NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_sms_queue_status` (`status`, `send_after`),
-  KEY `idx_sms_queue_message` (`message_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='업체 문자 발송';
 
 -- 민원 분류 (웹 '민원 카테고리'에서 관리, Gemini 분류에 사용). '기타'는 삭제 불가
 CREATE TABLE IF NOT EXISTS `complaint_categories` (

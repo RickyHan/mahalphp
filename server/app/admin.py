@@ -295,19 +295,22 @@ def complaint_groups(settings: SettingsDep, category: str | None = None) -> dict
         counts = store.complaint_counts(cur)
         names = [c["name"] for c in categories.all_categories(cur)]
     groups = [{k: _serialize(v) for k, v in g.to_dict().items()} for g in cp.group_complaints(rows)]
-    # 문제(첫 민원)별 업체 문자 발송 결과
+    # 문제(첫 민원)별 업체 카톡방 전달 결과
     firsts = [g["ids"][0] for g in groups][:500]
-    sms_by_message: dict[int, list[dict[str, Any]]] = {}
+    sent_by_message: dict[int, list[dict[str, Any]]] = {}
     if firsts:
         with db.transaction(settings) as conn, conn.cursor() as cur:
             cur.execute(
-                f"SELECT message_id, vendor_name, status, note FROM sms_queue WHERE message_id IN ({', '.join(['%s'] * len(firsts))}) ORDER BY id",
+                f"""SELECT message_id, vendor_name, room_name, status, note FROM reply_queue
+                    WHERE kind = 'vendor' AND message_id IN ({', '.join(['%s'] * len(firsts))}) ORDER BY id""",
                 firsts,
             )
             for r in cur.fetchall():
-                sms_by_message.setdefault(r["message_id"], []).append({"vendor": r["vendor_name"], "status": r["status"], "note": r["note"]})
+                sent_by_message.setdefault(r["message_id"], []).append(
+                    {"vendor": r["vendor_name"], "room": r["room_name"], "status": r["status"], "note": r["note"]}
+                )
     for g in groups:
-        g["sms"] = sms_by_message.get(g["ids"][0], [])
+        g["vendor_dispatch"] = sent_by_message.get(g["ids"][0], [])
     return {
         "ok": True,
         "items": groups,
@@ -332,21 +335,21 @@ def complaint_stats(settings: SettingsDep, period: Annotated[str, Query(pattern=
         rows = store.complaint_rows(cur)
         order = [c["name"] for c in categories.all_categories(cur)]
         stats = cp.compute_stats(cp.group_complaints(rows), period, store.now_local(settings))
-        # 업체 문자 (테스트 발송 제외)
+        # 업체 카톡방 전달
         start = stats.pop("range_start")
-        where, params = "message_id IS NOT NULL", []
+        where, params = "kind = 'vendor'", []
         if start is not None:
             where += " AND created_at >= %s"
             params.append(start)
-        cur.execute(f"SELECT status, COUNT(*) AS n FROM sms_queue WHERE {where} GROUP BY status", params)
-        sms_counts = {r["status"]: int(r["n"]) for r in cur.fetchall()}
+        cur.execute(f"SELECT status, COUNT(*) AS n FROM reply_queue WHERE {where} GROUP BY status", params)
+        vendor_counts = {r["status"]: int(r["n"]) for r in cur.fetchall()}
     return {
         "ok": True,
         **stats,
         "category_order": order,  # 색은 이 순서로 고정 배정 (기간이 바뀌어도 같은 분류는 같은 색)
-        "sms_sent": sms_counts.get("sent", 0),
-        "sms_failed": sms_counts.get("failed", 0),
-        "sms_waiting": sms_counts.get("waiting", 0) + sms_counts.get("pending", 0),
+        "vendor_sent": vendor_counts.get("sent", 0),
+        "vendor_failed": vendor_counts.get("failed", 0) + vendor_counts.get("expired", 0),
+        "vendor_waiting": vendor_counts.get("pending", 0),
     }
 
 
@@ -396,6 +399,8 @@ class SettingsBody(BaseModel):
     gemini_model: str | None = Field(default=None, max_length=80, pattern=r"^[A-Za-z0-9._\-]+$")
     auto_reply_enabled: bool | None = None
     reply_template: str | None = Field(default=None, max_length=300)
+    vendor_enabled: bool | None = None
+    vendor_template: str | None = Field(default=None, max_length=1000)
 
 
 @router.get("/api/admin/settings", dependencies=[Admin])
@@ -408,6 +413,10 @@ def get_app_settings(settings: SettingsDep) -> dict[str, Any]:
         "gemini_model": conf["gemini_model"],
         "auto_reply_enabled": conf["auto_reply_enabled"] == "1",
         "reply_template": conf["reply_template"],
+        "vendor_enabled": conf["vendor_enabled"] == "1",
+        "vendor_template": conf["vendor_template"],
+        "vendor_default_template": cp.DEFAULT_VENDOR_TEMPLATE,
+        "vendor_placeholders": cp.VENDOR_PLACEHOLDERS,
         "gemini_configured": bool(settings.gemini_api_key),
         "worker": worker.status,
     }
@@ -424,6 +433,10 @@ def put_app_settings(body: SettingsBody, settings: SettingsDep) -> dict[str, Any
         values["gemini_model"] = body.gemini_model
     if body.reply_template is not None:
         values["reply_template"] = body.reply_template.strip() or cp.DEFAULT_REPLY_TEMPLATE
+    if body.vendor_enabled is not None:
+        values["vendor_enabled"] = "1" if body.vendor_enabled else "0"
+    if body.vendor_template is not None:
+        values["vendor_template"] = body.vendor_template.strip() or cp.DEFAULT_VENDOR_TEMPLATE
     with db.transaction(settings) as conn, conn.cursor() as cur:
         store.put_settings(cur, values)
     worker.wake()

@@ -72,7 +72,7 @@
       trend = [el("span", { class: `delta ${diff > 0 ? "up" : diff < 0 ? "down" : ""}`, text: `${arrow} ${fmt(Math.abs(diff))}` }), ` ${PREV_LABEL[period]} ${fmt(s.prev_issues)}건 대비`];
     }
     const replyTotal = s.reply_sent + s.reply_failed;
-    const smsTotal = s.sms_sent + s.sms_failed;
+    const vendorTotal = s.vendor_sent + s.vendor_failed;
     return el(
       "div",
       { class: "sv-kpis" },
@@ -80,7 +80,7 @@
       tile("💬", "aqua", "민원 메시지", `${fmt(s.messages)}건`, [`문제당 평균 ${s.issues ? (s.messages / s.issues).toFixed(1) : 0}건`]),
       tile("🔁", "orange", "반복 민원", `${fmt(s.repeated_issues)}건`, [`전체 문제의 ${pct(s.repeated_issues, s.issues)}%`]),
       tile("✉️", "violet", "카톡 접수 안내", `${fmt(s.reply_sent)}건`, replyTotal ? [`성공률 ${pct(s.reply_sent, replyTotal)}%`, s.reply_failed ? el("span", { class: "bad", text: ` · ⚠ 실패 ${fmt(s.reply_failed)}` }) : ""] : ["보낸 안내 없음"]),
-      tile("📱", "magenta", "업체 문자", `${fmt(s.sms_sent)}건`, smsTotal || s.sms_waiting ? [`성공률 ${pct(s.sms_sent, smsTotal)}%`, s.sms_failed ? el("span", { class: "bad", text: ` · ⚠ 실패 ${fmt(s.sms_failed)}` }) : "", s.sms_waiting ? ` · 대기 ${fmt(s.sms_waiting)}` : ""] : ["보낸 문자 없음"]),
+      tile("🏢", "magenta", "업체 톡방 처리 요청", `${fmt(s.vendor_sent)}건`, vendorTotal || s.vendor_waiting ? [`성공률 ${pct(s.vendor_sent, vendorTotal)}%`, s.vendor_failed ? el("span", { class: "bad", text: ` · ⚠ 실패 ${fmt(s.vendor_failed)}` }) : "", s.vendor_waiting ? ` · 대기 ${fmt(s.vendor_waiting)}` : ""] : ["보낸 요청 없음"]),
     );
   }
 
@@ -260,7 +260,7 @@
       "div",
       { class: "oc" },
       row("카톡 접수 안내", [["✓ 보냄", "good", s.reply_sent], ["⚠ 실패", "bad", s.reply_failed], ["– 안내 없음(반복·지난 메시지·꺼짐)", "muted", noReply]]),
-      row("업체 문자", [["✓ 보냄", "good", s.sms_sent], ["⏳ 대기", "warn", s.sms_waiting], ["⚠ 실패", "bad", s.sms_failed]]),
+      row("업체 톡방 처리 요청", [["✓ 보냄", "good", s.vendor_sent], ["⏳ 대기", "warn", s.vendor_waiting], ["⚠ 실패·만료", "bad", s.vendor_failed]]),
     );
   }
 
