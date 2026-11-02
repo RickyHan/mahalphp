@@ -93,14 +93,13 @@
         await loadApartments();
       },
     });
-    const view = el("button", { class: "btn btn-small", type: "button", onclick: () => KC.openRoom(a.room_name), disabled: !a.messages }, el("span", { class: "ms", text: "forum" }), "대화 보기");
     tr.append(
       el("td", { class: "apt-name-cell" }, input),
-      el("td", {}, el("span", { class: "room-chip", title: "원래 카톡 채팅방 이름" }, el("span", { class: "ms", "aria-hidden": "true", text: "chat" }), a.room_name)),
+      el("td", {}, KC.roomChip(a.room_name, a.messages > 0)),
       el("td", { class: "num", text: a.messages.toLocaleString("ko-KR") }),
       el("td", { class: "num" }, el("span", { class: `count-pill${a.complaints ? " has" : ""}`, text: `${a.complaints}건` })),
       el("td", { class: "muted small", text: a.last_at ? fmtDateTime(a.last_at).slice(0, 16) : "대화 없음" }),
-      el("td", { class: "right-col" }, el("div", { class: "row-actions" }, save, view, remove)),
+      el("td", { class: "right-col" }, el("div", { class: "row-actions" }, save, remove)),
     );
     return tr;
   }

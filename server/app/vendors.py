@@ -5,6 +5,8 @@
     PUT    /api/admin/vendors/{id}         수정 (multipart, remove_doc=true 면 등록증 삭제)
     DELETE /api/admin/vendors/{id}         삭제
     GET    /api/admin/vendors/{id}/doc     사업자등록증 보기
+    POST   /api/admin/vendors/sync         다시 수집하기: 꽉 찬 동그라미(●)로 시작하는 채팅방을 업체로 추가
+    PATCH  /api/admin/vendors/{id}/name    업체 이름만 바로 수정
     GET    /api/admin/vendor-dispatch      업체 카톡방 전달 이력
     POST   /api/admin/vendor-dispatch/{id}/retry   실패·만료된 전달 다시 보내기
 """
@@ -21,6 +23,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
+from pydantic import BaseModel, Field
 
 from . import db, live
 from .auth import SettingsDep, require_admin
@@ -34,6 +37,21 @@ PHONE = re.compile(r"^[0-9+\-() ]{0,20}$")
 COLUMNS = ("v.id, v.name, v.biz_no, v.phone, v.address, v.room_name, v.category_id, c.name AS category_name, "
            "v.doc_mime, v.doc_name, v.created_at, v.updated_at")
 FROM = "vendors v LEFT JOIN complaint_categories c ON c.id = v.category_id"
+
+# 꽉 찬 동그라미 (● ⚫ ⬤ ⏺ 🔴🟠🟡🟢🔵🟣🟤). 빈 동그라미(○ ◯ ⚪)는 해당 없음. 이모지 변형 선택자(U+FE0F)는 무시
+CIRCLES = "●⚫⬤⏺🔴🟠🟡🟢🔵🟣🟤"
+_CIRCLE = f"[{re.escape(CIRCLES)}]\ufe0f?"
+_CIRCLE_PREFIX = re.compile(rf"^\s*{_CIRCLE}")
+_ALL_CIRCLES = re.compile(_CIRCLE)
+
+
+def is_vendor_room(room: str) -> bool:
+    """꽉 찬 동그라미로 시작하는 채팅방 = 민원처리업체 방"""
+    return bool(_CIRCLE_PREFIX.match(room or ""))
+
+
+def vendor_name_from_room(room: str) -> str:
+    return re.sub(r"\s+", " ", _ALL_CIRCLES.sub("", room)).strip()
 
 
 def docs_root(settings: Settings) -> Path:
@@ -108,7 +126,71 @@ def list_vendors(settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute(f"SELECT {COLUMNS} FROM {FROM} ORDER BY v.name, v.id")
         items = [_row(r) for r in cur.fetchall()]
-    return {"ok": True, "items": items}
+        # 연결된 톡방의 메시지 수·최근 대화
+        cur.execute("SELECT room_name, COUNT(*) AS n, MAX(posted_at) AS last_at FROM kakao_messages GROUP BY room_name")
+        rooms = {r["room_name"]: r for r in cur.fetchall()}
+        cur.execute("SELECT value FROM app_settings WHERE name = 'vendors_synced_at'")
+        synced = cur.fetchone()
+    for v in items:
+        r = rooms.get(v["room_name"]) if v["room_name"] else None
+        v["messages"] = int(r["n"]) if r else 0
+        last = r["last_at"] if r else None
+        v["last_at"] = last.isoformat() if isinstance(last, datetime) else last
+    return {"ok": True, "items": items, "synced_at": synced["value"] if synced else None}
+
+
+@router.post("/api/admin/vendors/sync")
+def sync_vendors(settings: SettingsDep) -> dict[str, Any]:
+    """꽉 찬 동그라미로 시작하는 방 중 아직 어느 업체에도 연결되지 않은 방을 업체로 추가.
+    같은 이름의 업체가 톡방 없이 등록돼 있으면 새로 만들지 않고 그 업체에 방을 연결한다. 고친 업체 이름은 유지."""
+    now = _now(settings)
+    added: list[dict[str, str]] = []
+    linked: list[dict[str, str]] = []
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT DISTINCT room_name FROM kakao_messages")
+        rooms = [r["room_name"] for r in cur.fetchall()]
+        cur.execute("SELECT id, name, room_name FROM vendors")
+        vendors = cur.fetchall()
+        used = {v["room_name"] for v in vendors if v["room_name"]}
+        roomless = {v["name"]: v["id"] for v in vendors if not v["room_name"]}
+        matched = sorted(r for r in rooms if is_vendor_room(r))
+        for room in matched:
+            if room in used:
+                continue
+            name = vendor_name_from_room(room) or room
+            if name in roomless:
+                cur.execute("UPDATE vendors SET room_name = %s, updated_at = %s WHERE id = %s", (room, now, roomless.pop(name)))
+                linked.append({"name": name, "room_name": room})
+            else:
+                cur.execute(
+                    """INSERT INTO vendors (name, biz_no, phone, address, room_name, created_at, updated_at)
+                       VALUES (%s, '', '', '', %s, %s, %s)""",
+                    (name[:100], room, now, now),
+                )
+                added.append({"name": name, "room_name": room})
+            used.add(room)
+        cur.execute("DELETE FROM app_settings WHERE name = 'vendors_synced_at'")
+        cur.execute("INSERT INTO app_settings (name, value) VALUES ('vendors_synced_at', %s)", (now.isoformat(timespec="seconds"),))
+    live.bump("vendor")
+    return {"ok": True, "added": added, "linked": linked, "matched": len(matched), "rooms": len(rooms)}
+
+
+class NameBody(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+@router.patch("/api/admin/vendors/{vendor_id}/name")
+def rename_vendor(vendor_id: int, body: NameBody, settings: SettingsDep) -> dict[str, Any]:
+    name = re.sub(r"\s+", " ", body.name).strip()
+    if not name:
+        raise HTTPException(422, "업체 이름을 입력하십시오.")
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE vendors SET name = %s, updated_at = %s WHERE id = %s", (name, _now(settings), vendor_id))
+        cur.execute("SELECT id FROM vendors WHERE id = %s", (vendor_id,))
+        if cur.fetchone() is None:
+            raise HTTPException(404, "업체가 없습니다.")
+    live.bump("vendor")
+    return {"ok": True, "name": name}
 
 
 @router.post("/api/admin/vendors", status_code=201)

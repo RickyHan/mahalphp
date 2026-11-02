@@ -33,6 +33,7 @@
   async function loadVendors() {
     const [data, dispatch] = await Promise.all([api("/api/admin/vendors"), api("/api/admin/vendor-dispatch", { limit: 50 }), loadRooms(), loadCategories()]);
     state.items = data.items;
+    renderKpis(data.synced_at);
     render();
     renderDispatch(dispatch);
   }
@@ -68,7 +69,7 @@
           el(
             "div",
             { class: "dispatch-main" },
-            el("div", { class: "dispatch-title" }, el("strong", { text: d.vendor_name || "-" }), el("span", { class: "muted", text: ` → 💬 ${d.vendor_room}` })),
+            el("div", { class: "dispatch-title" }, el("strong", { text: d.vendor_name || "-" }), el("span", { class: "muted", text: " → " }), KC.roomChip(d.vendor_room)),
             el("div", { class: "muted small", text: `민원: ${d.complaint_room || "-"}${d.category ? ` · ${d.category}` : ""} · ${fmtDateTime(d.done_at || d.created_at).slice(0, 16)}` }),
             d.note && d.status !== "sent" ? el("div", { class: `small ${tone === "bad" ? "note-bad" : "muted"}`, text: d.note }) : null,
             el("details", {}, el("summary", { text: "보낸 문구" }), el("pre", { class: "dispatch-text", text: d.text })),
@@ -84,62 +85,117 @@
     return [v.name, v.phone, v.room_name, v.address, v.biz_no, v.category_name].some((x) => (x || "").toLowerCase().includes(q));
   }
 
+  function kpi(icon, tone, label, value, unit) {
+    return el(
+      "div",
+      { class: `kpi-card tone-${tone}` },
+      el("div", { class: "kpi-text" }, el("span", { class: "kpi-label", text: label }), el("div", { class: "kpi-num" }, el("strong", { text: String(value) }), el("span", { text: unit }))),
+      el("span", { class: "kpi-ico ms", "aria-hidden": "true", text: icon }),
+    );
+  }
+
+  function renderKpis(syncedAt) {
+    const total = state.items.length;
+    const withRoom = state.items.filter((v) => v.room_name).length;
+    const withCat = state.items.filter((v) => v.category_id).length;
+    $("vd-kpis").replaceChildren(
+      kpi("domain", "blue", "등록 업체", total, "곳"),
+      kpi("chat", "green", "처리 요청 톡방 연결", withRoom, `/ ${total}`),
+      kpi("category", withCat < total ? "rose" : "indigo", "담당 카테고리 지정", withCat, `/ ${total}`),
+      kpi("sync", "slate", "마지막 수집", syncedAt ? fmtDateTime(syncedAt).slice(5, 16) : "–", ""),
+    );
+  }
+
   function render() {
     const q = $("vd-search").value.trim().toLowerCase();
     const items = state.items.filter((v) => matches(v, q));
-    const roomNames = new Set(state.rooms.map((r) => r.name));
-    $("vd-status").textContent = `등록된 업체 ${state.items.length}곳${q ? ` · 검색 결과 ${items.length}곳` : ""}`;
+    $("vd-status").textContent = q ? `${items.length} / ${state.items.length}곳` : `${state.items.length}곳`;
     const list = $("vd-list");
     list.replaceChildren();
     if (!items.length) {
-      list.append(el("li", { class: "empty-row", text: state.items.length ? "검색 결과가 없습니다." : "등록된 업체가 없습니다. 오른쪽 위 '+ 업체 등록'으로 추가하십시오." }));
+      list.append(el("tr", {}, el("td", { colspan: "7", class: "empty-cell", text: state.items.length ? "검색 결과가 없습니다." : "등록된 업체가 없습니다. 오른쪽 위 '다시 수집하기'를 누르십시오." })));
       return;
     }
-    for (const v of items) list.append(vendorCard(v, roomNames));
+    for (const v of items) list.append(vendorRow(v));
   }
 
-  function vendorCard(v, roomNames) {
-    const row = (k, value) => [el("dt", { text: k }), el("dd", {}, value || el("span", { class: "muted", text: "—" }))];
-    let room = null;
-    if (v.room_name) {
-      const missing = !roomNames.has(v.room_name);
-      room = el("span", {
-        class: `vd-room${missing ? " vd-room-missing" : ""}`,
-        title: missing ? "수집된 대화방 목록에 없는 방입니다 (방 이름이 바뀌었을 수 있음)" : "",
-        text: `💬 ${v.room_name}`,
-      });
-    }
-    const doc = v.has_doc
-      ? el("a", { href: `/api/admin/vendors/${v.id}/doc`, target: "_blank", rel: "noopener", text: "📄 보기" })
-      : null;
-    const tel = v.phone ? el("a", { href: `tel:${v.phone.replace(/[^0-9+]/g, "")}`, text: v.phone }) : null;
-    const goRoom =
-      v.room_name && roomNames.has(v.room_name)
-        ? el("button", { class: "btn btn-small", type: "button", text: "대화 보기", onclick: () => KC.openRoom(v.room_name) })
-        : null;
-    return el(
-      "li",
-      { class: "vd-card" },
-      el("div", { class: "vd-card-head" }, el("strong", { text: v.name })),
+  function vendorRow(v) {
+    const input = el("input", { class: "apt-name", value: v.name, maxlength: "100", "aria-label": "업체 이름" });
+    const save = el("button", { class: "btn btn-small btn-primary", type: "button", text: "저장", disabled: true });
+    const tr = el("tr", {});
+    input.addEventListener("input", () => {
+      const changed = input.value.trim() !== v.name;
+      save.disabled = !changed || !input.value.trim();
+      tr.classList.toggle("dirty", changed);
+    });
+    const doSave = async () => {
+      if (save.disabled) return;
+      try {
+        const r = await sendJson("PATCH", `/api/admin/vendors/${v.id}/name`, { name: input.value });
+        v.name = r.name;
+        input.value = r.name;
+        save.disabled = true;
+        tr.classList.remove("dirty");
+        tr.classList.add("saved");
+        setTimeout(() => tr.classList.remove("saved"), 1200);
+      } catch (err) {
+        reportError(err);
+      }
+    };
+    save.addEventListener("click", doSave);
+    input.addEventListener("keydown", (e) => e.key === "Enter" && doSave());
+    const room = v.room_name ? KC.roomChip(v.room_name, v.messages > 0) : el("span", { class: "warn-text", text: "미지정 — 요청 못 보냄" });
+    const tel = v.phone ? el("a", { class: "tel-link", href: `tel:${v.phone.replace(/[^0-9+]/g, "")}`, text: v.phone }) : el("span", { class: "muted", text: "—" });
+    const doc = v.has_doc ? el("a", { class: "doc-link", href: `/api/admin/vendors/${v.id}/doc`, target: "_blank", rel: "noopener", title: "사업자등록증 보기" }, el("span", { class: "ms", text: "description" })) : null;
+    tr.append(
+      el("td", { class: "apt-name-cell" }, el("div", { class: "name-with-doc" }, input, doc)),
+      el("td", {}, room),
+      el("td", {}, v.category_name ? el("span", { class: "chip-cat", text: v.category_name }) : el("span", { class: "warn-text", text: "미지정" })),
+      el("td", {}, tel),
+      el("td", { class: "num", text: (v.messages || 0).toLocaleString("ko-KR") }),
+      el("td", { class: "muted small", text: v.last_at ? fmtDateTime(v.last_at).slice(0, 16) : "대화 없음" }),
       el(
-        "dl",
-        {},
-        ...row("민원 카테고리", v.category_name ? el("span", { class: "chip-cat", text: v.category_name }) : null),
-        ...row("처리 요청 톡방", room || el("span", { class: "warn-text", text: "미지정 — 요청을 보낼 수 없음" })),
-        ...row("전화번호", tel),
-        ...row("사업자번호", v.biz_no),
-        ...row("주소", v.address),
-        ...row("사업자등록증", doc),
-      ),
-      el("p", { class: "muted small", text: `등록 ${fmtDateTime(v.created_at).slice(0, 16)}${v.updated_at !== v.created_at ? ` · 수정 ${fmtDateTime(v.updated_at).slice(0, 16)}` : ""}` }),
-      el(
-        "div",
-        { class: "vd-card-actions" },
-        el("button", { class: "btn btn-small", type: "button", text: "수정", onclick: () => openForm(v) }),
-        goRoom,
-        el("button", { class: "btn btn-small btn-danger", type: "button", text: "삭제", onclick: () => remove(v).catch(reportError) }),
+        "td",
+        { class: "right-col" },
+        el(
+          "div",
+          { class: "row-actions" },
+          save,
+          el("button", { class: "btn btn-small", type: "button", onclick: () => openForm(v) }, el("span", { class: "ms", text: "edit" }), "상세"),
+          el("button", { class: "btn btn-small btn-danger", type: "button", text: "삭제", onclick: () => remove(v).catch(reportError) }),
+        ),
       ),
     );
+    return tr;
+  }
+
+  async function sendJson(method, path, body) {
+    const res = await fetch(path, { method, credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    if (res.status === 401) location.href = "/admin/login";
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((Array.isArray(data.detail) ? data.detail.map((d) => d.msg).join(", ") : data.detail) || `요청 실패 (HTTP ${res.status})`);
+    return data;
+  }
+
+  async function sync() {
+    const btn = $("vd-sync");
+    btn.disabled = true;
+    try {
+      const r = await sendJson("POST", "/api/admin/vendors/sync");
+      const box = $("vd-result");
+      const parts = [];
+      if (r.added.length) parts.push(`새 업체 ${r.added.length}곳 추가: ${r.added.map((a) => a.name).join(", ")}`);
+      if (r.linked.length) parts.push(`기존 업체에 톡방 연결 ${r.linked.length}곳: ${r.linked.map((a) => a.name).join(", ")}`);
+      box.hidden = false;
+      box.classList.toggle("has-new", parts.length > 0);
+      box.replaceChildren(
+        el("span", { class: "ms", "aria-hidden": "true", text: parts.length ? "new_releases" : "check_circle" }),
+        parts.length ? `${parts.join(" · ")} — 담당 카테고리를 지정해 주십시오.` : `새로 추가할 업체가 없습니다. (채팅방 ${r.rooms}개 중 ● 로 시작하는 방 ${r.matched}개, 모두 등록됨)`,
+      );
+      await loadVendors();
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   // ---- 등록·수정 폼 ---------------------------------------------------------------------------
@@ -242,6 +298,7 @@
   // ---- 연결 -------------------------------------------------------------------------------
 
   KC.loaders = Object.assign(KC.loaders || {}, { vendors: loadVendors });
+  $("vd-sync").addEventListener("click", () => sync().catch(reportError));
   $("vd-doc").addEventListener("change", () => {
     const f = $("vd-doc").files[0];
     $("vd-doc-name").textContent = f ? `${f.name} (${Math.ceil(f.size / 1024)}KB)` : "선택된 파일 없음";

@@ -147,7 +147,7 @@
   }
   const dims = (w, h) => (w && h ? ` · ${w}×${h}px` : "");
 
-  const TAB_TITLES = { chat: "대화방 피드", photos: "사진 · 미디어", search: "메시지 검색", complaints: "민원 대시보드", stats: "통계 리포트", apartments: "아파트 관리", members: "참여자 이력", vendors: "민원처리업체", categories: "민원 카테고리", data: "데이터 관리", settings: "시스템 설정" };
+  const TAB_TITLES = { chat: "대화방 피드", photos: "사진 · 미디어", search: "메시지 검색", complaints: "민원 대시보드", stats: "통계 리포트", apartments: "아파트 관리", members: "참여자 이력", vendors: "민원처리업체 관리", categories: "민원 카테고리", data: "데이터 관리", settings: "시스템 설정" };
   function updateTitle() {
     $("panel-title").textContent = TAB_TITLES[state.tab] || "";
     document.title = `${TAB_TITLES[state.tab] || ""} · 민원 자동처리 시스템`;
@@ -734,10 +734,24 @@
     }, 2000);
   }
 
+  /** 톡방 이름 버튼: 누르면 대화방 피드에서 그 방을 연다. 대화가 없는 방은 누를 수 없게 표시 */
+  function roomChip(room, available = true) {
+    if (!available) {
+      return el("span", { class: "room-chip missing", title: "아직 수집된 대화가 없는 방입니다" }, el("span", { class: "ms", "aria-hidden": "true", text: "chat" }), room);
+    }
+    return el(
+      "button",
+      { class: "room-chip", type: "button", title: "이 방의 대화 보기", onclick: () => openRoom(room).catch(reportError) },
+      el("span", { class: "ms", "aria-hidden": "true", text: "chat" }),
+      el("span", { class: "room-chip-text", text: room }),
+      el("span", { class: "ms room-chip-go", "aria-hidden": "true", text: "arrow_back" }),
+    );
+  }
+
   // admin-ops.js 에서 쓰는 공용 함수
   window.KC = Object.assign(window.KC || {}, {
     api, el, postJson, reportError, fmtDateTime, openRoom: (room, id) => openRoom(room, id).catch(reportError),
-    refreshAfterDelete, deleteRoom,
+    refreshAfterDelete, deleteRoom, roomChip,
     currentRoom: () => state.room, currentTab: () => state.tab,
   });
 
