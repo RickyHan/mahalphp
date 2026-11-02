@@ -136,3 +136,32 @@ def test_vendor_request_waits_for_room_notification(admin, settings):
     assert ids  # 대기 중인 것은 휴대폰에 계속 전달된다
     for item in _pending():
         _report(item["id"], True)
+
+
+def test_group_minutes_setting(admin, settings):
+    """같은 문제로 묶는 시간: 기본 15분, 웹에서 변경 (1~240분)"""
+    assert admin.get("/api/admin/settings").json()["group_minutes"] == 15
+    assert admin.put("/api/admin/settings", json={"group_minutes": 0}).status_code == 422
+    assert admin.put("/api/admin/settings", json={"group_minutes": 241}).status_code == 422
+
+    def post_at(text, minutes_ago):
+        at = int((time.time() - minutes_ago * 60) * 1000)
+        res = TestClient(app).post("/api/messages", headers=KEY, data={
+            "device_id": DEVICE, "room_name": "묶음시험방", "sender_name": "707호", "message_text": text,
+            "is_group_chat": "true", "posted_at": str(at)})
+        return res.json()["id"]
+
+    first = post_at("화장실 누수 생겼어요 확인 부탁", 25)
+    second = post_at("누수 아직 그대로예요 빨리요", 5)  # 첫 민원 20분 뒤
+    store.classify_once(settings, client=FakeGemini())
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        assert store.is_new_issue(cur, first, store.current_group_window(cur))
+        assert store.is_new_issue(cur, second, store.current_group_window(cur))  # 15분 기준: 별개 문제
+    assert admin.put("/api/admin/settings", json={"group_minutes": 30}).json()["group_minutes"] == 30
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        assert not store.is_new_issue(cur, second, store.current_group_window(cur))  # 30분 기준: 같은 문제
+    groups = [g for g in admin.get("/api/admin/complaints").json()["items"] if g["room_name"] == "묶음시험방"]
+    assert [g["count"] for g in groups] == [2]
+    assert admin.put("/api/admin/settings", json={"group_minutes": 15}).status_code == 200
+    for item in _pending():
+        _report(item["id"], True)

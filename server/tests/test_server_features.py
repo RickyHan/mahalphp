@@ -82,7 +82,9 @@ def test_parse_response_and_grouping_and_stats():
     t0 = datetime(2025, 10, 30, 9, 0)
     row = lambda i, s, c, m: {"id": i, "room_name": "A", "sender_name": s, "category": c, "posted_at": t0 + timedelta(minutes=m),
                               "message_text": "t", "summary": "", "confidence": 0.5, "reply_status": 0, "reply_note": None}
-    groups = cp.group_complaints([row(1, "301", "소음", 0), row(2, "301", "소음", 20), row(3, "301", "소음", 51), row(4, "502", "소음", 1)])
+    groups = cp.group_complaints([row(1, "301", "소음", 0), row(2, "301", "소음", 20), row(3, "301", "소음", 51), row(4, "502", "소음", 1)], timedelta(minutes=30))
+    # 기본 15분: 0분·20분은 서로 다른 문제
+    assert sorted(len(g.items) for g in cp.group_complaints([row(1, "301", "소음", 0), row(2, "301", "소음", 20)])) == [1, 1]
     assert sorted(len(g.items) for g in groups) == [1, 1, 2]
     stats = cp.compute_stats(groups, "today", t0 + timedelta(hours=5))
     assert stats["issues"] == 3 and stats["messages"] == 4 and stats["repeated_issues"] == 1

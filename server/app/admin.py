@@ -294,7 +294,8 @@ def complaint_groups(settings: SettingsDep, category: str | None = None) -> dict
         rows = store.complaint_rows(cur, category=category or None)
         counts = store.complaint_counts(cur)
         names = [c["name"] for c in categories.all_categories(cur)]
-    groups = [{k: _serialize(v) for k, v in g.to_dict().items()} for g in cp.group_complaints(rows)]
+        window = store.current_group_window(cur)
+    groups = [{k: _serialize(v) for k, v in g.to_dict().items()} for g in cp.group_complaints(rows, window)]
     # 문제(첫 민원)별 업체 카톡방 전달 결과
     firsts = [g["ids"][0] for g in groups][:500]
     sent_by_message: dict[int, list[dict[str, Any]]] = {}
@@ -334,7 +335,7 @@ def complaint_stats(settings: SettingsDep, period: Annotated[str, Query(pattern=
     with db.transaction(settings) as conn, conn.cursor() as cur:
         rows = store.complaint_rows(cur)
         order = [c["name"] for c in categories.all_categories(cur)]
-        stats = cp.compute_stats(cp.group_complaints(rows), period, store.now_local(settings))
+        stats = cp.compute_stats(cp.group_complaints(rows, store.current_group_window(cur)), period, store.now_local(settings))
         # 업체 카톡방 전달
         start = stats.pop("range_start")
         where, params = "kind = 'vendor'", []
@@ -399,6 +400,7 @@ class SettingsBody(BaseModel):
     gemini_model: str | None = Field(default=None, max_length=80, pattern=r"^[A-Za-z0-9._\-]+$")
     auto_reply_enabled: bool | None = None
     reply_template: str | None = Field(default=None, max_length=300)
+    group_minutes: int | None = Field(default=None, ge=cp.GROUP_MINUTES_RANGE[0], le=cp.GROUP_MINUTES_RANGE[1])
     vendor_enabled: bool | None = None
     vendor_template: str | None = Field(default=None, max_length=1000)
 
@@ -413,6 +415,7 @@ def get_app_settings(settings: SettingsDep) -> dict[str, Any]:
         "gemini_model": conf["gemini_model"],
         "auto_reply_enabled": conf["auto_reply_enabled"] == "1",
         "reply_template": conf["reply_template"],
+        "group_minutes": int(store.group_window(conf).total_seconds() // 60),
         "vendor_enabled": conf["vendor_enabled"] == "1",
         "vendor_template": conf["vendor_template"],
         "vendor_default_template": cp.DEFAULT_VENDOR_TEMPLATE,
@@ -433,6 +436,8 @@ def put_app_settings(body: SettingsBody, settings: SettingsDep) -> dict[str, Any
         values["gemini_model"] = body.gemini_model
     if body.reply_template is not None:
         values["reply_template"] = body.reply_template.strip() or cp.DEFAULT_REPLY_TEMPLATE
+    if body.group_minutes is not None:
+        values["group_minutes"] = str(body.group_minutes)
     if body.vendor_enabled is not None:
         values["vendor_enabled"] = "1" if body.vendor_enabled else "0"
     if body.vendor_template is not None:

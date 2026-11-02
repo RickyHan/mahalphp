@@ -12,7 +12,10 @@ import httpx
 
 MIN_CHARS = 5
 BATCH = 20
-GROUP_WINDOW = timedelta(minutes=30)
+# 같은 방·사람·분류로 이 시간 안에 이어진 민원 = 같은 문제 (웹 '시스템 설정'에서 변경, 1~240분)
+DEFAULT_GROUP_MINUTES = 15
+GROUP_MINUTES_RANGE = (1, 240)
+GROUP_WINDOW = timedelta(minutes=DEFAULT_GROUP_MINUTES)
 REPLY_MAX_AGE = timedelta(minutes=30)
 # 업체 톡방 처리 요청은 그 방에 새 글(알림)이 와야 보낼 수 있어 더 오래 기다린다
 VENDOR_MAX_AGE = timedelta(hours=12)
@@ -212,7 +215,7 @@ def format_reply(template: str, sender: str, category: str, summary: str, room: 
 
 @dataclass
 class Group:
-    """같은 방·사람·분류로 직전 민원과 30분 이내 연쇄된 민원 = 하나의 문제"""
+    """같은 방·사람·분류로 직전 민원과 설정한 시간(기본 15분) 안에 이어진 민원 = 하나의 문제"""
     items: list[dict[str, Any]] = field(default_factory=list)
 
     @property

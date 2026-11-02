@@ -14,6 +14,7 @@ SETTING_DEFAULTS = {
     "gemini_model": cp.DEFAULT_MODEL,
     "auto_reply_enabled": "1",
     "reply_template": cp.DEFAULT_REPLY_TEMPLATE,
+    "group_minutes": str(cp.DEFAULT_GROUP_MINUTES),
     "vendor_enabled": "1",
     "vendor_template": cp.DEFAULT_VENDOR_TEMPLATE,
 }
@@ -143,8 +144,22 @@ def reset_failed(cur) -> int:
     return int(n)
 
 
-def is_new_issue(cur, message_id: int) -> bool:
-    """같은 방·사람·분류의 이전 민원이 30분 이내에 없으면 새 문제의 첫 민원"""
+def group_window(conf: dict[str, str]) -> timedelta:
+    """설정의 '같은 문제로 묶는 시간'(분). 값이 이상하면 기본값"""
+    try:
+        minutes = int(conf.get("group_minutes", cp.DEFAULT_GROUP_MINUTES))
+    except (TypeError, ValueError):
+        minutes = cp.DEFAULT_GROUP_MINUTES
+    lo, hi = cp.GROUP_MINUTES_RANGE
+    return timedelta(minutes=min(max(minutes, lo), hi))
+
+
+def current_group_window(cur) -> timedelta:
+    return group_window(get_settings_map(cur))
+
+
+def is_new_issue(cur, message_id: int, window: timedelta = cp.GROUP_WINDOW) -> bool:
+    """같은 방·사람·분류의 이전 민원이 설정한 시간 안에 없으면 새 문제의 첫 민원"""
     cur.execute(
         "SELECT m.room_name, m.sender_name, m.posted_at, c.category FROM kakao_messages m "
         "JOIN complaint_check c ON c.message_id = m.id WHERE m.id = %s",
@@ -158,7 +173,7 @@ def is_new_issue(cur, message_id: int) -> bool:
         "SELECT COUNT(*) AS n FROM kakao_messages m JOIN complaint_check c ON c.message_id = m.id "
         "WHERE c.verdict = 1 AND m.id <> %s AND m.room_name = %s AND m.sender_name = %s AND c.category = %s "
         "AND m.posted_at <= %s AND m.posted_at >= %s",
-        (message_id, me["room_name"], me["sender_name"], me["category"], at, at - cp.GROUP_WINDOW),
+        (message_id, me["room_name"], me["sender_name"], me["category"], at, at - window),
     )
     return cur.fetchone()["n"] == 0
 
@@ -317,7 +332,7 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
             complaints += 1
             msg = by_id[v.id]
             fresh = now - to_dt(msg["posted_at"]) <= cp.REPLY_MAX_AGE
-            new_issue = fresh and is_new_issue(cur, v.id)
+            new_issue = fresh and is_new_issue(cur, v.id, group_window(conf))
             if conf["auto_reply_enabled"] == "1":
                 if not fresh:
                     set_reply_status(cur, v.id, 3, "30분 지난 메시지라 안내 생략")

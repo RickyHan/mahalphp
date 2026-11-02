@@ -699,6 +699,10 @@ mark { background: var(--highlight); color: inherit; border-radius: 3px; padding
 .status-badge.bad { background: var(--danger-soft); color: var(--danger); }
 .note-bad { color: var(--danger); }
 
+/* 시스템 설정: 문장 속 숫자 입력 */
+.inline-field { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; color: var(--text); }
+.inline-field input { width: 84px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+
 /* 문구 항목 버튼 */
 .token-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip-insert { border: 1px dashed var(--primary); background: transparent; color: var(--primary); border-radius: 4px; padding: 3px 10px; font-size: 12px; font-weight: 600; cursor: pointer; }

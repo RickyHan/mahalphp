@@ -151,6 +151,7 @@
     $("set-model").value = s.gemini_model;
     $("set-reply").checked = s.auto_reply_enabled;
     $("set-template").value = s.reply_template;
+    $("set-group-minutes").value = s.group_minutes;
     $("set-vendor").checked = s.vendor_enabled;
     $("set-vendor-template").value = s.vendor_template;
     const chips = $("set-vendor-chips");
@@ -181,6 +182,7 @@
       gemini_model: $("set-model").value.trim(),
       auto_reply_enabled: $("set-reply").checked,
       reply_template: $("set-template").value,
+      group_minutes: Math.min(240, Math.max(1, parseInt($("set-group-minutes").value, 10) || 15)),
       vendor_enabled: $("set-vendor").checked,
       vendor_template: $("set-vendor-template").value,
     });
