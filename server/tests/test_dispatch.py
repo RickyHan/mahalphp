@@ -52,7 +52,8 @@ def _report(reply_id, sent, note=None, device=DEVICE):
 def test_vendor_message_template():
     text = cp.format_vendor_message(cp.DEFAULT_VENDOR_TEMPLATE, vendor="엘레벨레", room="OO아파트", category="누수·하자", summary="천장 누수",
                                     content="물이   새요\n빨리", sender="1203호", at=datetime(2026, 11, 2, 9, 5))
-    assert "엘레벨레 담당자님" in text and "'OO아파트' 대화방" in text and "물이 새요 빨리" in text and "11/02 09:05 (1203호)" in text
+    assert "엘레벨레 담당자님" in text and "'OO아파트' 대화방" in text and "물이 새요 빨리" in text
+    assert "- 보낸 사람: 1203호" in text and "- 접수 시각: 11/02 09:05" in text
     assert "{" not in text
 
 
@@ -104,6 +105,9 @@ def test_vendor_dispatch_setting(admin, settings):
     _post("전달끔방", "502호", "베란다 누수 생겼어요 확인 부탁")
     assert store.classify_once(settings, client=FakeGemini())["vendor"] == 0
     r = admin.put("/api/admin/settings", json={"vendor_enabled": True, "vendor_template": ""}).json()
+    assert r["vendor_template"] == cp.DEFAULT_VENDOR_TEMPLATE
+    # 이전 기본 문구로 저장돼 있으면 새 기본 문구(보낸 사람 줄 포함)로 보인다
+    r = admin.put("/api/admin/settings", json={"vendor_template": cp.OLD_VENDOR_TEMPLATES[0]}).json()
     assert r["vendor_template"] == cp.DEFAULT_VENDOR_TEMPLATE
     # 남은 대기 안내 정리 (다른 테스트에 영향 없게)
     for item in _pending():

@@ -33,7 +33,10 @@ def now_local(settings: Settings) -> datetime:
 def get_settings_map(cur) -> dict[str, str]:
     cur.execute("SELECT name, value FROM app_settings")
     values = {r["name"]: r["value"] for r in cur.fetchall()}
-    return {k: values.get(k, v) for k, v in SETTING_DEFAULTS.items()}
+    conf = {k: values.get(k, v) for k, v in SETTING_DEFAULTS.items()}
+    if conf["vendor_template"] in cp.OLD_VENDOR_TEMPLATES:  # 손대지 않은 이전 기본 문구 → 새 기본 문구
+        conf["vendor_template"] = cp.DEFAULT_VENDOR_TEMPLATE
+    return conf
 
 
 def put_settings(cur, values: dict[str, str]) -> None:
