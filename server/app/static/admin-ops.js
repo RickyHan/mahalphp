@@ -207,6 +207,7 @@
     vendors: ["vendor", "category", "complaint"],
     categories: ["category", "complaint", "delete"],
     data: ["message", "delete"],
+    apartments: ["apartment", "delete"],
   };
 
   KC.onTab = (tab) => {

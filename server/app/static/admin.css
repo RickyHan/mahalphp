@@ -7,7 +7,7 @@
   font-style: normal;
   font-weight: 400;
   font-display: block;
-  src: url("fonts/material-symbols-subset.woff2") format("woff2");
+  src: url("fonts/material-symbols-subset.woff2?v=2") format("woff2");
 }
 .ms {
   font-family: "Material Symbols Outlined";
@@ -709,6 +709,24 @@ mark { background: var(--highlight); color: inherit; border-radius: 3px; padding
 .chip-insert:hover { background: var(--primary-soft); }
 .chip-reset { border-style: solid; border-color: var(--border-strong); color: var(--muted); }
 .settings textarea { width: 100%; resize: vertical; line-height: 1.6; }
+
+/* 아파트 관리 */
+.page-head .btn-lg { margin-left: auto; flex: none; }
+.apt-search { margin-left: auto; width: min(320px, 100%); }
+.apt-table td.apt-name-cell { min-width: 220px; }
+.apt-name { width: 100%; height: 34px; font-weight: 700; border-color: transparent !important; background: transparent !important; }
+.apt-name:hover { border-color: var(--border) !important; background: var(--surface) !important; }
+.apt-name:focus { border-color: var(--primary) !important; background: var(--surface) !important; }
+.room-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 320px; padding: 3px 10px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-text); font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.room-chip .ms { font-size: 16px; }
+.row-actions { display: inline-flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.apt-table tr.dirty td { background: var(--warn-soft); }
+.apt-table tr.saved td { background: var(--success-soft); transition: background .6s; }
+.empty-cell { text-align: center; color: var(--muted); padding: 28px !important; }
+.apt-result { display: flex; align-items: center; gap: 8px; margin: 0; padding: 12px 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); font-size: 13px; box-shadow: var(--shadow); }
+.apt-result .ms { color: var(--success); }
+.apt-result.has-new { background: var(--primary-soft); border-color: #bfdbfe; }
+.apt-result.has-new .ms { color: var(--primary); }
 
 /* ---- 반응형 ---- */
 @media (max-width: 1440px) {

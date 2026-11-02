@@ -118,3 +118,10 @@ CREATE TABLE IF NOT EXISTS complaint_categories (
   created_at  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS apartments (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  room_name  TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);

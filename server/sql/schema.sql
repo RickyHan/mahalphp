@@ -119,6 +119,17 @@ CREATE TABLE IF NOT EXISTS `app_settings` (
   PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='설정';
 
+-- 아파트: 별 하나로 시작하는 카톡 채팅방(원래 이름)과 관리용 아파트 이름(별 제외, 수정 가능)
+CREATE TABLE IF NOT EXISTS `apartments` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name`       VARCHAR(100)    NOT NULL COMMENT '아파트 이름',
+  `room_name`  VARCHAR(255)    NOT NULL COMMENT '원래 카톡 채팅방 이름',
+  `created_at` DATETIME(3)     NOT NULL,
+  `updated_at` DATETIME(3)     NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_apartments_room` (`room_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='아파트';
+
 -- 민원 분류 (웹 '민원 카테고리'에서 관리, Gemini 분류에 사용). '기타'는 삭제 불가
 CREATE TABLE IF NOT EXISTS `complaint_categories` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
