@@ -25,6 +25,8 @@ object ReplyRegistry {
         data object NoAction : Result
         /** 이 방은 댓글 알림만 받아서 채팅방으로 보낼 수단이 없음 */
         data object ThreadOnly : Result
+        /** 카톡이 이 답장 수단을 무효로 만듦(한 번 쓰면 만료되는 경우·카톡 재시작 등) → 새 알림이 오면 다시 가능 */
+        data object Expired : Result
         data class Failed(val reason: String) : Result
     }
 
@@ -69,7 +71,7 @@ object ReplyRegistry {
             Result.Sent
         } catch (e: PendingIntent.CanceledException) {
             perRoom.values.remove(entry)
-            Result.Failed("카톡 답장 기능이 만료됨 (알림이 사라졌거나 카톡이 재시작됨)")
+            Result.Expired
         } catch (e: Exception) {
             Result.Failed(e.javaClass.simpleName + ": " + (e.message ?: ""))
         }

@@ -88,4 +88,15 @@ class ReplyTest {
         assertFalse(ThreadDetector.isThreadButton("Reply"))
         assertFalse(ThreadDetector.isThreadButton(null))
     }
+
+    @Test
+    fun cancelledReplyActionIsExpiredAndForgotten() {
+        val pi = PendingIntent.getBroadcast(app, 7, Intent("ONE_SHOT"), PendingIntent.FLAG_MUTABLE)
+        val input = RemoteInput.Builder("reply_text").setLabel("답장").build()
+        val n = Notification.Builder(app, "chat").setContentTitle("a").addAction(Notification.Action.Builder(null, "답장", pi).addRemoteInput(input).build()).build()
+        ReplyRegistry.remember("만료방", n)
+        pi.cancel() // 카톡이 답장 수단을 무효로 만든 경우
+        assertEquals(ReplyRegistry.Result.Expired, ReplyRegistry.send(app, "만료방", "x"))
+        assertEquals(ReplyRegistry.Result.NoAction, ReplyRegistry.send(app, "만료방", "x")) // 새 알림을 기다림
+    }
 }

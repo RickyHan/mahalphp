@@ -19,21 +19,9 @@ import kotlinx.coroutines.withContext
 class ReplyWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        val settings = AppSettings(applicationContext)
-        if (!settings.isConfigured) return@withContext Result.success()
-        val api = ApiClient(settings)
         repeat(POLLS) { attempt ->
             if (attempt > 0) delay(POLL_INTERVAL_MS)
-            val replies = api.pendingReplies() ?: return@repeat
-            for (r in replies) {
-                when (val result = ReplyRegistry.send(applicationContext, r.room, r.text)) {
-                    ReplyRegistry.Result.Sent -> api.reportReply(r.id, true, null)
-                    // 아직 이 방 알림을 받지 못함 → 실패로 보고하지 않고 대기열에 둔다.
-                    // 그 방에 새 글이 와서 알림을 받으면(업로드 직후 이 작업이 다시 돌며) 그때 보낸다.
-                    ReplyRegistry.Result.NoAction, ReplyRegistry.Result.ThreadOnly -> Unit
-                    is ReplyRegistry.Result.Failed -> api.reportReply(r.id, false, result.reason)
-                }
-            }
+            ReplyRelay.relayOnce(applicationContext)
         }
         Result.success()
     }

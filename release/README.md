@@ -1,9 +1,14 @@
 # APK 다운로드
 
-- 최신 버전: [kakao-collector.apk](https://github.com/rickyhan/mahalphp/raw/claude/new-creation-dz2guv/release/kakao-collector.apk) (v2.2.4, Android 8.0 이상)
+- 최신 버전: [kakao-collector.apk](https://github.com/rickyhan/mahalphp/raw/claude/new-creation-dz2guv/release/kakao-collector.apk) (v2.2.5, Android 8.0 이상)
 - 앱은 **수집 전용**입니다. 대화·민원·통계는 서버의 웹 관리 화면(`/admin`)에서 봅니다.
 - 이전 버전 위에 덮어 설치하면 휴대폰에만 있던 메시지(전송 실패분 포함)도 서버로 자동 전송됩니다.
 - 공개 APK 에는 서버 주소·API 키가 들어 있지 않습니다. 설치 후 앱에서 직접 입력하십시오.
+
+## v2.2.5
+- 보낼 안내·업체 처리 요청을 **30초마다** 서버에서 확인해 전송 (기존: 알림 업로드 직후 1분만 확인 → 분류가 늦으면 다음 알림까지 지연)
+- 카톡이 답장 기능을 무효로 만든 경우 실패 대신 대기, 진단 기록에 '[전송] 답장 기능 만료' 표시
+- 업로드 직후 확인과 30초 확인이 같은 메시지를 두 번 보내지 않도록 잠금
 
 ## v2.2.4
 - 업체 톡방·민원 방 알림을 아직 받지 못했을 때 바로 실패시키지 않고 대기 → 그 방에 새 글(알림)이 오면 자동 전송 (서버: 접수 안내 30분, 업체 요청 12시간까지 대기)

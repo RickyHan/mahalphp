@@ -6,14 +6,24 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 /** 카카오톡 알림을 받아 전송 대기열에 넣고 서버 업로드를 예약한다. 조회·분류·이력은 서버가 처리. */
 class KakaoNotificationListener : NotificationListenerService() {
 
     private val worker = Executors.newSingleThreadExecutor()
+    // 서버가 정한 안내·업체 처리 요청을 30초마다 확인해 보낸다 (분류가 늦어도·방 알림을 기다리는 요청도 놓치지 않게)
+    private val relayTimer = Executors.newSingleThreadScheduledExecutor()
+    private var relayTask: ScheduledFuture<*>? = null
 
     override fun onListenerConnected() {
         StatusNotifier.update(this)
+        relayTask?.cancel(false)
+        relayTask = relayTimer.scheduleWithFixedDelay({
+            runCatching { if (AppSettings(this).captureEnabled) ReplyRelay.relayOnce(this) }
+                .onFailure { Log.w(TAG, "relay", it) }
+        }, 5, RELAY_SECONDS, TimeUnit.SECONDS)
         // 권한을 막 켰거나 서비스가 재시작된 경우, 이미 떠 있는 알림도 수집한다(중복은 큐에서 걸러짐)
         runCatching { activeNotifications }.getOrNull()?.forEach(::onNotificationPosted)
     }
@@ -24,10 +34,13 @@ class KakaoNotificationListener : NotificationListenerService() {
     }
 
     override fun onListenerDisconnected() {
+        relayTask?.cancel(false)
         StatusNotifier.update(this)
     }
 
     override fun onDestroy() {
+        relayTask?.cancel(false)
+        relayTimer.shutdownNow()
         worker.shutdown()
         super.onDestroy()
     }
@@ -85,5 +98,6 @@ class KakaoNotificationListener : NotificationListenerService() {
 
     private companion object {
         const val TAG = "KakaoListener"
+        const val RELAY_SECONDS = 30L
     }
 }
