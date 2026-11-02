@@ -82,33 +82,35 @@ object ReplyRegistry {
 }
 
 /**
- * 카카오톡 '댓글' 알림 판단. 버전마다 표시가 달라 여러 신호를 함께 본다.
- * (진단 기록에 판단 결과를 남겨 실제 알림 구조로 보정할 수 있게 한다)
+ * 카카오톡 '댓글' 알림 판단.
+ * 넓게 추측하면 일반 메시지를 댓글로 잘못 판단해 아예 보내지 못하게 되므로(v2.2.2 문제),
+ * '답장 버튼 이름에 댓글·답글이 들어 있을 때'만 댓글로 본다. 그 밖의 신호는 진단 기록에만 남긴다.
+ * 판단이 안 되는 경우는 ReplyRegistry 가 '그 방에서 가장 자주 온 알림'을 골라 대응한다.
  */
 object ThreadDetector {
-    private val MARKER = Regex("""댓글|답글|스레드|thread|comment""", RegexOption.IGNORE_CASE)
-    private val KEY_MARKER = Regex("""thread|comment""", RegexOption.IGNORE_CASE)
+    private val BUTTON = Regex("""댓글|답글|thread|comment""", RegexOption.IGNORE_CASE)
+    private val HINT = Regex("""댓글|답글|스레드|thread|comment""", RegexOption.IGNORE_CASE)
 
-    /** JVM 테스트용 순수 함수 */
-    fun isThread(texts: List<String?>, extraKeys: Collection<String>, ids: List<String?>): Boolean =
-        texts.any { it != null && MARKER.containsMatchIn(it) && !it.startsWith("[민원 처리 요청]") } ||
-            extraKeys.any { KEY_MARKER.containsMatchIn(it) } ||
-            ids.any { it != null && KEY_MARKER.containsMatchIn(it) }
+    /** 결정에 쓰는 신호: 답장 버튼 이름 */
+    fun isThreadButton(buttonTitle: String?): Boolean = buttonTitle != null && BUTTON.containsMatchIn(buttonTitle)
 
-    fun isThread(sbn: StatusBarNotification): Boolean {
+    fun isThread(sbn: StatusBarNotification): Boolean = isThreadButton(ReplyRegistry.replyAction(sbn.notification)?.title?.toString())
+
+    /** 진단용: 댓글일 수 있는 신호를 모두 나열 (결정에는 쓰지 않음) */
+    fun hints(sbn: StatusBarNotification): String {
         val n = sbn.notification
         val e = n.extras
-        // 본문(사람이 쓴 내용)은 '댓글'이라는 단어가 들어갈 수 있어 제목·부제목류만 본다
-        val texts = listOf(
-            e.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
-            e.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString(),
-            e.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)?.toString(),
-            e.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString(),
-            replyActionTitle(n),
-        )
-        val ids = listOf(sbn.tag, n.group, if (android.os.Build.VERSION.SDK_INT >= 26) n.shortcutId else null, if (android.os.Build.VERSION.SDK_INT >= 26) n.channelId else null)
-        return isThread(texts, e.keySet(), ids)
+        val found = mutableListOf<String>()
+        fun check(label: String, value: String?) { if (value != null && HINT.containsMatchIn(value)) found += "$label=[${value.take(40)}]" }
+        check("button", ReplyRegistry.replyAction(n)?.title?.toString())
+        check("title", e.getCharSequence(Notification.EXTRA_TITLE)?.toString())
+        check("subText", e.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString())
+        check("summary", e.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)?.toString())
+        check("convTitle", e.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString())
+        check("tag", sbn.tag)
+        check("group", n.group)
+        if (android.os.Build.VERSION.SDK_INT >= 26) { check("shortcutId", n.shortcutId); check("channel", n.channelId) }
+        e.keySet().filter { HINT.containsMatchIn(it) }.forEach { found += "extraKey=[$it]" }
+        return found.joinToString(" ").ifEmpty { "없음" }
     }
-
-    private fun replyActionTitle(n: Notification): String? = ReplyRegistry.replyAction(n)?.title?.toString()
 }

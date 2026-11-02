@@ -80,10 +80,12 @@ class ReplyTest {
     }
 
     @Test
-    fun threadDetectorSignals() {
-        assertTrue(ThreadDetector.isThread(listOf("홍길동", "댓글"), emptyList(), emptyList()))
-        assertTrue(ThreadDetector.isThread(listOf("홍길동"), listOf("com.kakao.talk.threadId"), emptyList()))
-        assertTrue(ThreadDetector.isThread(listOf("홍길동"), emptyList(), listOf("chat_comment")))
-        assertFalse(ThreadDetector.isThread(listOf("홍길동", "OO아파트 입주민방", "답장"), listOf("android.title", "android.text", "android.messages"), listOf("12345", "chat")))
+    fun threadDetectorOnlyTrustsButtonName() {
+        assertTrue(ThreadDetector.isThreadButton("댓글 달기"))
+        assertTrue(ThreadDetector.isThreadButton("답글"))
+        // 일반 답장 버튼·버튼 없음은 댓글이 아님 (v2.2.2 처럼 일반 메시지를 댓글로 오판하지 않음)
+        assertFalse(ThreadDetector.isThreadButton("답장"))
+        assertFalse(ThreadDetector.isThreadButton("Reply"))
+        assertFalse(ThreadDetector.isThreadButton(null))
     }
 }
