@@ -130,6 +130,18 @@ CREATE TABLE IF NOT EXISTS `apartments` (
   UNIQUE KEY `uk_apartments_room` (`room_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='아파트';
 
+-- 아파트별 민원 분류 담당 업체. 행이 없으면 기본 업체(vendors.category_id), vendor_id 가 NULL 이면 '보내지 않음'
+CREATE TABLE IF NOT EXISTS `apartment_vendors` (
+  `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `apartment_id` BIGINT UNSIGNED NOT NULL,
+  `category_id`  BIGINT UNSIGNED NOT NULL,
+  `vendor_id`    BIGINT UNSIGNED NULL,
+  `updated_at`   DATETIME(3)     NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_apartment_vendors` (`apartment_id`, `category_id`),
+  KEY `idx_apartment_vendors_vendor` (`vendor_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='아파트별 담당 업체';
+
 -- 민원 분류 (웹 '민원 카테고리'에서 관리, Gemini 분류에 사용). '기타'는 삭제 불가
 CREATE TABLE IF NOT EXISTS `complaint_categories` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

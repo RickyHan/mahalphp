@@ -52,7 +52,7 @@
     const list = $("apt-list");
     list.replaceChildren();
     if (!shown.length) {
-      list.append(el("tr", {}, el("td", { colspan: "6", class: "empty-cell", text: items.length ? "검색 결과가 없습니다." : "아직 등록된 아파트가 없습니다. 오른쪽 위 '다시 수집하기'를 누르십시오." })));
+      list.append(el("tr", {}, el("td", { colspan: "7", class: "empty-cell", text: items.length ? "검색 결과가 없습니다." : "아직 등록된 아파트가 없습니다. 오른쪽 위 '다시 수집하기'를 누르십시오." })));
       return;
     }
     for (const a of shown) list.append(row(a));
@@ -96,6 +96,10 @@
     tr.append(
       el("td", { class: "apt-name-cell" }, input),
       el("td", {}, KC.roomChip(a.room_name, a.messages > 0)),
+      el("td", {}, el("button", { class: `vendor-set-btn${a.custom ? " has" : ""}`, type: "button", onclick: () => openDrawer(a).catch(reportError) },
+        el("span", { class: "ms", "aria-hidden": "true", text: "domain" }),
+        a.custom ? `업체 ${a.assigned}곳 지정${a.custom > a.assigned ? ` · 보내지 않음 ${a.custom - a.assigned}` : ""}` : "기본 업체 사용",
+        el("span", { class: "ms vendor-set-go", "aria-hidden": "true", text: "settings" }))),
       el("td", { class: "num", text: a.messages.toLocaleString("ko-KR") }),
       el("td", { class: "num" }, el("span", { class: `count-pill${a.complaints ? " has" : ""}`, text: `${a.complaints}건` })),
       el("td", { class: "muted small", text: a.last_at ? fmtDateTime(a.last_at).slice(0, 16) : "대화 없음" }),
@@ -124,7 +128,137 @@
     }
   }
 
+  // ---- 아파트별 담당 업체 (오른쪽 창) ------------------------------------------------------------
+
+  const drawer = { apt: null, rows: [], vendors: [], initial: "" };
+
+  async function openDrawer(a) {
+    const data = await api(`/api/admin/apartments/${a.id}/vendors`);
+    drawer.apt = a;
+    drawer.vendors = data.vendors;
+    drawer.rows = data.categories.map((r) => ({ ...r, value: r.mode === "vendor" ? `v:${r.vendor_id}` : r.mode }));
+    drawer.initial = JSON.stringify(drawer.rows.map((r) => r.value));
+    $("av-title").textContent = a.name;
+    $("av-room").replaceChildren(KC.roomChip(a.room_name, a.messages > 0));
+    renderDrawer();
+    $("av-scrim").hidden = false;
+    $("av-drawer").hidden = false;
+    requestAnimationFrame(() => $("av-drawer").classList.add("open"));
+    $("av-list").querySelector("select")?.focus();
+  }
+
+  function closeDrawer(force = false) {
+    if (!force && dirtyCount() && !confirm("저장하지 않은 변경이 있습니다. 닫으시겠습니까?")) return;
+    $("av-drawer").classList.remove("open");
+    $("av-scrim").hidden = true;
+    setTimeout(() => ($("av-drawer").hidden = true), 180);
+  }
+
+  function dirtyCount() {
+    if (!drawer.apt) return 0;
+    const init = JSON.parse(drawer.initial);
+    return drawer.rows.filter((r, i) => r.value !== init[i]).length;
+  }
+
+  function vendorById(id) {
+    return drawer.vendors.find((v) => v.id === id);
+  }
+
+  /** 고른 값에 따라 실제로 처리 요청이 갈 곳 */
+  function target(row) {
+    if (row.value === "none") return el("span", { class: "av-target none" }, el("span", { class: "ms", text: "block" }), "보내지 않음");
+    const list = row.value === "default" ? row.defaults : [vendorById(Number(row.value.slice(2)))].filter(Boolean);
+    if (!list.length) return el("span", { class: "av-target none" }, el("span", { class: "ms", text: "info" }), "기본 업체 없음 — 보내지 않음");
+    return el(
+      "div",
+      { class: "av-targets" },
+      ...list.map((v) =>
+        v.room_name
+          ? KC.roomChip(v.room_name, drawer.vendors.find((x) => x.id === v.id)?.has_messages ?? true)
+          : el("span", { class: "av-target warn" }, el("span", { class: "ms", text: "warning" }), `${v.name}: 톡방 미지정`),
+      ),
+    );
+  }
+
+  function renderDrawer() {
+    const list = $("av-list");
+    list.replaceChildren();
+    let slot = 0;
+    for (const row of drawer.rows) {
+      const color = row.protected ? 0 : ++slot > 8 ? 0 : slot;
+      const select = el("select", { class: "av-select", "aria-label": `${row.category} 담당 업체` });
+      const defaultNames = row.defaults.map((d) => d.name).join(", ");
+      select.append(
+        el("option", { value: "default", text: defaultNames ? `기본 업체 따름 (${defaultNames})` : "기본 업체 따름 (없음)" }),
+        el("option", { value: "none", text: "이 아파트는 보내지 않음" }),
+      );
+      const group = el("optgroup", { label: "업체 지정" });
+      for (const v of drawer.vendors) group.append(el("option", { value: `v:${v.id}`, text: v.room_name ? `${v.name}  ·  ${v.room_name}` : `${v.name}  (톡방 없음)` }));
+      select.append(group);
+      select.value = row.value;
+      const targetCell = el("div", { class: "av-target-cell" }, target(row));
+      const li = el(
+        "li",
+        { class: `av-row${row.enabled ? "" : " off"}${row.value !== "default" ? " custom" : ""}` },
+        el("div", { class: "av-cat" }, el("span", { class: `dot c${color}`, "aria-hidden": "true" }), el("strong", { text: row.category }), row.enabled ? null : el("small", { text: "분류 사용 안 함" })),
+        select,
+        targetCell,
+      );
+      select.addEventListener("change", () => {
+        row.value = select.value;
+        targetCell.replaceChildren(target(row));
+        li.classList.toggle("custom", row.value !== "default");
+        updateDirty();
+      });
+      list.append(li);
+    }
+    updateDirty();
+  }
+
+  function updateDirty() {
+    const n = dirtyCount();
+    $("av-dirty").textContent = n ? `변경 ${n}건` : "";
+    $("av-save").disabled = n === 0;
+  }
+
+  async function saveDrawer() {
+    const assignments = drawer.rows.map((r) =>
+      r.value.startsWith("v:") ? { category_id: r.category_id, mode: "vendor", vendor_id: Number(r.value.slice(2)) } : { category_id: r.category_id, mode: r.value },
+    );
+    $("av-save").disabled = true;
+    try {
+      await send("PUT", `/api/admin/apartments/${drawer.apt.id}/vendors`, { assignments });
+      drawer.initial = JSON.stringify(drawer.rows.map((r) => r.value));
+      closeDrawer(true);
+      await loadApartments();
+    } catch (err) {
+      reportError(err);
+      updateDirty();
+    }
+  }
+
   KC.loaders = Object.assign(KC.loaders || {}, { apartments: loadApartments });
+  $("av-close").addEventListener("click", () => closeDrawer());
+  $("av-cancel").addEventListener("click", () => closeDrawer());
+  $("av-scrim").addEventListener("click", () => closeDrawer());
+  $("av-save").addEventListener("click", () => saveDrawer().catch(reportError));
+  // 창 안의 톡방 이름을 누르면 창을 닫고 그 방 대화로 이동 (저장 안 한 변경이 있으면 확인)
+  $("av-drawer").addEventListener(
+    "click",
+    (e) => {
+      if (!e.target.closest("button.room-chip")) return;
+      if (dirtyCount() && !confirm("저장하지 않은 변경이 있습니다. 대화 화면으로 이동할까요?")) {
+        e.stopPropagation();
+        e.preventDefault();
+        return;
+      }
+      closeDrawer(true);
+    },
+    true,
+  );
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("av-drawer").hidden) closeDrawer();
+  });
   $("apt-sync").addEventListener("click", () => sync().catch(reportError));
   $("apt-search").addEventListener("input", render);
 })();

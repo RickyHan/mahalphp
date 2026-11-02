@@ -165,3 +165,56 @@ def test_group_minutes_setting(admin, settings):
     assert admin.put("/api/admin/settings", json={"group_minutes": 15}).status_code == 200
     for item in _pending():
         _report(item["id"], True)
+
+
+def test_apartment_specific_vendors(admin, settings):
+    """같은 민원 분류라도 아파트마다 다른 업체로: 아파트 지정 → 없으면 기본 업체 → '보내지 않음'"""
+    cat = next(c for c in admin.get("/api/admin/categories").json()["items"] if c["name"] == "주차")
+    for room in ("●기본주차업체", "●동네주차업체", "★가나아파트", "★다라아파트"):
+        _post(room, "관리", "안녕하세요 처음 인사드립니다")
+    admin.post("/api/admin/vendors/sync")
+    admin.post("/api/admin/apartments/sync")
+    vendors = {v["room_name"]: v for v in admin.get("/api/admin/vendors").json()["items"] if v["room_name"]}
+    base, local = vendors["●기본주차업체"], vendors["●동네주차업체"]
+    # 기본 업체: 주차 담당
+    assert admin.put(f"/api/admin/vendors/{base['id']}", data={"name": base["name"], "room_name": base["room_name"], "category_id": str(cat["id"])}).status_code == 200
+    apts = {a["room_name"]: a for a in admin.get("/api/admin/apartments").json()["items"]}
+    ga, da = apts["★가나아파트"], apts["★다라아파트"]
+
+    view = admin.get(f"/api/admin/apartments/{ga['id']}/vendors").json()
+    row = next(r for r in view["categories"] if r["category_id"] == cat["id"])
+    assert row["mode"] == "default" and [d["name"] for d in row["defaults"]] == [base["name"]]
+
+    # 가나아파트의 주차 → 동네주차업체
+    r = admin.put(f"/api/admin/apartments/{ga['id']}/vendors", json={"assignments": [{"category_id": cat["id"], "mode": "vendor", "vendor_id": local["id"]}]})
+    assert r.status_code == 200
+    assert next(x for x in r.json()["categories"] if x["category_id"] == cat["id"])["mode"] == "vendor"
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        assert [v["name"] for v in store.target_vendors(cur, "★가나아파트", "주차")] == [local["name"]]
+        assert [v["name"] for v in store.target_vendors(cur, "★다라아파트", "주차")] == [base["name"]]  # 지정 없음 → 기본
+        assert [v["name"] for v in store.target_vendors(cur, "일반방", "주차")] == [base["name"]]
+    apts = {a["room_name"]: a for a in admin.get("/api/admin/apartments").json()["items"]}
+    assert apts["★가나아파트"]["assigned"] == 1 and apts["★다라아파트"]["assigned"] == 0
+
+    # 실제 민원 흐름: 가나아파트 주차 민원 → 동네주차업체 톡방
+    class ParkingGemini:
+        def classify(self, items):
+            return [cp.Verdict(i.id, True, "주차", "주차 민원", 0.9) for i in items]
+
+    _post("★가나아파트", "101호", "주차장에 이중주차 차량 빼주세요")
+    store.classify_once(settings, client=ParkingGemini())
+    # 가나아파트에서 온 민원의 업체 요청만 본다
+    rooms = [i["room_name"] for i in _pending() if "'★가나아파트' 대화방" in i["text"] and "이중주차" in i["text"]]
+    assert rooms == ["●동네주차업체"]
+    for item in _pending():
+        _report(item["id"], True)
+
+    # 다라아파트는 주차를 '보내지 않음'으로
+    admin.put(f"/api/admin/apartments/{da['id']}/vendors", json={"assignments": [{"category_id": cat["id"], "mode": "none"}]})
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        assert store.target_vendors(cur, "★다라아파트", "주차") == [] or list(store.target_vendors(cur, "★다라아파트", "주차")) == []
+    # 잘못된 값 거부, 업체 삭제 시 아파트 지정도 정리
+    assert admin.put(f"/api/admin/apartments/{ga['id']}/vendors", json={"assignments": [{"category_id": cat["id"], "mode": "vendor", "vendor_id": 999999}]}).status_code == 422
+    assert admin.delete(f"/api/admin/vendors/{local['id']}").status_code == 200
+    view = admin.get(f"/api/admin/apartments/{ga['id']}/vendors").json()
+    assert next(x for x in view["categories"] if x["category_id"] == cat["id"])["mode"] == "default"

@@ -253,6 +253,7 @@ async def update_vendor(
 @router.delete("/api/admin/vendors/{vendor_id}")
 def delete_vendor(vendor_id: int, settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM apartment_vendors WHERE vendor_id = %s", (vendor_id,))
         cur.execute("DELETE FROM vendors WHERE id = %s", (vendor_id,))
     live.bump("vendor")
     return {"ok": True}

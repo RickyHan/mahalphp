@@ -229,15 +229,35 @@ def enqueue_reply(cur, message_id: int, device_id: str, room: str, text: str, at
     )
 
 
-def enqueue_vendor_messages(cur, conf: dict[str, str], v: cp.Verdict, msg: dict[str, Any], now: datetime) -> int:
-    """민원 카테고리를 맡은 업체마다, 업체에 지정된 카톡방으로 처리 요청 메시지를 대기열에 넣는다."""
+def target_vendors(cur, room: str, category: str) -> list[dict[str, Any]]:
+    """처리 요청을 받을 업체:
+    민원 방이 아파트이고 그 아파트에 이 분류의 업체가 지정돼 있으면 그 업체('보내지 않음'이면 없음),
+    지정이 없으면 기본 업체(민원처리업체의 담당 카테고리). 톡방이 없는 업체는 제외."""
+    cur.execute(
+        """SELECT av.vendor_id FROM apartment_vendors av
+           JOIN apartments a ON a.id = av.apartment_id
+           JOIN complaint_categories c ON c.id = av.category_id
+           WHERE a.room_name = %s AND c.name = %s""",
+        (room, category),
+    )
+    row = cur.fetchone()
+    if row is not None:
+        if row["vendor_id"] is None:
+            return []
+        cur.execute("SELECT id, name, room_name FROM vendors WHERE id = %s AND room_name IS NOT NULL AND room_name <> ''", (row["vendor_id"],))
+        return cur.fetchall()
     cur.execute(
         """SELECT v.id, v.name, v.room_name FROM vendors v JOIN complaint_categories c ON c.id = v.category_id
            WHERE c.name = %s AND v.room_name IS NOT NULL AND v.room_name <> ''""",
-        (v.category,),
+        (category,),
     )
+    return cur.fetchall()
+
+
+def enqueue_vendor_messages(cur, conf: dict[str, str], v: cp.Verdict, msg: dict[str, Any], now: datetime) -> int:
+    """이 민원을 맡은 업체(아파트별 지정 → 기본 업체)의 카톡방으로 처리 요청 메시지를 대기열에 넣는다."""
     count = 0
-    for vendor in cur.fetchall():
+    for vendor in target_vendors(cur, msg["room_name"], v.category):
         # 업체 방 알림을 받은 휴대폰(최근 수신 기준)이 보낸다. 없으면 민원을 받은 휴대폰
         cur.execute("SELECT device_id FROM kakao_messages WHERE room_name = %s ORDER BY id DESC LIMIT 1", (vendor["room_name"],))
         row = cur.fetchone()

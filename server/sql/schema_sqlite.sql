@@ -125,3 +125,13 @@ CREATE TABLE IF NOT EXISTS apartments (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS apartment_vendors (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  apartment_id INTEGER NOT NULL,
+  category_id  INTEGER NOT NULL,
+  vendor_id    INTEGER,
+  updated_at   TEXT NOT NULL,
+  UNIQUE (apartment_id, category_id)
+);
+CREATE INDEX IF NOT EXISTS idx_apartment_vendors_vendor ON apartment_vendors (vendor_id);
