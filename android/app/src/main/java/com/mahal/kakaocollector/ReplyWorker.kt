@@ -28,8 +28,9 @@ class ReplyWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
             for (r in replies) {
                 when (val result = ReplyRegistry.send(applicationContext, r.room, r.text)) {
                     ReplyRegistry.Result.Sent -> api.reportReply(r.id, true, null)
-                    ReplyRegistry.Result.NoAction -> api.reportReply(r.id, false, "휴대폰에 이 방의 답장 가능한 카톡 알림이 없음 (앱 재시작 등)")
-                    ReplyRegistry.Result.ThreadOnly -> api.reportReply(r.id, false, "이 방은 댓글 알림만 받아 채팅방으로 보낼 수 없음 (일반 메시지 알림이 오면 다시 보내기)")
+                    // 아직 이 방 알림을 받지 못함 → 실패로 보고하지 않고 대기열에 둔다.
+                    // 그 방에 새 글이 와서 알림을 받으면(업로드 직후 이 작업이 다시 돌며) 그때 보낸다.
+                    ReplyRegistry.Result.NoAction, ReplyRegistry.Result.ThreadOnly -> Unit
                     is ReplyRegistry.Result.Failed -> api.reportReply(r.id, false, result.reason)
                 }
             }

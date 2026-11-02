@@ -45,13 +45,13 @@ class KakaoNotificationListener : NotificationListenerService() {
                 store.addNotificationLog(System.currentTimeMillis(), NotificationExtractor.dump(sbn, shortcut?.let { "short=[${it.first}] long=[${it.second}]" }) + "해석 결과:\n" + parsed.ifEmpty { "  (대화 알림 아님 — 건너뜀)" })
             }
             var queued = 0
+            // 이 방에 보낼 '답장' 수단을 기억 (내가 보낸 글 제외). 수집 제외 방·이미 받은 글이어도 기억해 둔다.
+            // (댓글 알림의 답장 버튼은 댓글 스레드로 보내므로 ReplyRegistry 가 구분한다)
+            messages.lastOrNull { it.sender != KakaoParser.SELF_SENDER }?.let { ReplyRegistry.remember(it.room, sbn) }
             messages.forEachIndexed { index, message ->
                 if (store.contains(message)) return@forEachIndexed
                 store.recordSeenRoom(message.room, message.isGroupChat, message.postedAt)
                 if (!settings.allowsRoom(message.room)) return@forEachIndexed
-                // 서버가 정한 민원 접수 안내를 보낼 수 있도록 이 방의 '답장' 수단을 기억
-                // (댓글 알림의 답장 버튼은 댓글 스레드로 보내므로 구분해서 기억한다)
-                if (message.sender != KakaoParser.SELF_SENDER) ReplyRegistry.remember(message.room, sbn)
                 val image = if (settings.captureImages && message.type == MessageType.PHOTO) {
                     NotificationExtractor.saveImage(this, sbn, message, isLatest = index == messages.lastIndex)
                 } else null

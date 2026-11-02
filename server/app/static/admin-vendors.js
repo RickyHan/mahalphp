@@ -39,7 +39,7 @@
 
   // ---- 업체 카톡방 전달 이력 -------------------------------------------------------------------
 
-  const DISPATCH = { pending: ["대기", "wait"], sent: ["보냄", "ok"], failed: ["실패", "bad"], expired: ["만료", "bad"] };
+  const DISPATCH = { pending: ["톡방 알림 대기", "wait"], sent: ["보냄", "ok"], failed: ["실패", "bad"], expired: ["만료", "bad"] };
 
   function renderDispatch(data) {
     const c = data.counts;

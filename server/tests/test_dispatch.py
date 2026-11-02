@@ -115,3 +115,24 @@ def test_vendor_dispatch_setting(admin, settings):
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) AS n FROM reply_queue WHERE kind = 'vendor' AND status = 'pending'")
         assert cur.fetchone()["n"] == 0
+
+
+def test_vendor_request_waits_for_room_notification(admin, settings):
+    """업체 방 알림을 아직 못 받았으면 실패시키지 않고 기다린다: 접수 안내는 30분, 업체 요청은 12시간"""
+    from datetime import timedelta
+
+    now = store.now_local(settings)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        store.enqueue_reply(cur, 999001, DEVICE, "업체방", "요청", now - timedelta(hours=2), kind="vendor", vendor_id=1, vendor_name="v")
+        store.enqueue_reply(cur, 999002, DEVICE, "업체방", "요청", now - timedelta(hours=13), kind="vendor", vendor_id=1, vendor_name="v")
+        store.enqueue_reply(cur, 999003, DEVICE, "민원방", "안내", now - timedelta(hours=2))
+    ids = {i["text"] + str(i["id"]) for i in _pending()}
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT message_id, status, note FROM reply_queue WHERE message_id IN (999001, 999002, 999003)")
+        rows = {r["message_id"]: r for r in cur.fetchall()}
+    assert rows[999001]["status"] == "pending"           # 2시간 된 업체 요청은 계속 대기
+    assert rows[999002]["status"] == "expired" and "12시간" in rows[999002]["note"]
+    assert rows[999003]["status"] == "expired"           # 접수 안내는 30분
+    assert ids  # 대기 중인 것은 휴대폰에 계속 전달된다
+    for item in _pending():
+        _report(item["id"], True)

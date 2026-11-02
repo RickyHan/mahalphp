@@ -239,13 +239,18 @@ def enqueue_vendor_messages(cur, conf: dict[str, str], v: cp.Verdict, msg: dict[
 def pending_replies(cur, device_id: str, now: datetime) -> list[dict[str, Any]]:
     """30분 넘게 전달되지 않은 안내는 만료 처리하고, 나머지를 돌려준다"""
     cur.execute(
-        "SELECT id, message_id, kind FROM reply_queue WHERE status = 'pending' AND device_id = %s AND created_at < %s",
-        (device_id, now - cp.REPLY_MAX_AGE),
+        """SELECT id, message_id, kind FROM reply_queue WHERE status = 'pending' AND device_id = %s
+           AND ((kind <> 'vendor' AND created_at < %s) OR (kind = 'vendor' AND created_at < %s))""",
+        (device_id, now - cp.REPLY_MAX_AGE, now - cp.VENDOR_MAX_AGE),
     )
     for r in cur.fetchall():
-        cur.execute("UPDATE reply_queue SET status = 'expired', done_at = %s, note = %s WHERE id = %s", (now, "앱이 30분 안에 가져가지 않음", r["id"]))
+        if r["kind"] == "vendor":
+            note = "12시간 안에 업체 톡방에 새 글(알림)이 오지 않아 보내지 못함"
+        else:
+            note = "30분 안에 보내지 못함 (그 방 알림을 받지 못했거나 앱이 꺼져 있음)"
+        cur.execute("UPDATE reply_queue SET status = 'expired', done_at = %s, note = %s WHERE id = %s", (now, note, r["id"]))
         if r["kind"] != "vendor":
-            set_reply_status(cur, r["message_id"], -1, "휴대폰 앱이 30분 안에 안내를 가져가지 않음")
+            set_reply_status(cur, r["message_id"], -1, note)
     cur.execute(
         "SELECT id, room_name, text FROM reply_queue WHERE status = 'pending' AND device_id = %s ORDER BY id",
         (device_id,),

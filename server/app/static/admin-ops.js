@@ -25,7 +25,7 @@
     3: () => "안내 생략 (30분 지난 메시지)",
     4: () => "⏳ 휴대폰 전송 대기",
   };
-  const DISPATCH_LABEL = { pending: "⏳ 휴대폰 전송 대기", sent: "✅ 보냄", failed: "⚠️ 실패", expired: "⚠️ 만료(앱이 가져가지 않음)" };
+  const DISPATCH_LABEL = { pending: "⏳ 대기 — 업체 톡방에 새 글이 오면 바로 전송", sent: "✅ 보냄", failed: "⚠️ 실패", expired: "⚠️ 만료(앱이 가져가지 않음)" };
   const replyLabel = (status, note) => (REPLY[status] ? REPLY[status](note) : "");
   const span = (s, e) => (s && e && s.slice(0, 16) !== e.slice(0, 16) ? `${fmtDateTime(s).slice(0, 16)} ~ ${e.slice(11, 16)}` : fmtDateTime(s).slice(0, 16));
 

@@ -14,6 +14,8 @@ MIN_CHARS = 5
 BATCH = 20
 GROUP_WINDOW = timedelta(minutes=30)
 REPLY_MAX_AGE = timedelta(minutes=30)
+# 업체 톡방 처리 요청은 그 방에 새 글(알림)이 와야 보낼 수 있어 더 오래 기다린다
+VENDOR_MAX_AGE = timedelta(hours=12)
 SELF_SENDER = "나"
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_REPLY_TEMPLATE = "[{분류}] 민원이 접수되었습니다."
