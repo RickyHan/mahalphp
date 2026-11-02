@@ -1,9 +1,14 @@
 # APK 다운로드
 
-- 최신 버전: [kakao-collector.apk](https://github.com/rickyhan/mahalphp/raw/claude/new-creation-dz2guv/release/kakao-collector.apk) (v2.2.1, Android 8.0 이상)
+- 최신 버전: [kakao-collector.apk](https://github.com/rickyhan/mahalphp/raw/claude/new-creation-dz2guv/release/kakao-collector.apk) (v2.2.2, Android 8.0 이상)
 - 앱은 **수집 전용**입니다. 대화·민원·통계는 서버의 웹 관리 화면(`/admin`)에서 봅니다.
 - 이전 버전 위에 덮어 설치하면 휴대폰에만 있던 메시지(전송 실패분 포함)도 서버로 자동 전송됩니다.
 - 공개 APK 에는 서버 주소·API 키가 들어 있지 않습니다. 설치 후 앱에서 직접 입력하십시오.
+
+## v2.2.2
+- 업체 톡방·민원 방으로 보내는 메시지가 카톡 **댓글 스레드**로 들어가던 문제 수정: 댓글 알림의 답장 버튼은 쓰지 않고, 그 방에서 가장 자주 온 일반 채팅 알림의 버튼으로 보냄
+- 댓글 알림만 받은 방은 잘못 보내지 않고 '보낼 수 없음'으로 보고
+- 알림 진단에 알림 ID·태그·답장 버튼·댓글 판단 결과 표시
 
 ## v2.2.1
 - 앱 이름 변경: **민원 카카오톡 메시지 자동 수집** (웹은 '민원 자동처리 시스템')

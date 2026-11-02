@@ -59,7 +59,9 @@ object NotificationExtractor {
     fun dump(sbn: StatusBarNotification, shortcut: String? = null): String {
         val n = sbn.notification
         val sb = StringBuilder()
-        sb.append("key=").append(sbn.key).append('\n')
+        sb.append("key=").append(sbn.key).append(" id=").append(sbn.id).append(" tag=").append(sbn.tag).append('\n')
+        sb.append("답장버튼=").append(ReplyRegistry.replyAction(n)?.title ?: "(없음)")
+            .append(" 댓글판단=").append(if (ThreadDetector.isThread(sbn)) "댓글" else "일반").append('\n')
         sb.append("shortcut=").append(shortcut ?: "(없음)")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) sb.append(" shortcutId=").append(n.shortcutId).append(" channel=").append(n.channelId)
         sb.append('\n')
