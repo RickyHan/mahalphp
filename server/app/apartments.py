@@ -530,7 +530,7 @@ def save_apartment_vendors(apartment_id: int, body: AssignmentsBody, settings: S
 # ---- 처음 받은 건물별 담당 업체 표 (서버 시작 때 한 번) ----------------------------------------------------
 
 VENDOR_SEED_FILE = Path(__file__).parent / "data" / "building_vendors.tsv"
-VENDOR_SEED_VERSION = "1"
+VENDOR_SEED_VERSION = "2"  # 2: 빈칸도 '보내지 않음'으로 (1 을 적용한 서버는 표 전체를 다시 적용)
 # 업체가 아니라 '보내지 않음'으로 둘 값
 NO_VENDOR = {"없음", "자체처리", "입주민", "입주민 4명", "입주민지인", "입주민(자격증소유)", "기존업체", "0", "-"}
 # 같은 업체의 다른 표기
@@ -540,12 +540,10 @@ VENDOR_ALIASES = {
 }
 
 
-def vendor_cell(value: str) -> str | None:
-    """표의 칸 → 업체 이름, '' (보내지 않음), None (빈칸: 설정 안 함)"""
+def vendor_cell(value: str) -> str:
+    """표의 칸 → 업체 이름, 또는 '' (보내지 않음: 빈칸 포함)"""
     v = re.sub(r"\s+", " ", value or "").strip()
-    if not v:
-        return None
-    if v in NO_VENDOR or re.search(r"-\s*중단$", v):
+    if not v or v in NO_VENDOR or re.search(r"-\s*중단$", v):
         return ""
     return VENDOR_ALIASES.get(v, v)[:100]
 

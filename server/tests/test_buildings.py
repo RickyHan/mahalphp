@@ -135,7 +135,7 @@ def test_seed_buildings_once(admin, settings):
 
 def test_seed_building_vendors(admin, settings):
     """처음 받은 건물별 담당 업체 표: 업체 생성·지정, '입주민·없음·중단'은 보내지 않음, 같은 업체 표기 합침"""
-    assert ap.vendor_cell("") is None and ap.vendor_cell(" 입주민  ") == "" and ap.vendor_cell("늘푸른환경 - 중단") == ""
+    assert ap.vendor_cell("") == "" and ap.vendor_cell(" 입주민  ") == "" and ap.vendor_cell("늘푸른환경 - 중단") == ""
     assert ap.vendor_cell("티케이") == "TK" and ap.vendor_cell("TK ") == "TK" and ap.vendor_cell("유원 -> 교체공사중 26.10") == "유원"
     with db.transaction(settings) as conn, conn.cursor() as cur:  # 앞 테스트가 남긴 '등록 완료' 표시 지움
         cur.execute("DELETE FROM app_settings WHERE name IN ('buildings_seed', 'building_vendors_seed')")
@@ -143,7 +143,7 @@ def test_seed_building_vendors(admin, settings):
         ap.seed_building_vendors(settings)
     ap.seed_buildings(settings)
     r = ap.seed_building_vendors(settings)
-    assert r["missing"] == [] and r["assigned"] > 3000 and r["none"] >= 10 and r["vendors_created"] > 150
+    assert r["missing"] == [] and r["assigned"] > 3000 and r["none"] > 900 and r["vendors_created"] > 150
     assert ap.seed_building_vendors(settings) is None  # 한 번만
 
     apts = {a["name"]: a for a in admin.get("/api/admin/apartments").json()["items"] if a["listed"]}
@@ -151,7 +151,12 @@ def test_seed_building_vendors(admin, settings):
     vendors = {v["id"]: v["name"] for v in view["vendors"]}
     got = {c["category"]: (c["mode"], vendors.get(c["vendor_id"])) for c in view["categories"]}
     assert got["청소"] == ("vendor", "단비크린") and got["승강기"] == ("vendor", "성도") and got["누수"] == ("vendor", "수자원누수탐지")
-    assert got["소방"] == ("default", None) and got["기타"] == ("vendor", "동대표")  # 빈칸은 기본 업체 따름
+    assert got["소방"] == ("none", None) and got["기타"] == ("vendor", "동대표")  # 빈칸은 보내지 않음
+    assert {c["mode"] for c in view["categories"]} <= {"vendor", "none"}  # 표의 모든 분야가 정해짐
+    cw = admin.get(f"/api/admin/apartments/{apts['청우파스텔시티ABCD동']['id']}/vendors").json()
+    cw_names = {v["id"]: v["name"] for v in cw["vendors"]}
+    cw_got = {c["category"]: (c["mode"], cw_names.get(c["vendor_id"])) for c in cw["categories"]}
+    assert cw_got["소방"] == ("vendor", "동일전기안전관리") and cw_got["전기"] == ("none", None)  # 표 그대로
     view = admin.get(f"/api/admin/apartments/{apts['골든하우스']['id']}/vendors").json()
     got = {c["category"]: c["mode"] for c in view["categories"]}
     assert got["청소"] == "none" and got["기계주차"] == "vendor"   # '입주민 4명' → 보내지 않음
