@@ -56,10 +56,46 @@
     extra: (a) => !a.listed,
   };
 
+  // ---- 열 제목 정렬 (누를 때마다 오름차순 ↔ 내림차순, 값이 없는 행은 항상 아래) -----------------------
+  const sort = { key: null, dir: 1 };
+  const SORT_KEYS = {
+    name: (a) => a.name,
+    room: (a) => a.room_name || null,
+    vendor: (a) => (a.custom ? a.assigned * 1000 + a.custom : null),
+    messages: (a) => (a.room_name ? a.messages : null),
+    complaints: (a) => (a.room_name ? a.complaints : null),
+    last: (a) => a.last_at || null,
+  };
+  const collator = new Intl.Collator("ko", { numeric: true, sensitivity: "base" });
+
+  function sortItems(list) {
+    if (!sort.key) return list;
+    const get = SORT_KEYS[sort.key];
+    return list
+      .map((a, i) => ({ a, i, v: get(a) }))
+      .sort((x, y) => {
+        if (x.v === null || y.v === null) return x.v === y.v ? x.i - y.i : x.v === null ? 1 : -1;
+        const c = typeof x.v === "number" ? x.v - y.v : collator.compare(x.v, y.v);
+        return c ? c * sort.dir : x.i - y.i;
+      })
+      .map((x) => x.a);
+  }
+
+  function setSort(key) {
+    if (sort.key === key) sort.dir = -sort.dir;
+    else Object.assign(sort, { key, dir: ["messages", "complaints", "last"].includes(key) ? -1 : 1 }); // 숫자·날짜는 큰 값부터
+    for (const b of document.querySelectorAll(".apt-table .th-sort")) {
+      const on = b.dataset.sort === sort.key;
+      b.closest("th").setAttribute("aria-sort", on ? (sort.dir > 0 ? "ascending" : "descending") : "none");
+      b.querySelector(".sort-ind").textContent = on ? (sort.dir > 0 ? "▲" : "▼") : "";
+    }
+    render();
+  }
+
   function render() {
     const q = $("apt-search").value.trim().toLowerCase();
     const hit = (a) => !q || [a.name, a.address, a.room_name].some((v) => (v || "").toLowerCase().includes(q));
-    const shown = items.filter((a) => FILTERS[filter](a) && hit(a));
+    const shown = sortItems(items.filter((a) => FILTERS[filter](a) && hit(a)));
     $("apt-count").textContent = shown.length === items.length ? `${items.length}곳` : `${shown.length} / ${items.length}곳`;
     const list = $("apt-list");
     list.replaceChildren();
@@ -78,7 +114,7 @@
     if (!a.listed) return el("span", { class: "map-badge extra", title: "건물 목록에 없는 별(★) 채팅방", text: "목록 외" });
     if (!a.room_name) return el("span", { class: "map-badge none", text: "미연결" });
     if (a.room_mode === "manual") return el("span", { class: "map-badge manual", text: "직접 연결" });
-    return el("span", { class: "map-badge auto", title: "이름 유사도", text: `자동 ${a.match_score ?? ""}%` });
+    return el("span", { class: "map-badge auto", text: "자동 연결" });
   }
 
   /** 연결 편집: 목록 건물 → 채팅방 고르기, 목록 외 방 → 건물 고르기 */
@@ -96,7 +132,7 @@
         if (!rows.length) continue;
         const g = el("optgroup", { label });
         for (const r of rows) {
-          const extraText = r.linked_to ? `  → ${r.linked_to}` : r.score >= 50 ? `  · ${r.score}%` : "";
+          const extraText = r.linked_to ? `  → ${r.linked_to}` : "";
           g.append(el("option", { value: r.room_name, text: `${r.room_name}${extraText}` }));
         }
         select.append(g);
@@ -109,7 +145,7 @@
       for (const [label, rows] of [["미연결 건물", free], ["채팅방이 있는 건물 (바꿔 연결)", used]]) {
         if (!rows.length) continue;
         const g = el("optgroup", { label });
-        for (const b of rows) g.append(el("option", { value: String(b.id), text: `${b.name}${b.score >= 50 ? `  · ${b.score}%` : ""}${b.linked_room ? `  (현재: ${b.linked_room})` : ""}` }));
+        for (const b of rows) g.append(el("option", { value: String(b.id), text: `${b.name}${b.linked_room ? `  (현재: ${b.linked_room})` : ""}` }));
         select.append(g);
       }
     }
@@ -210,7 +246,7 @@
   }
 
   function summarize(r, head = []) {
-    const mapped = r.mapped.map((m) => `${m.room_name} → ${m.name} (${m.score}%)`);
+    const mapped = r.mapped.map((m) => `${m.room_name} → ${m.name}`);
     const added = r.added.map((a) => a.room_name);
     showResult(
       [...head, `자동 연결 ${r.mapped.length}건`, `목록 외 채팅방 추가 ${r.added.length}건`, `수집된 채팅방 ${r.rooms}개`],
@@ -246,7 +282,7 @@
     try {
       const r = await send("POST", "/api/admin/apartments", { name, address: $("apt-add-address").value });
       const mine = r.mapped.find((m) => m.name === name);
-      showResult([`'${name}' 을(를) 추가했습니다`, mine ? `채팅방 '${mine.room_name}' 에 자동 연결 (${mine.score}%)` : "비슷한 채팅방이 없어 미연결로 등록"], []);
+      showResult([`'${name}' 을(를) 추가했습니다`, mine ? `채팅방 '${mine.room_name}' 에 자동 연결` : "비슷한 채팅방이 없어 미연결로 등록"], []);
       $("apt-add-name").value = "";
       $("apt-add-address").value = "";
       await loadApartments();
@@ -420,6 +456,7 @@
       render();
     });
   }
+  for (const b of document.querySelectorAll(".apt-table .th-sort")) b.addEventListener("click", () => setSort(b.dataset.sort));
   $("apt-add-open").addEventListener("click", () => toggleAdd($("apt-add").hidden));
   $("apt-add-cancel").addEventListener("click", () => toggleAdd(false));
   $("apt-add-name").addEventListener("input", () => ($("apt-add-run").disabled = !$("apt-add-name").value.trim()));

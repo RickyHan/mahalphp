@@ -926,3 +926,11 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
   .apt-filter { margin-left: 0; }
 }
 .tone-amber .kpi-ico { background: var(--warn-soft); color: var(--warn); } .tone-amber .kpi-num strong { color: var(--warn); }
+
+/* 건물 목록: 열 제목 정렬 */
+.apt-table th .th-sort { all: unset; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font: inherit; color: inherit; white-space: nowrap; }
+.apt-table th .th-sort:hover { color: var(--primary-ink); }
+.apt-table th .th-sort:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+.apt-table th[aria-sort="ascending"], .apt-table th[aria-sort="descending"] { color: var(--primary-ink); }
+.apt-table th .sort-ind { font-size: 10px; min-width: 10px; }
+.apt-table th.num .th-sort { justify-content: flex-end; width: 100%; }
