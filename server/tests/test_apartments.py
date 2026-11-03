@@ -102,3 +102,35 @@ def test_vendor_sync_links_and_keeps_names(admin):
     assert [a["room_name"] for a in r["added"]] == ["●세번째업체"] and r["linked"] == []
     names = {v["room_name"]: v["name"] for v in admin.get("/api/admin/vendors").json()["items"] if v["room_name"]}
     assert names["●신규설비"] == "신규설비(주)"
+
+
+def test_stats_by_apartment(admin, settings):
+    from app import complaints as cp
+    from app import store
+
+    class Fake:
+        def classify(self, items):
+            return [cp.Verdict(i.id, True, "소음" if "소음" in i.text else "주차", "민원", 0.9) for i in items]
+
+    for room, text in (("★통계아파트A", "층간소음 심해요 조치 바랍니다"), ("★통계아파트A", "주차장 이중주차 빼주세요"),
+                       ("★통계아파트B", "윗집 소음 너무 심합니다"), ("통계일반방", "주차 문제 해결해 주세요")):
+        res = TestClient(app).post("/api/messages", headers={"X-Api-Key": API_KEY}, data={
+            "device_id": "stat", "room_name": room, "sender_name": f"{hash(text) % 900 + 100}호", "message_text": text,
+            "is_group_chat": "true", "posted_at": str(int(time.time() * 1000) + hash(text) % 1000)})
+        assert res.status_code == 201
+    store.classify_once(settings, client=Fake())
+    admin.post("/api/admin/apartments/sync")
+    apts = {a["room_name"]: a for a in admin.get("/api/admin/apartments").json()["items"]}
+    a_id = apts["★통계아파트A"]["id"]
+    admin.put(f"/api/admin/apartments/{a_id}", json={"name": "통계A단지"})
+
+    whole = admin.get("/api/admin/stats", params={"period": "today"}).json()
+    groups = {g[0]: g for g in whole["group_detail"]}
+    assert groups["통계A단지"][1] == 2 and groups["통계A단지"][2] == {"소음": 1, "주차": 1}
+    assert "통계아파트B" in groups and groups["아파트 외 방"][1] >= 1
+    assert whole["apartment"] is None and any(a["id"] == a_id for a in whole["apartments"])
+
+    one = admin.get("/api/admin/stats", params={"period": "today", "apartment_id": a_id}).json()
+    assert one["issues"] == 2 and dict(one["by_category"]) == {"소음": 1, "주차": 1}
+    assert one["apartment"]["name"] == "통계A단지" and one["group_detail"] == []
+    assert admin.get("/api/admin/stats", params={"apartment_id": 999999}).status_code == 404

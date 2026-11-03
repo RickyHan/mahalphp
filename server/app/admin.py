@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 
 from pydantic import BaseModel, Field
@@ -331,22 +331,46 @@ def complaint_group(settings: SettingsDep, ids: Annotated[str, Query(pattern=r"^
 
 
 @router.get("/api/admin/stats", dependencies=[Admin])
-def complaint_stats(settings: SettingsDep, period: Annotated[str, Query(pattern="^(today|week|month|all)$")] = "week") -> dict[str, Any]:
+def complaint_stats(
+    settings: SettingsDep,
+    period: Annotated[str, Query(pattern="^(today|week|month|all)$")] = "week",
+    apartment_id: int | None = None,
+) -> dict[str, Any]:
+    """apartment_id 를 주면 그 아파트 채팅방의 민원만, 없으면 전체 + 아파트별 묶음(group_detail)"""
     with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, name, room_name FROM apartments ORDER BY name, id")
+        apartments = cur.fetchall()
+        apartment = None
+        if apartment_id is not None:
+            apartment = next((a for a in apartments if a["id"] == apartment_id), None)
+            if apartment is None:
+                raise HTTPException(404, "아파트가 없습니다.")
         rows = store.complaint_rows(cur)
+        if apartment:
+            rows = [r for r in rows if r["room_name"] == apartment["room_name"]]
         order = [c["name"] for c in categories.all_categories(cur)]
-        stats = cp.compute_stats(cp.group_complaints(rows, store.current_group_window(cur)), period, store.now_local(settings))
-        # 업체 카톡방 전달
+        stats = cp.compute_stats(
+            cp.group_complaints(rows, store.current_group_window(cur)), period, store.now_local(settings),
+            room_label=None if apartment else {a["room_name"]: a["name"] for a in apartments},
+        )
+        # 업체 카톡방 전달 (아파트를 고르면 그 아파트 민원에서 나간 요청만)
         start = stats.pop("range_start")
-        where, params = "kind = 'vendor'", []
+        where, params = "q.kind = 'vendor'", []
         if start is not None:
-            where += " AND created_at >= %s"
+            where += " AND q.created_at >= %s"
             params.append(start)
-        cur.execute(f"SELECT status, COUNT(*) AS n FROM reply_queue WHERE {where} GROUP BY status", params)
+        join = ""
+        if apartment:
+            join = "JOIN kakao_messages m ON m.id = q.message_id"
+            where += " AND m.room_name = %s"
+            params.append(apartment["room_name"])
+        cur.execute(f"SELECT q.status, COUNT(*) AS n FROM reply_queue q {join} WHERE {where} GROUP BY q.status", params)
         vendor_counts = {r["status"]: int(r["n"]) for r in cur.fetchall()}
     return {
         "ok": True,
         **stats,
+        "apartment": apartment,
+        "apartments": [{"id": a["id"], "name": a["name"]} for a in apartments],
         "category_order": order,  # 색은 이 순서로 고정 배정 (기간이 바뀌어도 같은 분류는 같은 색)
         "vendor_sent": vendor_counts.get("sent", 0),
         "vendor_failed": vendor_counts.get("failed", 0) + vendor_counts.get("expired", 0),

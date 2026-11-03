@@ -12,6 +12,7 @@
   const PERIOD_LABEL = { today: "오늘", week: "최근 7일", month: "최근 30일", all: "전체" };
   const PREV_LABEL = { today: "어제", week: "직전 7일", month: "직전 30일" };
   let period = "week";
+  let apartmentId = ""; // "" = 전체
 
   // ---- 공통 ---------------------------------------------------------------------------------
 
@@ -191,7 +192,7 @@
 
   // ---- 가로 막대 (방별: 분류 쌓음 / 제기자: 단색) ------------------------------------------------------------
 
-  function hstack(rows, cats, slotOf) {
+  function hstack(rows, cats, slotOf, onPick = null) {
     if (!rows.length) return empty();
     const max = rows[0][1];
     const list = el("ul", { class: "hs" });
@@ -204,7 +205,12 @@
         seg.style.flexGrow = String(byCat[c]);
         bar.append(seg);
       }
-      const row = el("li", { tabindex: "0" }, el("span", { class: "hs-name", text: name, title: name }), el("span", { class: "hs-track" }, bar), el("span", { class: "hs-val", text: `${fmt(n)}건` }));
+      const pick = onPick && onPick(name);
+      const row = el("li", { tabindex: "0", class: pick ? "hs-pick" : "" }, el("span", { class: "hs-name", text: name, title: pick ? `${name} 통계 보기` : name }), el("span", { class: "hs-track" }, bar), el("span", { class: "hs-val", text: `${fmt(n)}건` }));
+      if (pick) {
+        row.addEventListener("click", pick);
+        row.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), pick()));
+      }
       bindTip(row, () => [name, ...cats.filter((c) => byCat[c]).map((c) => `● ${c} ${fmt(byCat[c])}건`)]);
       list.append(row);
     }
@@ -268,16 +274,47 @@
 
   async function loadStats() {
     for (const b of $("st-periods").children) b.setAttribute("aria-pressed", String(b.dataset.period === period));
-    const s = await api("/api/admin/stats", { period });
+    const s = await api("/api/admin/stats", { period, apartment_id: apartmentId || null });
+    // 아파트 선택 칸 (목록이 바뀌면 다시 채움, 고른 값 유지)
+    const sel = $("st-apartment");
+    const sig = s.apartments.map((a) => `${a.id}:${a.name}`).join("|");
+    if (sel.dataset.sig !== sig) {
+      sel.replaceChildren(el("option", { value: "", text: `전체 아파트·방${s.apartments.length ? ` (아파트 ${s.apartments.length}곳)` : ""}` }), ...s.apartments.map((a) => el("option", { value: String(a.id), text: a.name })));
+      sel.dataset.sig = sig;
+    }
+    sel.value = apartmentId;
+    const pickApartment = (name) => {
+      const a = s.apartments.find((x) => x.name === name);
+      return a ? () => { apartmentId = String(a.id); loadStats().catch(reportError); } : null;
+    };
     const slotOf = colorMap(s.category_order || []);
     // 범례·쌓는 순서도 등록 순서 (데이터에 있는 분류만)
     const present = new Set(
-      s.daily_detail.flatMap((d) => Object.keys(d[2]).filter((c) => d[2][c] > 0)).concat(s.by_category.map((c) => c[0]), s.room_detail.flatMap((r) => Object.keys(r[2]).filter((c) => r[2][c] > 0))),
+      s.daily_detail.flatMap((d) => Object.keys(d[2]).filter((c) => d[2][c] > 0)).concat(
+        s.by_category.map((c) => c[0]),
+        s.room_detail.flatMap((r) => Object.keys(r[2]).filter((c) => r[2][c] > 0)),
+        (s.group_detail || []).flatMap((r) => Object.keys(r[2]).filter((c) => r[2][c] > 0)),
+      ),
     );
     const cats = [...(s.category_order || []).filter((c) => present.has(c)), ...[...present].filter((c) => !(s.category_order || []).includes(c))];
     const byCatOrdered = [...s.by_category].sort((a, b) => b[1] - a[1]);
 
+    const scope = s.apartment
+      ? el(
+          "div",
+          { class: "st-scope" },
+          el("span", { class: "ms", "aria-hidden": "true", text: "apartment" }),
+          el("strong", { text: s.apartment.name }),
+          el("span", { class: "muted", text: " 통계 · 채팅방 " }),
+          KC.roomChip(s.apartment.room_name),
+          el("button", { class: "btn btn-small st-scope-all", type: "button", onclick: () => { apartmentId = ""; loadStats().catch(reportError); } }, el("span", { class: "ms", text: "close" }), "전체 보기"),
+        )
+      : null;
+    const placeCard = s.apartment
+      ? card("민원 제기자 TOP 10", hbars(s.by_sender, s.issues), "span-12")
+      : card("아파트별 문제 TOP 10", hstack(s.group_detail || [], cats, slotOf, pickApartment), "span-6", "누르면 그 아파트 통계");
     $("st-body").replaceChildren(
+      ...(scope ? [scope] : []),
       kpis(s),
       el(
         "div",
@@ -286,13 +323,17 @@
         card(period === "all" ? "일별 추이 (최근 30일)" : "일별 추이", stackedColumns(s.daily_detail, cats, slotOf), "span-7", "막대에 마우스를 올리면 분류별 건수"),
         card("요일 · 시간대", heatmap(s.weekday_hour), "span-7", "문제가 시작된 시각 기준"),
         card("처리 현황", outcome(s), "span-5"),
-        card("방별 문제 TOP 10", hstack(s.room_detail, cats, slotOf), "span-6"),
-        card("민원 제기자 TOP 10", hbars(s.by_sender, s.issues), "span-6"),
+        placeCard,
+        ...(s.apartment ? [] : [card("민원 제기자 TOP 10", hbars(s.by_sender, s.issues), "span-6")]),
       ),
     );
   }
 
   KC.loaders = Object.assign(KC.loaders || {}, { stats: loadStats });
+  $("st-apartment").addEventListener("change", (e) => {
+    apartmentId = e.target.value;
+    loadStats().catch(reportError);
+  });
   for (const b of $("st-periods").children) {
     b.addEventListener("click", () => {
       period = b.dataset.period;

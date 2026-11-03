@@ -262,7 +262,9 @@ def group_complaints(rows: list[dict[str, Any]], window: timedelta = GROUP_WINDO
 PERIODS = {"today": 1, "week": 7, "month": 30, "all": None}
 
 
-def compute_stats(groups: list[Group], period: str, now: datetime, top: int = 10) -> dict[str, Any]:
+def compute_stats(groups: list[Group], period: str, now: datetime, top: int = 10,
+                  room_label: dict[str, str] | None = None, other_label: str = "아파트 외 방") -> dict[str, Any]:
+    """room_label 을 주면 방 이름을 그 이름(예: 아파트)으로 묶은 group_detail 도 만든다 (없는 방은 other_label)."""
     days = PERIODS.get(period, 7)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     start = today - timedelta(days=days - 1) if days else None
@@ -304,6 +306,10 @@ def compute_stats(groups: list[Group], period: str, now: datetime, top: int = 10
         [room, n, by_cat([g for g in in_range if g.first["room_name"] == room])]
         for room, n in ranked(lambda g: g.first["room_name"])
     ]
+    group_detail = []
+    if room_label is not None:
+        label = lambda g: room_label.get(g.first["room_name"], other_label)  # noqa: E731
+        group_detail = [[name, n, by_cat([g for g in in_range if label(g) == name])] for name, n in ranked(label)]
     # 직전 같은 길이 기간 (전체 기간은 비교 없음)
     prev_issues = None
     if start is not None:
@@ -315,6 +321,7 @@ def compute_stats(groups: list[Group], period: str, now: datetime, top: int = 10
         "weekday_hour": weekday_hour,
         "daily_detail": daily_detail,
         "room_detail": room_detail,
+        "group_detail": group_detail,
         "period": period,
         "issues": len(in_range),
         "messages": sum(len(g.items) for g in in_range),

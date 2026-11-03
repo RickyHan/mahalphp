@@ -877,3 +877,18 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .switch-toggle:focus-visible { outline: 2px solid var(--primary-ring); outline-offset: 2px; }
 @media (max-width: 900px) { .sc-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .switch-toggle, .switch-toggle::after { transition: none; } }
+
+/* 통계: 아파트 선택 */
+.st-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.st-apt { position: relative; display: inline-flex; align-items: center; }
+.st-apt .ms { position: absolute; left: 10px; color: var(--primary-ink); font-size: 18px; pointer-events: none; }
+.st-apt select { height: 42px; min-width: 240px; padding-left: 34px; font-weight: 600; border-radius: var(--radius); box-shadow: var(--shadow); }
+.st-scope { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-radius: var(--radius); background: var(--primary-soft); border: 1px solid #bfdbfe; font-size: 14px; }
+.st-scope > .ms { color: var(--primary-ink); font-size: 22px; }
+.st-scope strong { font-size: 16px; }
+.st-scope-all { margin-left: auto; }
+.span-12 { grid-column: span 12; }
+.hs li.hs-pick { cursor: pointer; padding: 2px 4px; margin: -2px -4px; }
+.hs li.hs-pick:hover { background: var(--primary-soft); }
+.hs li.hs-pick:hover .hs-name { color: var(--primary-ink); text-decoration: underline; }
+@media (max-width: 600px) { .st-apt, .st-apt select { width: 100%; } }
