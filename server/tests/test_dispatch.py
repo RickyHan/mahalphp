@@ -20,7 +20,7 @@ DEVICE = "dispatch-phone"
 
 class FakeGemini:
     def classify(self, items):
-        return [cp.Verdict(i.id, "누수" in i.text, "누수·하자" if "누수" in i.text else "기타", "누수 민원", 0.9) for i in items]
+        return [cp.Verdict(i.id, "누수" in i.text, "누수" if "누수" in i.text else "기타", "누수 민원", 0.9) for i in items]
 
 
 @pytest.fixture
@@ -50,7 +50,7 @@ def _report(reply_id, sent, note=None, device=DEVICE):
 
 
 def test_vendor_message_template():
-    text = cp.format_vendor_message(cp.DEFAULT_VENDOR_TEMPLATE, vendor="엘레벨레", room="OO아파트", category="누수·하자", summary="천장 누수",
+    text = cp.format_vendor_message(cp.DEFAULT_VENDOR_TEMPLATE, vendor="엘레벨레", room="OO아파트", category="누수", summary="천장 누수",
                                     content="물이   새요\n빨리", sender="1203호", at=datetime(2026, 11, 2, 9, 5))
     assert "엘레벨레 담당자님" in text and "'OO아파트' 대화방" in text and "물이 새요 빨리" in text
     assert "- 보낸 사람: 1203호" in text and "- 접수 시각: 11/02 09:05" in text
@@ -58,7 +58,7 @@ def test_vendor_message_template():
 
 
 def test_complaint_ack_then_vendor_room(admin, settings):
-    cat = next(c for c in admin.get("/api/admin/categories").json()["items"] if c["name"] == "누수·하자")
+    cat = next(c for c in admin.get("/api/admin/categories").json()["items"] if c["name"] == "누수")
     _post("엘레벨레 업무방", "엘레벨레", "안녕하세요 업체입니다")  # 업체 방 알림을 이 휴대폰이 받고 있음
     assert admin.post("/api/admin/vendors", data={"name": "엘레벨레", "room_name": "엘레벨레 업무방", "category_id": str(cat["id"])}).status_code == 201
     assert admin.post("/api/admin/vendors", data={"name": "방없는업체", "category_id": str(cat["id"])}).status_code == 201
@@ -83,7 +83,7 @@ def test_complaint_ack_then_vendor_room(admin, settings):
     # 이력 · 다시 보내기
     hist = admin.get("/api/admin/vendor-dispatch").json()
     row = next(h for h in hist["items"] if h["message_id"] == mid)
-    assert row["complaint_room"] == "전달테스트방" and row["category"] == "누수·하자" and row["status"] == "failed"
+    assert row["complaint_room"] == "전달테스트방" and row["category"] == "누수" and row["status"] == "failed"
     assert admin.post(f"/api/admin/vendor-dispatch/{row['id']}/retry").status_code == 200
     assert admin.post(f"/api/admin/vendor-dispatch/{row['id']}/retry").status_code == 422  # 이미 대기 중
     again = _pending()
@@ -169,7 +169,7 @@ def test_group_minutes_setting(admin, settings):
 
 def test_apartment_specific_vendors(admin, settings):
     """같은 민원 분류라도 아파트마다 다른 업체로: 아파트 지정 → 없으면 기본 업체 → '보내지 않음'"""
-    cat = next(c for c in admin.get("/api/admin/categories").json()["items"] if c["name"] == "주차")
+    cat = next(c for c in admin.get("/api/admin/categories").json()["items"] if c["name"] == "기계주차")
     for room in ("●기본주차업체", "●동네주차업체", "★가나아파트", "★다라아파트"):
         _post(room, "관리", "안녕하세요 처음 인사드립니다")
     admin.post("/api/admin/vendors/sync")
@@ -190,16 +190,16 @@ def test_apartment_specific_vendors(admin, settings):
     assert r.status_code == 200
     assert next(x for x in r.json()["categories"] if x["category_id"] == cat["id"])["mode"] == "vendor"
     with db.transaction(settings) as conn, conn.cursor() as cur:
-        assert [v["name"] for v in store.target_vendors(cur, "★가나아파트", "주차")] == [local["name"]]
-        assert [v["name"] for v in store.target_vendors(cur, "★다라아파트", "주차")] == [base["name"]]  # 지정 없음 → 기본
-        assert [v["name"] for v in store.target_vendors(cur, "일반방", "주차")] == [base["name"]]
+        assert [v["name"] for v in store.target_vendors(cur, "★가나아파트", "기계주차")] == [local["name"]]
+        assert [v["name"] for v in store.target_vendors(cur, "★다라아파트", "기계주차")] == [base["name"]]  # 지정 없음 → 기본
+        assert [v["name"] for v in store.target_vendors(cur, "일반방", "기계주차")] == [base["name"]]
     apts = {a["room_name"]: a for a in admin.get("/api/admin/apartments").json()["items"]}
     assert apts["★가나아파트"]["assigned"] == 1 and apts["★다라아파트"]["assigned"] == 0
 
     # 실제 민원 흐름: 가나아파트 주차 민원 → 동네주차업체 톡방
     class ParkingGemini:
         def classify(self, items):
-            return [cp.Verdict(i.id, True, "주차", "주차 민원", 0.9) for i in items]
+            return [cp.Verdict(i.id, True, "기계주차", "주차 민원", 0.9) for i in items]
 
     _post("★가나아파트", "101호", "주차장에 이중주차 차량 빼주세요")
     store.classify_once(settings, client=ParkingGemini())
@@ -212,7 +212,7 @@ def test_apartment_specific_vendors(admin, settings):
     # 다라아파트는 주차를 '보내지 않음'으로
     admin.put(f"/api/admin/apartments/{da['id']}/vendors", json={"assignments": [{"category_id": cat["id"], "mode": "none"}]})
     with db.transaction(settings) as conn, conn.cursor() as cur:
-        assert store.target_vendors(cur, "★다라아파트", "주차") == [] or list(store.target_vendors(cur, "★다라아파트", "주차")) == []
+        assert store.target_vendors(cur, "★다라아파트", "기계주차") == [] or list(store.target_vendors(cur, "★다라아파트", "기계주차")) == []
     # 잘못된 값 거부, 업체 삭제 시 아파트 지정도 정리
     assert admin.put(f"/api/admin/apartments/{ga['id']}/vendors", json={"assignments": [{"category_id": cat["id"], "mode": "vendor", "vendor_id": 999999}]}).status_code == 422
     assert admin.delete(f"/api/admin/vendors/{local['id']}").status_code == 200

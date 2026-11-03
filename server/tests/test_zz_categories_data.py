@@ -66,10 +66,10 @@ def test_category_crud_and_rules(admin, settings):
     etc = _cat(admin, "기타")
     assert etc["protected"] is True
 
-    res = admin.post("/api/admin/categories", json={"name": " 엘리베이터 ", "description": "승강기 고장·갇힘"})
+    res = admin.post("/api/admin/categories", json={"name": " 주민공지 ", "description": "승강기 고장·갇힘"})
     assert res.status_code == 201
     new_id = res.json()["id"]
-    assert admin.post("/api/admin/categories", json={"name": "엘리베이터"}).status_code == 409
+    assert admin.post("/api/admin/categories", json={"name": "주민공지"}).status_code == 409
     assert admin.post("/api/admin/categories", json={"name": 'a"b'}).status_code == 422
 
     # '기타'는 이름 변경·삭제 불가
@@ -78,16 +78,16 @@ def test_category_crud_and_rules(admin, settings):
 
     # 이름 변경 시 기존 민원 분류도 함께
     with db.transaction(settings) as conn, conn.cursor() as cur:
-        mid = _post(TestClient(app), "카테고리방", "엘리베이터가 멈췄어요 빨리요")["id"]
-        store.save_verdicts(cur, [cp.Verdict(mid, True, "엘리베이터", "엘리베이터 고장", 0.9)], "m", store.now_local(settings))
-    res = admin.put(f"/api/admin/categories/{new_id}", json={"name": "승강기", "description": "승강기 고장", "enabled": True})
+        mid = _post(TestClient(app), "카테고리방", "공지 확인 부탁드려요 빨리요")["id"]
+        store.save_verdicts(cur, [cp.Verdict(mid, True, "주민공지", "공지", 0.9)], "m", store.now_local(settings))
+    res = admin.put(f"/api/admin/categories/{new_id}", json={"name": "게시판", "description": "게시판", "enabled": True})
     assert res.json()["renamed_complaints"] == 1
-    assert _cat(admin, "승강기")["complaints"] == 1
+    assert _cat(admin, "게시판")["complaints"] == 1
 
     # 순서 변경
     ids = [c["id"] for c in admin.get("/api/admin/categories").json()["items"]]
     assert admin.post("/api/admin/categories/order", json={"ids": [new_id] + [i for i in ids if i != new_id]}).status_code == 200
-    assert admin.get("/api/admin/categories").json()["items"][0]["name"] == "승강기"
+    assert admin.get("/api/admin/categories").json()["items"][0]["name"] == "게시판"
 
     # 삭제 시 기존 민원은 '기타'로
     res = admin.delete(f"/api/admin/categories/{new_id}")
@@ -125,12 +125,12 @@ def test_prompt_uses_enabled_categories(admin, settings, monkeypatch):
 
 
 def test_vendor_category(admin):
-    cat = _cat(admin, "소음")
+    cat = _cat(admin, "승강기")
     res = admin.post("/api/admin/vendors", data={"name": "방음공사", "category_id": str(cat["id"])})
     assert res.status_code == 201, res.text
     vid = res.json()["id"]
     v = next(x for x in admin.get("/api/admin/vendors").json()["items"] if x["id"] == vid)
-    assert v["category_id"] == cat["id"] and v["category_name"] == "소음"
+    assert v["category_id"] == cat["id"] and v["category_name"] == "승강기"
     assert admin.post("/api/admin/vendors", data={"name": "x", "category_id": "999999"}).status_code == 422
     assert admin.put(f"/api/admin/vendors/{vid}", data={"name": "방음공사", "category_id": ""}).status_code == 200
     v = next(x for x in admin.get("/api/admin/vendors").json()["items"] if x["id"] == vid)
@@ -194,3 +194,26 @@ def test_delete_all_requires_confirmation_and_keeps_setup(admin, settings):
     # 삭제 후에도 수집은 정상
     assert _post(TestClient(app), "새방", "삭제 후 첫 메시지")["duplicate"] is False
     json.dumps(res.json())
+
+
+def test_category_set_replacement(settings):
+    """기본 분류 묶음이 바뀌면 기존 분류를 한 번 교체: 이어지는 분류는 유지, 나머지 민원은 '기타'로"""
+    from datetime import datetime as _dt
+
+    from app import categories as cg
+
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM complaint_categories WHERE name = '누수'")
+        leak = cur.fetchone()["id"]
+        cur.execute("UPDATE complaint_categories SET name = '누수·하자' WHERE id = %s", (leak,))
+        cur.execute(
+            "INSERT INTO complaint_categories (name, description, sort_order, enabled, created_at) VALUES ('옛분류', '', 50, 1, %s)",
+            (_dt.now(),),
+        )
+        cur.execute("UPDATE app_settings SET value = '1' WHERE name = 'category_set'")
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        names = [r["name"] for r in cg.all_categories(cur)]
+        assert names == cp.CATEGORIES
+        assert next(r["id"] for r in cg.all_categories(cur) if r["name"] == "누수") == leak  # 업체 지정 유지
+        cur.execute("SELECT value FROM app_settings WHERE name = 'category_set'")
+        assert cur.fetchone()["value"] == cp.CATEGORY_SET_VERSION

@@ -28,23 +28,71 @@ NAME = re.compile(r'^[^"|\\{}<>\n\r\t]{1,30}$')
 
 # ---- 저장소 함수 (store·admin 에서도 사용) ---------------------------------------------------
 
+def _setting(cur, name: str) -> str | None:
+    cur.execute("SELECT value FROM app_settings WHERE name = %s", (name,))
+    row = cur.fetchone()
+    return row["value"] if row else None
+
+
+def replace_with_defaults(cur) -> None:
+    """기존 분류를 모두 걷어내고 기본 분류 묶음으로 바꾼다.
+
+    이름이 이어지는 분류(CATEGORY_RENAMES)는 이름만 바꿔 민원 기록과 업체 지정을 유지한다.
+    나머지 이전 분류의 민원은 '기타'로 옮기고, 업체·아파트별 지정은 해제한다.
+    """
+    names = [n for n, _ in cp.DEFAULT_CATEGORIES]
+    desc = dict(cp.DEFAULT_CATEGORIES)
+    cur.execute("SELECT id, name FROM complaint_categories")
+    existing = {r["name"]: r["id"] for r in cur.fetchall()}
+    for old, new in cp.CATEGORY_RENAMES.items():
+        if old in existing and new not in existing:
+            cur.execute("UPDATE complaint_categories SET name = %s WHERE id = %s", (new, existing[old]))
+            cur.execute("UPDATE complaint_check SET category = %s WHERE category = %s", (new, old))
+            existing[new] = existing.pop(old)
+    for name, cid in list(existing.items()):
+        if name in desc:
+            continue
+        cur.execute("UPDATE complaint_check SET category = %s WHERE category = %s", (cp.FALLBACK_CATEGORY, name))
+        cur.execute("UPDATE vendors SET category_id = NULL WHERE category_id = %s", (cid,))
+        cur.execute("DELETE FROM apartment_vendors WHERE category_id = %s", (cid,))
+        cur.execute("DELETE FROM complaint_categories WHERE id = %s", (cid,))
+        del existing[name]
+    now = datetime.now()
+    for order, name in enumerate(names):
+        sort = 9999 if name == cp.FALLBACK_CATEGORY else order
+        if name in existing:
+            cur.execute(
+                "UPDATE complaint_categories SET description = %s, sort_order = %s, enabled = 1 WHERE id = %s",
+                (desc[name], sort, existing[name]),
+            )
+        else:
+            cur.execute(
+                "INSERT INTO complaint_categories (name, description, sort_order, enabled, created_at) VALUES (%s, %s, %s, 1, %s)",
+                (name, desc[name], sort, now),
+            )
+    cur.execute("DELETE FROM app_settings WHERE name = 'category_set'")
+    cur.execute("INSERT INTO app_settings (name, value) VALUES ('category_set', %s)", (cp.CATEGORY_SET_VERSION,))
+
+
 def ensure_defaults(cur) -> None:
-    """처음 사용할 때 기본 분류를 넣고, '기타'가 없으면 다시 만든다."""
-    cur.execute("SELECT COUNT(*) AS n FROM complaint_categories")
-    empty = cur.fetchone()["n"] == 0
-    rows = cp.DEFAULT_CATEGORIES if empty else [(cp.FALLBACK_CATEGORY, "위 분류에 해당하지 않는 민원")]
-    for order, (name, desc) in enumerate(rows):
-        cur.execute("SELECT id FROM complaint_categories WHERE name = %s", (name,))
-        if cur.fetchone() is None:
-            sort = order if empty else 9999
-            try:
-                cur.execute(
-                    "INSERT INTO complaint_categories (name, description, sort_order, enabled, created_at) VALUES (%s, %s, %s, 1, %s)",
-                    (name, desc, sort, datetime.now()),
-                )
-            except db.IntegrityError as exc:  # 동시에 다른 요청이 넣은 경우
-                if not db.is_duplicate(exc):
-                    raise
+    """기본 분류 묶음 판이 다르면(처음 설치 포함) 한 번 교체하고, '기타'가 없으면 다시 만든다."""
+    if _setting(cur, "category_set") != cp.CATEGORY_SET_VERSION:
+        try:
+            replace_with_defaults(cur)
+        except db.IntegrityError as exc:  # 동시에 다른 요청이 교체한 경우
+            if not db.is_duplicate(exc):
+                raise
+        return
+    cur.execute("SELECT id FROM complaint_categories WHERE name = %s", (cp.FALLBACK_CATEGORY,))
+    if cur.fetchone() is None:
+        try:
+            cur.execute(
+                "INSERT INTO complaint_categories (name, description, sort_order, enabled, created_at) VALUES (%s, %s, 9999, 1, %s)",
+                (cp.FALLBACK_CATEGORY, "위 분류에 해당하지 않는 민원", datetime.now()),
+            )
+        except db.IntegrityError as exc:
+            if not db.is_duplicate(exc):
+                raise
 
 
 def all_categories(cur) -> list[dict[str, Any]]:
