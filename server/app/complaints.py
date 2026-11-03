@@ -174,19 +174,18 @@ class GeminiClient:
         self.api_key, self.model, self.timeout = api_key, model, timeout
         self.categories = categories
 
-    def classify(self, items: list[Item]) -> list[Verdict]:
+    def _post(self, body: dict[str, Any]) -> dict[str, Any]:
         try:
             res = httpx.post(
                 f"{self.BASE}/{self.model}:generateContent",
                 headers={"x-goog-api-key": self.api_key},
-                json=request_body(items, self.categories),
+                json=body,
                 timeout=self.timeout,
             )
         except httpx.HTTPError as exc:
             raise GeminiError(f"네트워크 오류: {exc}", retry=True) from exc
         if res.status_code == 200:
-            allowed = {n for n, _ in self.categories} if self.categories else None
-            return parse_response(res.json(), {i.id for i in items}, allowed)
+            return res.json()
         text = res.text[:200]
         if res.status_code == 400 and "API_KEY_INVALID" in text:
             raise GeminiError("Gemini API 키가 올바르지 않습니다", retry=False)
@@ -198,6 +197,75 @@ class GeminiClient:
             raise GeminiError(f"Gemini 일시 오류 (HTTP {res.status_code})", retry=True)
         raise GeminiError(f"HTTP {res.status_code}: {text}", retry=False)
 
+    def classify(self, items: list[Item]) -> list[Verdict]:
+        body = self._post(request_body(items, self.categories))
+        allowed = {n for n, _ in self.categories} if self.categories else None
+        return parse_response(body, {i.id for i in items}, allowed)
+
+    def match_faq(self, items: list[Item], faqs: list[tuple[int, str, str]]) -> list["FaqMatch"]:
+        body = self._post(faq_request_body(items, faqs))
+        return parse_faq_response(body, {i.id for i in items}, {f[0] for f in faqs})
+
+
+# ---- FAQ 자동 답변: 메시지가 어느 FAQ 질문과 같은 의도인지 ---------------------------------------
+
+FAQ_MIN_CONFIDENCE = 0.75  # 이보다 낮으면 답변하지 않음
+
+
+@dataclass(frozen=True)
+class FaqMatch:
+    id: int
+    faq_id: int
+    confidence: float
+
+
+def build_faq_prompt(faqs: list[tuple[int, str, str]]) -> str:
+    """faqs: (id, 분야, 질문)"""
+    guide = "\n".join(f"  {fid}. [{cat}] {q}" if cat else f"  {fid}. {q}" for fid, cat, q in faqs)
+    return f"""너는 빌라·공동주택 관리회사의 상담 담당자다.
+입주민 카카오톡 단체방에서 수집한 메시지 각각이 아래 자주 묻는 질문(FAQ) 중 하나와 "같은 의도"인지 판정하라.
+
+같은 의도로 본다: 그 FAQ 질문이 다루는 상황을 입주민이 겪고 있거나(예: "엘리베이터가 멈췄어요" → 승강기 고장),
+  그 내용을 묻거나 요청하는 메시지. 표현이 달라도 의도가 같으면 해당한다.
+해당 없음(null): 인사·잡담·감사, 관리회사·관리자의 공지나 답변, 이미 처리됐다는 보고, 다른 사람 말에 대한 단순 맞장구,
+  FAQ 와 주제만 비슷하고 묻는 내용이 다른 경우, 여러 FAQ 중 어느 것인지 애매한 경우. 애매하면 null 로 한다.
+
+FAQ 목록 (번호. [분야] 질문):
+{guide}
+
+반드시 아래 JSON 형식으로만 답하라. 입력의 모든 id 에 대해 결과를 하나씩 포함한다.
+{{"results":[{{"id":입력id,"faq_id":FAQ 번호 또는 null,"confidence":0.0~1.0}}]}}"""
+
+
+def faq_request_body(items: list[Item], faqs: list[tuple[int, str, str]]) -> dict[str, Any]:
+    user = json.dumps([{"id": i.id, "sender": i.sender, "text": i.text[:1000]} for i in items], ensure_ascii=False)
+    return {
+        "systemInstruction": {"parts": [{"text": build_faq_prompt(faqs)}]},
+        "contents": [{"role": "user", "parts": [{"text": user}]}],
+        "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
+    }
+
+
+def parse_faq_response(body: dict[str, Any], requested: set[int], faq_ids: set[int]) -> list[FaqMatch]:
+    """확실한(FAQ_MIN_CONFIDENCE 이상) 짝만 돌려준다"""
+    try:
+        parts = body["candidates"][0]["content"]["parts"]
+        results = json.loads("".join(p.get("text", "") for p in parts))["results"]
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise ValueError(f"FAQ 응답 해석 실패: {exc}") from exc
+    seen: dict[int, FaqMatch] = {}
+    for r in results if isinstance(results, list) else []:
+        if not isinstance(r, dict):
+            continue
+        try:
+            rid, fid = int(r.get("id", -1)), r.get("faq_id")
+            fid = int(fid) if fid is not None else None
+            confidence = min(1.0, max(0.0, float(r.get("confidence", 0))))
+        except (TypeError, ValueError):
+            continue
+        if rid in requested and rid not in seen and fid in faq_ids and confidence >= FAQ_MIN_CONFIDENCE:
+            seen[rid] = FaqMatch(rid, fid, confidence)
+    return list(seen.values())
 
 def format_vendor_message(template: str, *, vendor: str, room: str, category: str, summary: str, content: str, sender: str, at: datetime) -> str:
     values = {

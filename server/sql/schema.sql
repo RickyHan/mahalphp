@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS `reply_queue` (
   `note`       VARCHAR(255)    NULL,
   `created_at` DATETIME(3)     NOT NULL,
   `done_at`    DATETIME(3)     NULL,
-  `kind`        VARCHAR(10)     NOT NULL DEFAULT 'ack' COMMENT 'ack=민원 방 접수 안내, vendor=업체 카톡방 처리 요청, schedule=예약 메시지',
+  `kind`        VARCHAR(10)     NOT NULL DEFAULT 'ack' COMMENT 'ack=민원 방 접수 안내, vendor=업체 카톡방 처리 요청, schedule=예약 메시지, faq=FAQ 자동 답변',
   `vendor_id`   BIGINT UNSIGNED NULL,
   `vendor_name` VARCHAR(100)    NULL,
   `schedule_id` BIGINT UNSIGNED NULL COMMENT 'kind=schedule 일 때 예약 메시지 id',
@@ -201,3 +201,31 @@ CREATE TABLE IF NOT EXISTS `vendors` (
 -- 권장: DBA 계정 대신 이 스키마 전용 최소 권한 계정을 만들어 서버 .env에 사용
 -- CREATE USER 'kakao_app'@'%' IDENTIFIED BY '<강력한 비밀번호>';
 -- GRANT SELECT, INSERT, UPDATE ON `kakao_collector`.* TO 'kakao_app'@'%';
+
+-- FAQ 자동 답변: 건물 채팅방의 질문이 FAQ 질문과 의도가 같으면 답변을 보낸다
+CREATE TABLE IF NOT EXISTS `faq_items` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `category`   VARCHAR(50)     NOT NULL DEFAULT '' COMMENT '분야',
+  `question`   VARCHAR(500)    NOT NULL COMMENT '질문(의도)',
+  `answer`     TEXT            NOT NULL COMMENT '보낼 답변',
+  `enabled`    TINYINT(1)      NOT NULL DEFAULT 1 COMMENT '자동 답변 사용',
+  `sort_order` INT             NOT NULL DEFAULT 0,
+  `created_at` DATETIME(3)     NOT NULL,
+  `updated_at` DATETIME(3)     NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='FAQ';
+
+-- FAQ 자동 답변 이력 (어떤 메시지에 어떤 답변을 보냈는지)
+CREATE TABLE IF NOT EXISTS `faq_answers` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `message_id` BIGINT UNSIGNED NOT NULL,
+  `faq_id`     BIGINT UNSIGNED NULL,
+  `question`   VARCHAR(500)    NOT NULL DEFAULT '' COMMENT '보낼 당시 FAQ 질문',
+  `room_name`  VARCHAR(255)    NOT NULL,
+  `reply_id`   BIGINT UNSIGNED NULL COMMENT 'reply_queue id (보내지 않았으면 NULL)',
+  `confidence` DECIMAL(4,3)    NOT NULL DEFAULT 0,
+  `note`       VARCHAR(255)    NULL,
+  `created_at` DATETIME(3)     NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_faq_answers_room` (`room_name`, `faq_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='FAQ 자동 답변 이력';

@@ -934,3 +934,28 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .apt-table th[aria-sort="ascending"], .apt-table th[aria-sort="descending"] { color: var(--primary-ink); }
 .apt-table th .sort-ind { font-size: 10px; min-width: 10px; }
 .apt-table th.num .th-sort { justify-content: flex-end; width: 100%; }
+
+/* ---- FAQ 자동 답변 ---- */
+.fq-switch { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); font-weight: 700; cursor: pointer; flex: none; }
+.fq-switch #fq-state { color: var(--muted); min-width: 44px; }
+.fq-switch #fq-state.on { color: var(--success); }
+.callout.warn { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.callout.warn > .ms { background: var(--warn); }
+.fq-table td { vertical-align: top; }
+.fq-table tr.off td { opacity: .55; }
+.fq-cat { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--primary-soft); color: var(--primary-ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.fq-q { min-width: 200px; max-width: 320px; font-weight: 600; white-space: pre-line; }
+.fq-a { max-width: 460px; white-space: pre-line; color: var(--muted); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.fq-edit-row > td { background: var(--primary-soft); padding: 14px 16px; }
+.fq-edit { display: grid; gap: 12px; }
+.fq-edit-grid { display: grid; grid-template-columns: 180px 1fr 1.4fr; gap: 12px; align-items: start; }
+.fq-edit textarea, .fq-edit input:not([type="checkbox"]) { width: 100%; }
+.fq-edit-foot { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.fq-edit-foot .check { margin-right: auto; display: inline-flex; align-items: center; gap: 8px; }
+.fq-msg { max-width: 320px; white-space: pre-line; font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.fq-status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--surface-2); color: var(--muted); }
+.fq-status.ok { background: var(--success-soft); color: var(--success); }
+.fq-status.wait { background: var(--primary-soft); color: var(--primary-ink); }
+.fq-status.bad { background: var(--danger-soft); color: var(--danger); }
+@media (max-width: 900px) { .fq-edit-grid { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .fq-switch { margin-left: 0; } }

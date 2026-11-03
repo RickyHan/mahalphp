@@ -9,6 +9,7 @@
     /api/admin/categories          민원 카테고리 관리 (app/categories.py)
     /api/admin/data/*              수집 데이터 삭제 (app/datamgmt.py)
     /api/admin/apartments*         건물 관리 (app/apartments.py)
+    /api/admin/faq*                FAQ 자동 답변 (app/faq.py)
     /api/admin/schedules*          예약 메시지 (app/schedules.py)
 
 POST /api/messages 는 헤더 X-Api-Key 가 .env 의 API_KEY 와 같아야 한다.
@@ -25,7 +26,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFi
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import admin, apartments, categories, datamgmt, db, live, media, schedules, store, vendors, worker
+from . import admin, apartments, categories, datamgmt, db, faq, live, media, schedules, store, vendors, worker
 from .auth import SettingsDep, get_settings, require_api_key, require_reader  # noqa: F401 (get_settings: 테스트에서 사용)
 
 MESSAGE_TYPES = {"text", "photo", "video", "emoticon", "file", "other"}
@@ -38,6 +39,7 @@ app.include_router(categories.router)
 app.include_router(datamgmt.router)
 app.include_router(apartments.router)
 app.include_router(schedules.router)
+app.include_router(faq.router)
 app.mount("/admin/static", StaticFiles(directory=admin.STATIC_DIR), name="admin-static")
 
 

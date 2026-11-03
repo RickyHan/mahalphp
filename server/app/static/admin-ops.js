@@ -209,6 +209,7 @@
     data: ["message", "delete"],
     apartments: ["apartment", "delete"],
     schedules: ["schedule", "complaint"],
+    faq: ["faq", "apartment", "complaint"],
   };
 
   KC.onTab = (tab) => {

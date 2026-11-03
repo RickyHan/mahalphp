@@ -17,6 +17,7 @@ SETTING_DEFAULTS = {
     "group_minutes": str(cp.DEFAULT_GROUP_MINUTES),
     "vendor_enabled": "1",
     "vendor_template": cp.DEFAULT_VENDOR_TEMPLATE,
+    "faq_enabled": "1",
 }
 
 
@@ -220,13 +221,14 @@ def complaint_counts(cur) -> dict[str, int]:
 # ---- 안내 발송 대기열 -------------------------------------------------------------------
 
 def enqueue_reply(cur, message_id: int, device_id: str, room: str, text: str, at: datetime,
-                  kind: str = "ack", vendor_id: int | None = None, vendor_name: str | None = None) -> None:
-    """kind: ack = 민원이 올라온 방에 접수 안내, vendor = 담당 업체 카톡방에 처리 요청"""
+                  kind: str = "ack", vendor_id: int | None = None, vendor_name: str | None = None) -> int | None:
+    """kind: ack = 민원이 올라온 방에 접수 안내, vendor = 담당 업체 카톡방에 처리 요청, faq = FAQ 자동 답변"""
     cur.execute(
         """INSERT INTO reply_queue (message_id, device_id, room_name, text, status, created_at, kind, vendor_id, vendor_name)
            VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s)""",
         (message_id, device_id, room, text, at, kind, vendor_id, vendor_name),
     )
+    return cur.lastrowid
 
 
 def target_vendors(cur, room: str, category: str) -> list[dict[str, Any]]:
@@ -275,7 +277,7 @@ def pending_replies(cur, device_id: str, now: datetime) -> list[dict[str, Any]]:
     """30분 넘게 전달되지 않은 안내는 만료 처리하고, 나머지를 돌려준다"""
     cur.execute(
         """SELECT id, message_id, kind FROM reply_queue WHERE status = 'pending' AND device_id = %s
-           AND ((kind = 'ack' AND created_at < %s) OR (kind = 'vendor' AND created_at < %s)
+           AND ((kind IN ('ack', 'faq') AND created_at < %s) OR (kind = 'vendor' AND created_at < %s)
                 OR (kind = 'schedule' AND created_at < %s))""",
         (device_id, now - cp.REPLY_MAX_AGE, now - cp.VENDOR_MAX_AGE, now - cp.SCHEDULE_MAX_AGE),
     )
@@ -287,7 +289,7 @@ def pending_replies(cur, device_id: str, now: datetime) -> list[dict[str, Any]]:
         else:
             note = "30분 안에 보내지 못함 (그 방 알림을 받지 못했거나 앱이 꺼져 있음)"
         cur.execute("UPDATE reply_queue SET status = 'expired', done_at = %s, note = %s WHERE id = %s", (now, note, r["id"]))
-        if r["kind"] == "ack":
+        if r["kind"] in ("ack", "faq"):
             set_reply_status(cur, r["message_id"], -1, note)
     cur.execute(
         "SELECT id, room_name, text FROM reply_queue WHERE status = 'pending' AND device_id = %s ORDER BY id",
@@ -305,7 +307,7 @@ def finish_reply(cur, reply_id: int, device_id: str, sent: bool, note: str | Non
         "UPDATE reply_queue SET status = %s, note = %s, done_at = %s WHERE id = %s",
         ("sent" if sent else "failed", (note or "")[:250], now, reply_id),
     )
-    if row["kind"] == "ack":  # 업체 요청·예약 메시지 결과는 민원의 '접수 안내' 상태를 바꾸지 않는다
+    if row["kind"] in ("ack", "faq"):  # 업체 요청·예약 메시지 결과는 민원의 '접수 안내' 상태를 바꾸지 않는다
         set_reply_status(cur, row["message_id"], 1 if sent else -1, row["text"] if sent else (note or "전송 실패"))
     return True
 
@@ -344,6 +346,7 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
         return {"done": len(items), "failed": len(items)}
 
     by_id = {r["id"]: r for r in batch}
+    matches, faq_error = faq_matches(settings, client, conf, items, by_id, now)
     complaints = 0
     vendor_count = 0
     with db.transaction(settings) as conn, conn.cursor() as cur:
@@ -351,12 +354,15 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
         missing = set(by_id) - {v.id for v in verdicts}
         if missing:
             mark_failed(cur, sorted(missing), "응답에 결과 없음", now)
+        answered = enqueue_faq_answers(cur, conf, matches, by_id, now)
         for v in sorted((v for v in verdicts if v.is_complaint), key=lambda v: v.id):
             complaints += 1
             msg = by_id[v.id]
             fresh = now - to_dt(msg["posted_at"]) <= cp.REPLY_MAX_AGE
             new_issue = fresh and is_new_issue(cur, v.id, group_window(conf))
-            if conf["auto_reply_enabled"] == "1":
+            if v.id in answered:
+                set_reply_status(cur, v.id, 4, "FAQ 답변 전송 대기")  # FAQ 답변이 접수 안내를 대신함
+            elif conf["auto_reply_enabled"] == "1":
                 if not fresh:
                     set_reply_status(cur, v.id, 3, "30분 지난 메시지라 안내 생략")
                 elif not new_issue:
@@ -369,4 +375,71 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
             # 2) 이 카테고리를 맡은 업체의 카톡방에 처리 요청 (접수 안내 뒤 순서로, 같은 문제 반복·오래된 메시지 제외)
             if conf["vendor_enabled"] == "1" and new_issue:
                 vendor_count += enqueue_vendor_messages(cur, conf, v, msg, now)
-    return {"done": len(items), "complaints": complaints, "vendor": vendor_count}
+    result = {"done": len(items), "complaints": complaints, "vendor": vendor_count, "faq": len(answered)}
+    if faq_error:
+        result["faq_error"] = faq_error
+    return result
+
+
+# ---- FAQ 자동 답변 --------------------------------------------------------------------------
+
+def building_rooms(cur) -> set[str]:
+    """건물 관리에 등록된(연결된) 채팅방. 협력사(업체) 방은 들어가지 않는다."""
+    cur.execute("SELECT room_name FROM apartments WHERE room_name IS NOT NULL")
+    return {r["room_name"] for r in cur.fetchall()}
+
+
+def faq_list(cur) -> list[dict[str, Any]]:
+    cur.execute("SELECT id, category, question, answer FROM faq_items WHERE enabled = 1 ORDER BY sort_order, id")
+    return cur.fetchall()
+
+
+def faq_matches(settings: Settings, client, conf: dict[str, str], items: list[cp.Item], by_id: dict[int, Any],
+                now: datetime) -> tuple[list[cp.FaqMatch], str | None]:
+    """건물 채팅방의 새(30분 이내) 메시지만 FAQ 와 대조한다. 실패해도 민원 분류는 계속한다."""
+    if conf.get("faq_enabled") != "1" or not hasattr(client, "match_faq"):
+        return [], None
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        rooms = building_rooms(cur)
+        faqs = faq_list(cur)
+    targets = [i for i in items if i.room in rooms and now - to_dt(by_id[i.id]["posted_at"]) <= cp.REPLY_MAX_AGE]
+    if not targets or not faqs:
+        return [], None
+    try:
+        return client.match_faq(targets, [(f["id"], f["category"], f["question"]) for f in faqs]), None
+    except (cp.GeminiError, ValueError) as exc:
+        return [], str(exc)
+
+
+def enqueue_faq_answers(cur, conf: dict[str, str], matches: list[cp.FaqMatch], by_id: dict[int, Any], now: datetime) -> set[int]:
+    """짝이 맞은 메시지에 FAQ 답변을 대기열에 넣는다. 같은 방에 같은 FAQ 를 묶음 시간 안에 이미 보냈으면 생략."""
+    answered: set[int] = set()
+    if not matches:
+        return answered
+    cur.execute("SELECT id, question, answer, enabled FROM faq_items")
+    faqs = {r["id"]: r for r in cur.fetchall()}
+    window = group_window(conf)
+    for m in sorted(matches, key=lambda m: m.id):
+        faq, msg = faqs.get(m.faq_id), by_id[m.id]
+        if not faq or not faq["enabled"]:
+            continue
+        cur.execute(
+            "SELECT id FROM faq_answers WHERE room_name = %s AND faq_id = %s AND reply_id IS NOT NULL AND created_at >= %s",
+            (msg["room_name"], m.faq_id, now - window),
+        )
+        reply_id, note = None, None
+        if cur.fetchone():
+            note = "같은 방에 같은 답변을 최근에 보내 생략"
+        else:
+            reply_id = enqueue_reply(cur, m.id, msg["device_id"], msg["room_name"], faq["answer"], now, kind="faq")
+            answered.add(m.id)
+        cur.execute(
+            """INSERT INTO faq_answers (message_id, faq_id, question, room_name, reply_id, confidence, note, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (m.id, m.faq_id, faq["question"][:500], msg["room_name"], reply_id, round(m.confidence, 3), note, now),
+        )
+    if answered:
+        from . import live
+
+        live.bump("faq")
+    return answered

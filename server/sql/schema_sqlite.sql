@@ -159,3 +159,27 @@ CREATE TABLE IF NOT EXISTS scheduled_messages (
   updated_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_due ON scheduled_messages (enabled, next_run_at);
+
+CREATE TABLE IF NOT EXISTS faq_items (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  category   TEXT NOT NULL DEFAULT '',
+  question   TEXT NOT NULL,
+  answer     TEXT NOT NULL,
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS faq_answers (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id INTEGER NOT NULL,
+  faq_id     INTEGER,
+  question   TEXT NOT NULL DEFAULT '',
+  room_name  TEXT NOT NULL,
+  reply_id   INTEGER,
+  confidence REAL NOT NULL DEFAULT 0,
+  note       TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_faq_answers_room ON faq_answers (room_name, faq_id, created_at);
