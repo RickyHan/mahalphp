@@ -525,3 +525,93 @@ def save_apartment_vendors(apartment_id: int, body: AssignmentsBody, settings: S
     live.bump("apartment")
     return apartment_vendors(apartment_id, settings)
 
+
+
+# ---- 처음 받은 건물별 담당 업체 표 (서버 시작 때 한 번) ----------------------------------------------------
+
+VENDOR_SEED_FILE = Path(__file__).parent / "data" / "building_vendors.tsv"
+VENDOR_SEED_VERSION = "1"
+# 업체가 아니라 '보내지 않음'으로 둘 값
+NO_VENDOR = {"없음", "자체처리", "입주민", "입주민 4명", "입주민지인", "입주민(자격증소유)", "기존업체", "0", "-"}
+# 같은 업체의 다른 표기
+VENDOR_ALIASES = {
+    "티케이": "TK", "OTIS": "오티스", "GYG(금영)": "GYG", "새성파킹시스템": "새성파킹", "세한이앤씨": "세한이엔씨",
+    "강남크린, 이미자": "강남크린", "유원 -> 교체공사중 26.10": "유원",
+}
+
+
+def vendor_cell(value: str) -> str | None:
+    """표의 칸 → 업체 이름, '' (보내지 않음), None (빈칸: 설정 안 함)"""
+    v = re.sub(r"\s+", " ", value or "").strip()
+    if not v:
+        return None
+    if v in NO_VENDOR or re.search(r"-\s*중단$", v):
+        return ""
+    return VENDOR_ALIASES.get(v, v)[:100]
+
+
+def seed_building_vendors(settings) -> dict[str, Any] | None:
+    if not VENDOR_SEED_FILE.exists():
+        return None
+    now = _now(settings)
+    lines = [ln.split("\t") for ln in VENDOR_SEED_FILE.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    header, rows = lines[0], lines[1:]
+    cat_names = header[2:]
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT value FROM app_settings WHERE name = 'building_vendors_seed'")
+        row = cur.fetchone()
+        if row and row["value"] == VENDOR_SEED_VERSION:
+            return None
+        from .categories import all_categories
+
+        cats = {r["name"]: r["id"] for r in all_categories(cur)}  # 새 민원 카테고리 묶음이 먼저 적용되게
+        if any(c not in cats for c in cat_names):
+            raise RuntimeError(f"민원 카테고리가 표와 다릅니다: {[c for c in cat_names if c not in cats]}")
+        cur.execute("SELECT id, name FROM apartments WHERE listed = 1")
+        buildings: dict[str, list[int]] = {}
+        for r in cur.fetchall():
+            buildings.setdefault(r["name"], []).append(r["id"])
+        cur.execute("SELECT id, name FROM vendors ORDER BY id")
+        vendors: dict[str, int] = {}
+        for r in cur.fetchall():
+            vendors.setdefault(r["name"], r["id"])
+        created = assigned = none = 0
+        missing: set[str] = set()
+        for cells in rows:
+            name = _clean(cells[0])
+            ids = buildings.get(name)
+            if not ids:
+                missing.add(name)
+                continue
+            for cat_name, raw in zip(cat_names, cells[2:]):
+                value, cat_id = vendor_cell(raw), cats.get(cat_name)
+                if value is None or cat_id is None:
+                    continue
+                vendor_id = None
+                if value:
+                    vendor_id = vendors.get(value)
+                    if vendor_id is None:
+                        cur.execute(
+                            """INSERT INTO vendors (name, biz_no, phone, address, room_name, created_at, updated_at)
+                               VALUES (%s, '', '', '', NULL, %s, %s)""",
+                            (value, now, now),
+                        )
+                        vendor_id = vendors[value] = cur.lastrowid
+                        created += 1
+                for apt_id in ids:
+                    cur.execute("DELETE FROM apartment_vendors WHERE apartment_id = %s AND category_id = %s", (apt_id, cat_id))
+                    cur.execute(
+                        "INSERT INTO apartment_vendors (apartment_id, category_id, vendor_id, updated_at) VALUES (%s, %s, %s, %s)",
+                        (apt_id, cat_id, vendor_id, now),
+                    )
+                    if vendor_id is None:
+                        none += 1
+                    else:
+                        assigned += 1
+        if len(missing) == len({_clean(c[0]) for c in rows}):
+            raise RuntimeError("건물 목록이 아직 등록되지 않아 담당 업체를 넣지 못했습니다(다음 시작 때 다시 시도).")
+        cur.execute("DELETE FROM app_settings WHERE name = 'building_vendors_seed'")
+        cur.execute("INSERT INTO app_settings (name, value) VALUES ('building_vendors_seed', %s)", (VENDOR_SEED_VERSION,))
+    live.bump("apartment")
+    live.bump("vendor")
+    return {"vendors_created": created, "assigned": assigned, "none": none, "missing": sorted(missing)}

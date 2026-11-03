@@ -66,6 +66,14 @@ async def lifespan(_app):
         except Exception:
             log.exception("건물 목록 자동 등록 실패")
         try:
+            from . import apartments
+
+            done = apartments.seed_building_vendors(get_settings())
+            if done:
+                log.info("건물별 담당 업체 등록: 새 업체 %(vendors_created)s · 지정 %(assigned)s · 보내지 않음 %(none)s · 없는 건물 %(missing)s", done)
+        except Exception:
+            log.exception("건물별 담당 업체 자동 등록 실패")
+        try:
             from . import faq
 
             added = faq.seed_faq(get_settings())
