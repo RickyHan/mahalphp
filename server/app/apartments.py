@@ -1,8 +1,7 @@
-"""건물 관리: 건물 목록(이름·주소)을 등록하고, 수집된 카톡 채팅방을 이름이 가장 비슷한 건물에 하나씩 연결한다.
+"""건물 관리: 건물(이름·주소)을 한 곳씩 등록하고, 수집된 카톡 채팅방을 이름이 가장 비슷한 건물에 하나씩 연결한다.
 
     GET    /api/admin/apartments                 목록 (주소 · 연결 채팅방 · 메시지·민원 수 · 최근 대화)
-    POST   /api/admin/apartments                 건물 하나 추가
-    POST   /api/admin/apartments/import          건물 목록 붙여넣기(엑셀 복사: 이름<탭>주소) → 등록 후 자동 매핑
+    POST   /api/admin/apartments                 건물 하나 추가 (추가 후 자동 매핑)
     POST   /api/admin/apartments/sync            다시 수집하기: 채팅방 자동 매핑 + 목록에 없는 별(★) 방 추가
     PUT    /api/admin/apartments/{id}            이름·주소 수정
     DELETE /api/admin/apartments/{id}            삭제
@@ -110,8 +109,12 @@ def similarity(room: str, building: str) -> float:
     return best
 
 
-def best_matches(rooms: list[str], buildings: list[dict[str, Any]]) -> list[tuple[str, int, float]]:
-    """채팅방 ↔ 건물 1:1 자동 매핑. 확실한 것만 (방, 건물 id, 점수)로 돌려준다."""
+def best_matches(rooms: list[str], buildings: list[dict[str, Any]], open_ids: set[int] | None = None) -> list[tuple[str, int, float]]:
+    """채팅방 ↔ 건물 1:1 자동 매핑. 확실한 것만 (방, 건물 id, 점수)로 돌려준다.
+
+    애매함은 모든 건물을 놓고 판단하고(이미 연결된 건물 포함), 실제 연결은 open_ids(빈 건물)에만 한다.
+    예: 101동만 연결된 뒤 102동이 추가돼도 동이 안 적힌 방은 102동에 붙지 않는다.
+    """
     scored: dict[str, list[tuple[float, int]]] = {}
     for room in rooms:
         floor = MIN_SCORE if is_apartment_room(room) else MIN_SCORE_PLAIN
@@ -127,6 +130,8 @@ def best_matches(rooms: list[str], buildings: list[dict[str, Any]]) -> list[tupl
         by_building.setdefault(bid, []).append((score, room))
     result = []
     for bid, lst in by_building.items():
+        if open_ids is not None and bid not in open_ids:
+            continue
         lst.sort(reverse=True)
         if len(lst) > 1 and lst[0][0] - lst[1][0] < AMBIGUOUS_GAP:
             continue
@@ -149,10 +154,6 @@ def _clean(text: str) -> str:
 class ApartmentBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     address: str | None = Field(default=None, max_length=255)
-
-
-class ImportBody(BaseModel):
-    text: str = Field(min_length=1, max_length=500_000)
 
 
 class RoomBody(BaseModel):
@@ -206,10 +207,11 @@ def _automap(cur, now: datetime) -> dict[str, Any]:
     cur.execute("SELECT id, name, room_name, listed, room_mode FROM apartments")
     rows = cur.fetchall()
     taken = {r["room_name"] for r in rows if r["listed"] and r["room_name"]}
-    targets = [r for r in rows if r["listed"] and not r["room_name"] and r["room_mode"] == "auto"]
+    listed = [r for r in rows if r["listed"]]
+    targets = [r for r in listed if not r["room_name"] and r["room_mode"] == "auto"]
     free = [room for room in rooms if room not in taken]
     mapped = []
-    for room, bid, score in best_matches(free, targets):
+    for room, bid, score in best_matches(free, listed, {t["id"] for t in targets}):
         _attach(cur, bid, room, "auto", score, now)
         name = next(t["name"] for t in targets if t["id"] == bid)
         mapped.append({"room_name": room, "name": name, "score": round(score * 100)})
@@ -236,7 +238,7 @@ def _automap(cur, now: datetime) -> dict[str, Any]:
 
 
 def parse_building_list(text: str) -> list[tuple[str, str]]:
-    """엑셀에서 복사한 '이름<탭>주소' 줄들 → [(이름, 주소)]. 머리글·빈 줄·같은 이름은 건너뜀."""
+    """처음 받은 목록 파일(엑셀에서 복사한 '이름<탭>주소' 줄들 → [(이름, 주소)]. 머리글·빈 줄·같은 이름은 건너뜀."""
     out: list[tuple[str, str]] = []
     seen: set[str] = set()
     for line in text.splitlines():
@@ -354,21 +356,6 @@ def create_apartment(body: ApartmentBody, settings: SettingsDep) -> dict[str, An
         result = _automap(cur, now)
     live.bump("apartment")
     return {"ok": True, "id": new_id, **result}
-
-
-@router.post("/api/admin/apartments/import")
-def import_apartments(body: ImportBody, settings: SettingsDep) -> dict[str, Any]:
-    rows = parse_building_list(body.text)
-    if not rows:
-        raise HTTPException(422, "등록할 건물이 없습니다. 엑셀에서 '건물 이름'과 '주소' 두 열을 복사해 붙여 넣으십시오.")
-    if len(rows) > 5000:
-        raise HTTPException(422, "한 번에 5,000곳까지 등록할 수 있습니다.")
-    now = _now(settings)
-    with db.transaction(settings) as conn, conn.cursor() as cur:
-        created, updated = _import_rows(cur, rows, now)
-        result = _automap(cur, now)
-    live.bump("apartment")
-    return {"ok": True, "parsed": len(rows), "created": created, "updated": updated, **result}
 
 
 @router.post("/api/admin/apartments/sync")

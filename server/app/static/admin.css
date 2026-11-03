@@ -896,11 +896,14 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 /* ---- 건물 관리: 목록 붙여넣기 · 매핑 ---- */
 .page-head .head-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .page-head .head-actions .btn-lg { margin-left: 0; }
-.apt-import { padding: 16px; display: grid; gap: 10px; }
-.apt-import .card-head { padding: 0; border: 0; flex-wrap: wrap; gap: 8px; }
-.apt-import textarea { width: 100%; min-height: 160px; font: 13px/1.5 ui-monospace, Consolas, "맑은 고딕", monospace; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); resize: vertical; tab-size: 12; }
-.apt-import-foot { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
-.apt-import-foot .muted { margin-right: auto; }
+.apt-add { padding: 16px; display: grid; gap: 12px; }
+.apt-add .card-head { padding: 0; border: 0; flex-wrap: wrap; gap: 8px; }
+.apt-add-fields { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.apt-add-fields .field { display: grid; gap: 4px; min-width: 200px; }
+.apt-add-fields .field.grow { flex: 1; min-width: 260px; }
+.apt-add-fields .field span { font-size: 12px; font-weight: 700; color: var(--muted); }
+.apt-add-fields .req { color: var(--danger); }
+.apt-add-actions { display: flex; gap: 8px; }
 .apt-filter { margin-left: 8px; flex-wrap: wrap; }
 .apt-table .apt-addr { display: block; padding: 0 9px; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 340px; }
 .apt-room { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

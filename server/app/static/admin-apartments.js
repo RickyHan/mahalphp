@@ -64,7 +64,7 @@
     const list = $("apt-list");
     list.replaceChildren();
     if (!shown.length) {
-      const msg = items.length ? "조건에 맞는 항목이 없습니다." : "아직 등록된 건물이 없습니다. 오른쪽 위 '건물 목록 붙여넣기'로 등록하십시오.";
+      const msg = items.length ? "조건에 맞는 항목이 없습니다." : "아직 등록된 건물이 없습니다. 오른쪽 위 '건물 추가'로 등록하십시오.";
       list.append(el("tr", {}, el("td", { colspan: "7", class: "empty-cell", text: msg })));
       return;
     }
@@ -229,32 +229,32 @@
     }
   }
 
-  // ---- 건물 목록 붙여넣기 ------------------------------------------------------------------------
+  // ---- 건물 추가 (한 곳씩) ---------------------------------------------------------------------
 
-  function importLines() {
-    return $("apt-import-text").value.split(/\r?\n/).filter((l) => l.trim() && !/^\s*(빌라명|건물명|건물 이름|이름|아파트명)\s*(\t|$)/.test(l));
+  function toggleAdd(open) {
+    $("apt-add").hidden = !open;
+    $("apt-add-open").setAttribute("aria-expanded", String(open));
+    if (open) $("apt-add-name").focus();
   }
 
-  function toggleImport(open) {
-    $("apt-import").hidden = !open;
-    $("apt-import-open").setAttribute("aria-expanded", String(open));
-    if (open) $("apt-import-text").focus();
-  }
-
-  async function runImport() {
-    const btn = $("apt-import-run");
+  async function addBuilding(e) {
+    e.preventDefault();
+    const name = $("apt-add-name").value.trim();
+    if (!name) return;
+    const btn = $("apt-add-run");
     btn.disabled = true;
     try {
-      const r = await send("POST", "/api/admin/apartments/import", { text: $("apt-import-text").value });
-      summarize(r, [`건물 ${r.parsed}곳 읽음 (새로 ${r.created} · 갱신 ${r.updated})`]);
-      $("apt-import-text").value = "";
-      $("apt-import-count").textContent = "";
-      toggleImport(false);
+      const r = await send("POST", "/api/admin/apartments", { name, address: $("apt-add-address").value });
+      const mine = r.mapped.find((m) => m.name === name);
+      showResult([`'${name}' 을(를) 추가했습니다`, mine ? `채팅방 '${mine.room_name}' 에 자동 연결 (${mine.score}%)` : "비슷한 채팅방이 없어 미연결로 등록"], []);
+      $("apt-add-name").value = "";
+      $("apt-add-address").value = "";
       await loadApartments();
+      $("apt-add-name").focus();
     } catch (err) {
       reportError(err);
     } finally {
-      btn.disabled = !importLines().length;
+      btn.disabled = !$("apt-add-name").value.trim();
     }
   }
 
@@ -420,12 +420,9 @@
       render();
     });
   }
-  $("apt-import-open").addEventListener("click", () => toggleImport($("apt-import").hidden));
-  $("apt-import-cancel").addEventListener("click", () => toggleImport(false));
-  $("apt-import-text").addEventListener("input", () => {
-    const n = importLines().length;
-    $("apt-import-count").textContent = n ? `${n.toLocaleString("ko-KR")}줄` : "";
-    $("apt-import-run").disabled = n === 0;
-  });
-  $("apt-import-run").addEventListener("click", runImport);
+  $("apt-add-open").addEventListener("click", () => toggleAdd($("apt-add").hidden));
+  $("apt-add-cancel").addEventListener("click", () => toggleAdd(false));
+  $("apt-add-name").addEventListener("input", () => ($("apt-add-run").disabled = !$("apt-add-name").value.trim()));
+  $("apt-add").addEventListener("submit", (e) => addBuilding(e).catch(reportError));
+  $("apt-add").addEventListener("keydown", (e) => e.key === "Escape" && toggleAdd(false));
 })();

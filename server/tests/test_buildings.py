@@ -55,10 +55,12 @@ def test_import_automap_and_manual_link(admin, settings):
     cats = admin.get("/api/admin/categories").json()["items"]
     admin.put(f"/api/admin/apartments/{before['★솔숲 단톡방']['id']}/vendors", json={"assignments": [{"category_id": cats[0]["id"], "mode": "none"}]})
 
-    text = "빌라명\t주소\n한빛하이츠101동\t서울 1\n한빛하이츠102동\t서울 2\n솔숲빌라\t서울 3\n은하수타워\t서울 4\n무지개맨션\t서울 5\n"
-    r = admin.post("/api/admin/apartments/import", json={"text": text}).json()
-    assert r["parsed"] == 5 and r["created"] == 5
-    assert sorted((m["room_name"], m["name"]) for m in r["mapped"]) == [
+    mapped = []
+    for name, addr in (("한빛하이츠101동", "서울 1"), ("한빛하이츠102동", "서울 2"), ("솔숲빌라", "서울 3"), ("은하수타워", "서울 4"), ("무지개맨션", "서울 5")):
+        res = admin.post("/api/admin/apartments", json={"name": name, "address": addr})
+        assert res.status_code == 201, res.text
+        mapped += res.json()["mapped"]
+    assert sorted((m["room_name"], m["name"]) for m in mapped) == [
         ("★솔숲 단톡방", "솔숲빌라"), ("★한빛하이츠 101동 입주민방", "한빛하이츠101동"), ("은하수타워 관리방", "은하수타워"),
     ]
     items = admin.get("/api/admin/apartments").json()["items"]
@@ -69,9 +71,9 @@ def test_import_automap_and_manual_link(admin, settings):
     assert {"★한빛하이츠", "★별빛마을"} <= extra and "★솔숲 단톡방" not in extra and "●한빛설비업체" not in extra
     assert not any(a["room_name"] == "●한빛설비업체" for a in items)
 
-    # 같은 목록을 다시 넣으면 주소만 갱신
-    r = admin.post("/api/admin/apartments/import", json={"text": "솔숲빌라\t서울 3-1"}).json()
-    assert r["created"] == 0 and r["updated"] == 1
+    # 주소 수정
+    assert admin.put(f"/api/admin/apartments/{by_name['솔숲빌라']['id']}", json={"name": "솔숲빌라", "address": "서울 3-1"}).json()["address"] == "서울 3-1"
+    assert admin.post("/api/admin/apartments", json={"name": "  "}).status_code == 422
 
     # 후보: 102동에는 '★한빛하이츠'가 비슷한 이름으로 위에
     b102 = by_name["한빛하이츠102동"]
@@ -102,7 +104,6 @@ def test_import_automap_and_manual_link(admin, settings):
     # 잘못된 요청
     assert admin.put(f"/api/admin/apartments/{sol['id']}/room", json={"room_name": "없는방"}).status_code == 422
     assert admin.put(f"/api/admin/apartments/{sol['id']}/room", json={"room_name": "●한빛설비업체"}).status_code == 422
-    assert admin.post("/api/admin/apartments/import", json={"text": "빌라명\t주소\n"}).status_code == 422
     assert admin.post("/api/admin/apartments", json={"name": "솔숲빌라"}).status_code == 409
 
     # 목록 외 방 → 건물 후보
