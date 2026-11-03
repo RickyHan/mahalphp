@@ -61,9 +61,15 @@ async def lifespan(_app):
         _stop.clear()
         thread = threading.Thread(target=_loop, name="complaint-worker", daemon=True)
         thread.start()
+        from . import schedules  # 예약 메시지 확인 (20초마다)
+
+        schedules.start()
     try:
         yield
     finally:
+        from . import schedules
+
+        schedules.stop()
         _stop.set()
         _wake.set()
         if thread:

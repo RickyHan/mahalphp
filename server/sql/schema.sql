@@ -100,14 +100,15 @@ CREATE TABLE IF NOT EXISTS `reply_queue` (
   `message_id` BIGINT UNSIGNED NOT NULL,
   `device_id`  VARCHAR(64)     NOT NULL,
   `room_name`  VARCHAR(255)    NOT NULL,
-  `text`       VARCHAR(500)    NOT NULL,
+  `text`       TEXT            NOT NULL,
   `status`     VARCHAR(10)     NOT NULL DEFAULT 'pending' COMMENT 'pending|sent|failed|expired',
   `note`       VARCHAR(255)    NULL,
   `created_at` DATETIME(3)     NOT NULL,
   `done_at`    DATETIME(3)     NULL,
-  `kind`        VARCHAR(10)     NOT NULL DEFAULT 'ack' COMMENT 'ack=민원 방 접수 안내, vendor=업체 카톡방 처리 요청',
+  `kind`        VARCHAR(10)     NOT NULL DEFAULT 'ack' COMMENT 'ack=민원 방 접수 안내, vendor=업체 카톡방 처리 요청, schedule=예약 메시지',
   `vendor_id`   BIGINT UNSIGNED NULL,
   `vendor_name` VARCHAR(100)    NULL,
+  `schedule_id` BIGINT UNSIGNED NULL COMMENT 'kind=schedule 일 때 예약 메시지 id',
   PRIMARY KEY (`id`),
   KEY `idx_reply_queue_status` (`status`, `device_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='안내 발송 대기열';
@@ -141,6 +142,27 @@ CREATE TABLE IF NOT EXISTS `apartment_vendors` (
   UNIQUE KEY `uk_apartment_vendors` (`apartment_id`, `category_id`),
   KEY `idx_apartment_vendors_vendor` (`vendor_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='아파트별 담당 업체';
+
+-- 예약 메시지: 정한 날짜·요일·시각에 채팅방으로 보냄
+CREATE TABLE IF NOT EXISTS `scheduled_messages` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `title`       VARCHAR(100)    NOT NULL,
+  `room_name`   VARCHAR(255)    NOT NULL,
+  `text`        TEXT            NOT NULL,
+  `kind`        VARCHAR(10)     NOT NULL COMMENT 'once|daily|weekly|monthly',
+  `run_date`    VARCHAR(10)     NULL COMMENT 'once: YYYY-MM-DD',
+  `weekdays`    VARCHAR(20)     NULL COMMENT 'weekly: 0=월~6=일, 쉼표 구분',
+  `month_day`   INT             NULL COMMENT 'monthly: 1~31 (없는 날은 말일)',
+  `run_time`    VARCHAR(5)      NOT NULL COMMENT 'HH:MM',
+  `enabled`     TINYINT         NOT NULL DEFAULT 1,
+  `next_run_at` DATETIME(3)     NULL,
+  `last_run_at` DATETIME(3)     NULL,
+  `last_note`   VARCHAR(255)    NULL,
+  `created_at`  DATETIME(3)     NOT NULL,
+  `updated_at`  DATETIME(3)     NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_scheduled_due` (`enabled`, `next_run_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='예약 메시지';
 
 -- 민원 분류 (웹 '민원 카테고리'에서 관리, Gemini 분류에 사용). '기타'는 삭제 불가
 CREATE TABLE IF NOT EXISTS `complaint_categories` (

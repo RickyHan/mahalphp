@@ -178,6 +178,7 @@ def install_schema(settings: Settings) -> list[str]:
             _add_column_if_missing(conn, settings, "reply_queue", "kind", "TEXT NOT NULL DEFAULT 'ack'")
             _add_column_if_missing(conn, settings, "reply_queue", "vendor_id", "INTEGER")
             _add_column_if_missing(conn, settings, "reply_queue", "vendor_name", "TEXT")
+            _add_column_if_missing(conn, settings, "reply_queue", "schedule_id", "INTEGER")
             with conn.cursor() as cur:
                 cur.execute("SELECT name AS t FROM sqlite_master WHERE type = 'table' AND name LIKE 'kakao!_%' ESCAPE '!' ORDER BY name")
                 return [row["t"] for row in cur.fetchall()]
@@ -195,6 +196,16 @@ def install_schema(settings: Settings) -> list[str]:
             _add_column_if_missing(conn, settings, "reply_queue", "kind", "VARCHAR(10) NOT NULL DEFAULT 'ack'")
             _add_column_if_missing(conn, settings, "reply_queue", "vendor_id", "BIGINT UNSIGNED NULL")
             _add_column_if_missing(conn, settings, "reply_queue", "vendor_name", "VARCHAR(100) NULL")
+            _add_column_if_missing(conn, settings, "reply_queue", "schedule_id", "BIGINT UNSIGNED NULL")
+            # 이전 버전은 reply_queue.text 가 VARCHAR(500) → 긴 업체 요청·예약 메시지를 위해 TEXT 로
+            cur.execute(
+                "SELECT data_type FROM information_schema.columns WHERE table_schema = %s AND table_name = 'reply_queue' AND column_name = 'text'",
+                (settings.db_name,),
+            )
+            row = cur.fetchone()
+            if row and str(row["data_type"]).lower() == "varchar":
+                cur.execute(f"ALTER TABLE `{settings.db_name}`.reply_queue MODIFY `text` TEXT NOT NULL")
+                conn.commit()
             cur.execute(
                 "SELECT table_name AS t FROM information_schema.tables WHERE table_schema = %s ORDER BY table_name",
                 (settings.db_name,),

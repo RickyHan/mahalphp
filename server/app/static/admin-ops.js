@@ -208,6 +208,7 @@
     categories: ["category", "complaint", "delete"],
     data: ["message", "delete"],
     apartments: ["apartment", "delete"],
+    schedules: ["schedule", "complaint"],
   };
 
   KC.onTab = (tab) => {

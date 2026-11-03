@@ -84,7 +84,8 @@ CREATE TABLE IF NOT EXISTS reply_queue (
   done_at    TEXT,
   kind        TEXT NOT NULL DEFAULT 'ack',
   vendor_id   INTEGER,
-  vendor_name TEXT
+  vendor_name TEXT,
+  schedule_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_reply_queue_status ON reply_queue (status, device_id);
 
@@ -135,3 +136,22 @@ CREATE TABLE IF NOT EXISTS apartment_vendors (
   UNIQUE (apartment_id, category_id)
 );
 CREATE INDEX IF NOT EXISTS idx_apartment_vendors_vendor ON apartment_vendors (vendor_id);
+
+CREATE TABLE IF NOT EXISTS scheduled_messages (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  title       TEXT NOT NULL,
+  room_name   TEXT NOT NULL,
+  text        TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  run_date    TEXT,
+  weekdays    TEXT,
+  month_day   INTEGER,
+  run_time    TEXT NOT NULL,
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  next_run_at TEXT,
+  last_run_at TEXT,
+  last_note   TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_due ON scheduled_messages (enabled, next_run_at);

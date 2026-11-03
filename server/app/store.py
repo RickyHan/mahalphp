@@ -275,16 +275,19 @@ def pending_replies(cur, device_id: str, now: datetime) -> list[dict[str, Any]]:
     """30분 넘게 전달되지 않은 안내는 만료 처리하고, 나머지를 돌려준다"""
     cur.execute(
         """SELECT id, message_id, kind FROM reply_queue WHERE status = 'pending' AND device_id = %s
-           AND ((kind <> 'vendor' AND created_at < %s) OR (kind = 'vendor' AND created_at < %s))""",
-        (device_id, now - cp.REPLY_MAX_AGE, now - cp.VENDOR_MAX_AGE),
+           AND ((kind = 'ack' AND created_at < %s) OR (kind = 'vendor' AND created_at < %s)
+                OR (kind = 'schedule' AND created_at < %s))""",
+        (device_id, now - cp.REPLY_MAX_AGE, now - cp.VENDOR_MAX_AGE, now - cp.SCHEDULE_MAX_AGE),
     )
     for r in cur.fetchall():
         if r["kind"] == "vendor":
             note = "12시간 안에 업체 톡방에 새 글(알림)이 오지 않아 보내지 못함"
+        elif r["kind"] == "schedule":
+            note = "1시간 안에 보내지 못함 (그 방 알림을 받지 못했거나 앱이 꺼져 있음)"
         else:
             note = "30분 안에 보내지 못함 (그 방 알림을 받지 못했거나 앱이 꺼져 있음)"
         cur.execute("UPDATE reply_queue SET status = 'expired', done_at = %s, note = %s WHERE id = %s", (now, note, r["id"]))
-        if r["kind"] != "vendor":
+        if r["kind"] == "ack":
             set_reply_status(cur, r["message_id"], -1, note)
     cur.execute(
         "SELECT id, room_name, text FROM reply_queue WHERE status = 'pending' AND device_id = %s ORDER BY id",
@@ -302,7 +305,7 @@ def finish_reply(cur, reply_id: int, device_id: str, sent: bool, note: str | Non
         "UPDATE reply_queue SET status = %s, note = %s, done_at = %s WHERE id = %s",
         ("sent" if sent else "failed", (note or "")[:250], now, reply_id),
     )
-    if row["kind"] != "vendor":  # 업체 전달 결과는 민원의 '접수 안내' 상태를 바꾸지 않는다
+    if row["kind"] == "ack":  # 업체 요청·예약 메시지 결과는 민원의 '접수 안내' 상태를 바꾸지 않는다
         set_reply_status(cur, row["message_id"], 1 if sent else -1, row["text"] if sent else (note or "전송 실패"))
     return True
 
