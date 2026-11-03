@@ -230,20 +230,20 @@ def install_schema(settings: Settings) -> list[str]:
                 _add_column_if_missing(conn, settings, "apartments", col, ddl)
             # 이전 버전은 apartments.room_name 이 NOT NULL → 채팅방 없는 건물을 위해 NULL 허용
             cur.execute(
-                "SELECT is_nullable FROM information_schema.columns WHERE table_schema = %s AND table_name = 'apartments' AND column_name = 'room_name'",
+                "SELECT is_nullable AS nullable FROM information_schema.columns WHERE table_schema = %s AND table_name = 'apartments' AND column_name = 'room_name'",
                 (settings.db_name,),
             )
             row = cur.fetchone()
-            if row and str(row["is_nullable"]).upper() == "NO":
+            if row and str(row["nullable"]).upper() == "NO":
                 cur.execute(f"ALTER TABLE `{settings.db_name}`.apartments MODIFY `room_name` VARCHAR(255) NULL")
                 conn.commit()
             # 이전 버전은 reply_queue.text 가 VARCHAR(500) → 긴 업체 요청·예약 메시지를 위해 TEXT 로
             cur.execute(
-                "SELECT data_type FROM information_schema.columns WHERE table_schema = %s AND table_name = 'reply_queue' AND column_name = 'text'",
+                "SELECT data_type AS dtype FROM information_schema.columns WHERE table_schema = %s AND table_name = 'reply_queue' AND column_name = 'text'",
                 (settings.db_name,),
             )
             row = cur.fetchone()
-            if row and str(row["data_type"]).lower() == "varchar":
+            if row and str(row["dtype"]).lower() == "varchar":
                 cur.execute(f"ALTER TABLE `{settings.db_name}`.reply_queue MODIFY `text` TEXT NOT NULL")
                 conn.commit()
             cur.execute(
