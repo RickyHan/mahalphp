@@ -113,3 +113,20 @@ def test_import_automap_and_manual_link(admin, settings):
     # 정리 (뒤 테스트의 자동 매핑에 끼어들지 않도록)
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM apartments WHERE listed = 1")
+
+
+def test_seed_buildings_once(admin, settings):
+    """처음 받은 건물 목록(app/data/buildings.tsv)은 한 번만 등록되고, 이후 삭제한 건물은 다시 생기지 않는다"""
+    rows = ap.parse_building_list(ap.SEED_FILE.read_text(encoding="utf-8"))
+    assert len(rows) > 400 and all(n and "\t" not in n for n, _ in rows)
+    r = ap.seed_buildings(settings)
+    assert r["created"] == len(rows)
+    assert ap.seed_buildings(settings) is None
+    items = [a for a in admin.get("/api/admin/apartments").json()["items"] if a["listed"]]
+    assert len(items) == len(rows) and sum(1 for a in items if a["address"]) >= len(rows) - 5
+    first = items[0]
+    admin.delete(f"/api/admin/apartments/{first['id']}")
+    assert ap.seed_buildings(settings) is None
+    assert all(a["id"] != first["id"] for a in admin.get("/api/admin/apartments").json()["items"])
+    with db.transaction(settings) as conn, conn.cursor() as cur:  # 뒤 테스트에 끼어들지 않도록 정리
+        cur.execute("DELETE FROM apartments WHERE listed = 1")

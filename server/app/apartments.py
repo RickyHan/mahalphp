@@ -24,6 +24,7 @@ import re
 import unicodedata
 from difflib import SequenceMatcher
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -256,6 +257,54 @@ def parse_building_list(text: str) -> list[tuple[str, str]]:
     return out
 
 
+def _import_rows(cur, rows: list[tuple[str, str]], now: datetime) -> tuple[int, int]:
+    """(이름, 주소) 목록을 건물로 등록. 같은 이름이 있으면 주소만 갱신. → (새로, 갱신)"""
+    created = updated = 0
+    cur.execute("SELECT id, name, listed FROM apartments")
+    existing = cur.fetchall()
+    listed = {r["name"]: r["id"] for r in existing if r["listed"]}
+    unlisted = {r["name"]: r["id"] for r in existing if not r["listed"]}
+    for name, address in rows:
+        if name in listed:
+            cur.execute("UPDATE apartments SET address = %s, updated_at = %s WHERE id = %s", (address or None, now, listed[name]))
+            updated += 1
+        elif name in unlisted:  # 이미 별(★) 방으로 들어와 있던 같은 이름 → 목록 건물로 전환 (연결·업체 설정 유지)
+            cur.execute(
+                "UPDATE apartments SET listed = 1, address = %s, room_mode = 'manual', match_score = 100, updated_at = %s WHERE id = %s",
+                (address or None, now, unlisted.pop(name)),
+            )
+            updated += 1
+        else:
+            cur.execute(
+                "INSERT INTO apartments (name, address, listed, room_mode, created_at, updated_at) VALUES (%s, %s, 1, 'auto', %s, %s)",
+                (name, address or None, now, now),
+            )
+            created += 1
+    return created, updated
+
+
+# 처음 받은 건물 목록. 서버 시작 때 한 번만 등록한다(이후 웹에서 삭제·수정한 내용은 다시 덮어쓰지 않음).
+SEED_FILE = Path(__file__).parent / "data" / "buildings.tsv"
+SEED_VERSION = "1"
+
+
+def seed_buildings(settings) -> dict[str, Any] | None:
+    if not SEED_FILE.exists():
+        return None
+    now = _now(settings)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT value FROM app_settings WHERE name = 'buildings_seed'")
+        row = cur.fetchone()
+        if row and row["value"] == SEED_VERSION:
+            return None
+        created, updated = _import_rows(cur, parse_building_list(SEED_FILE.read_text(encoding="utf-8")), now)
+        result = _automap(cur, now)
+        cur.execute("DELETE FROM app_settings WHERE name = 'buildings_seed'")
+        cur.execute("INSERT INTO app_settings (name, value) VALUES ('buildings_seed', %s)", (SEED_VERSION,))
+    live.bump("apartment")
+    return {"created": created, "updated": updated, "mapped": len(result["mapped"])}
+
+
 @router.get("/api/admin/apartments")
 def list_apartments(settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
@@ -315,28 +364,8 @@ def import_apartments(body: ImportBody, settings: SettingsDep) -> dict[str, Any]
     if len(rows) > 5000:
         raise HTTPException(422, "한 번에 5,000곳까지 등록할 수 있습니다.")
     now = _now(settings)
-    created = updated = 0
     with db.transaction(settings) as conn, conn.cursor() as cur:
-        cur.execute("SELECT id, name, listed FROM apartments")
-        existing = cur.fetchall()
-        listed = {r["name"]: r["id"] for r in existing if r["listed"]}
-        unlisted = {r["name"]: r["id"] for r in existing if not r["listed"]}
-        for name, address in rows:
-            if name in listed:
-                cur.execute("UPDATE apartments SET address = %s, updated_at = %s WHERE id = %s", (address or None, now, listed[name]))
-                updated += 1
-            elif name in unlisted:  # 이미 별(★) 방으로 들어와 있던 같은 이름 → 목록 건물로 전환 (연결·업체 설정 유지)
-                cur.execute(
-                    "UPDATE apartments SET listed = 1, address = %s, room_mode = 'manual', match_score = 100, updated_at = %s WHERE id = %s",
-                    (address or None, now, unlisted.pop(name)),
-                )
-                updated += 1
-            else:
-                cur.execute(
-                    "INSERT INTO apartments (name, address, listed, room_mode, created_at, updated_at) VALUES (%s, %s, 1, 'auto', %s, %s)",
-                    (name, address or None, now, now),
-                )
-                created += 1
+        created, updated = _import_rows(cur, rows, now)
         result = _automap(cur, now)
     live.bump("apartment")
     return {"ok": True, "parsed": len(rows), "created": created, "updated": updated, **result}

@@ -56,6 +56,15 @@ async def lifespan(_app):
         db.install_schema(get_settings())
     except Exception:  # 권한 부족 등 — 서비스는 계속 띄운다
         log.exception("스키마 자동 갱신 실패: python -m scripts.install_db 를 직접 실행하십시오")
+    if os.getenv("BUILDING_SEED", "1") == "1":  # 처음 받은 건물 목록 한 번 등록
+        try:
+            from . import apartments
+
+            seeded = apartments.seed_buildings(get_settings())
+            if seeded:
+                log.info("건물 목록 등록: 새로 %(created)s · 갱신 %(updated)s · 자동 연결 %(mapped)s", seeded)
+        except Exception:
+            log.exception("건물 목록 자동 등록 실패")
     thread = None
     if os.getenv("WORKER_ENABLED", "1") == "1":
         _stop.clear()
