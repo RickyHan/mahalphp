@@ -55,13 +55,16 @@
       list.append(el("tr", {}, el("td", { colspan: "7", class: "empty-cell", text: items.length ? "검색 결과가 없습니다." : "아직 등록된 아파트가 없습니다. 오른쪽 위 '다시 수집하기'를 누르십시오." })));
       return;
     }
-    for (const a of shown) list.append(row(a));
+    for (const a of shown) {
+      list.append(row(a));
+      if (acc.id === a.id && acc.detail) list.append(acc.detail); // 다시 그려도 펼친 설정(입력 중인 값 포함) 유지
+    }
   }
 
   function row(a) {
     const input = el("input", { class: "apt-name", value: a.name, maxlength: "100", "aria-label": `${a.room_name} 아파트 이름` });
     const save = el("button", { class: "btn btn-small btn-primary", type: "button", text: "저장", disabled: true });
-    const tr = el("tr", {});
+    const tr = el("tr", { class: acc.id === a.id ? "acc-open" : "", "data-apt": a.id });
     input.addEventListener("input", () => {
       const changed = input.value.trim() !== a.name;
       save.disabled = !changed || !input.value.trim();
@@ -96,10 +99,13 @@
     tr.append(
       el("td", { class: "apt-name-cell" }, input),
       el("td", {}, KC.roomChip(a.room_name, a.messages > 0)),
-      el("td", {}, el("button", { class: `vendor-set-btn${a.custom ? " has" : ""}`, type: "button", onclick: () => openDrawer(a).catch(reportError) },
+      el("td", {}, el("button", {
+          class: `vendor-set-btn${a.custom ? " has" : ""}`, type: "button", "aria-expanded": String(acc.id === a.id), "aria-controls": `apt-acc-${a.id}`,
+          onclick: () => toggleAccordion(a, tr).catch(reportError),
+        },
         el("span", { class: "ms", "aria-hidden": "true", text: "domain" }),
         a.custom ? `업체 ${a.assigned}곳 지정${a.custom > a.assigned ? ` · 보내지 않음 ${a.custom - a.assigned}` : ""}` : "기본 업체 사용",
-        el("span", { class: "ms vendor-set-go", "aria-hidden": "true", text: "settings" }))),
+        el("span", { class: "ms vendor-set-go", "aria-hidden": "true", text: "expand_more" }))),
       el("td", { class: "num", text: a.messages.toLocaleString("ko-KR") }),
       el("td", { class: "num" }, el("span", { class: `count-pill${a.complaints ? " has" : ""}`, text: `${a.complaints}건` })),
       el("td", { class: "muted small", text: a.last_at ? fmtDateTime(a.last_at).slice(0, 16) : "대화 없음" }),
@@ -128,40 +134,50 @@
     }
   }
 
-  // ---- 아파트별 담당 업체 (오른쪽 창) ------------------------------------------------------------
+  // ---- 아파트별 담당 업체 (행 아래로 펼치는 아코디언, 한 번에 하나) ------------------------------------
 
-  const drawer = { apt: null, rows: [], vendors: [], initial: "" };
-
-  async function openDrawer(a) {
-    const data = await api(`/api/admin/apartments/${a.id}/vendors`);
-    drawer.apt = a;
-    drawer.vendors = data.vendors;
-    drawer.rows = data.categories.map((r) => ({ ...r, value: r.mode === "vendor" ? `v:${r.vendor_id}` : r.mode }));
-    drawer.initial = JSON.stringify(drawer.rows.map((r) => r.value));
-    $("av-title").textContent = a.name;
-    $("av-room").replaceChildren(KC.roomChip(a.room_name, a.messages > 0));
-    renderDrawer();
-    $("av-scrim").hidden = false;
-    $("av-drawer").hidden = false;
-    requestAnimationFrame(() => $("av-drawer").classList.add("open"));
-    $("av-list").querySelector("select")?.focus();
-  }
-
-  function closeDrawer(force = false) {
-    if (!force && dirtyCount() && !confirm("저장하지 않은 변경이 있습니다. 닫으시겠습니까?")) return;
-    $("av-drawer").classList.remove("open");
-    $("av-scrim").hidden = true;
-    setTimeout(() => ($("av-drawer").hidden = true), 180);
-  }
+  const acc = { id: null, apt: null, rows: [], vendors: [], initial: "", detail: null };
 
   function dirtyCount() {
-    if (!drawer.apt) return 0;
-    const init = JSON.parse(drawer.initial);
-    return drawer.rows.filter((r, i) => r.value !== init[i]).length;
+    if (!acc.id) return 0;
+    const init = JSON.parse(acc.initial);
+    return acc.rows.filter((r, i) => r.value !== init[i]).length;
+  }
+
+  function closeAccordion(force = false) {
+    if (!acc.id) return true;
+    if (!force && dirtyCount() && !confirm(`'${acc.apt.name}' 의 업체 설정에 저장하지 않은 변경이 있습니다. 닫으시겠습니까?`)) return false;
+    acc.detail?.remove();
+    document.querySelector(`#apt-list tr[data-apt="${acc.id}"]`)?.classList.remove("acc-open");
+    document.querySelector(`#apt-list tr[data-apt="${acc.id}"] .vendor-set-btn`)?.setAttribute("aria-expanded", "false");
+    Object.assign(acc, { id: null, apt: null, rows: [], vendors: [], initial: "", detail: null });
+    return true;
+  }
+
+  async function toggleAccordion(a, tr) {
+    if (acc.id === a.id) {
+      closeAccordion();
+      return;
+    }
+    if (!closeAccordion()) return;
+    const data = await api(`/api/admin/apartments/${a.id}/vendors`);
+    Object.assign(acc, {
+      id: a.id,
+      apt: a,
+      vendors: data.vendors,
+      rows: data.categories.map((r) => ({ ...r, value: r.mode === "vendor" ? `v:${r.vendor_id}` : r.mode })),
+    });
+    acc.initial = JSON.stringify(acc.rows.map((r) => r.value));
+    acc.detail = buildPanel();
+    tr.after(acc.detail);
+    tr.classList.add("acc-open");
+    tr.querySelector(".vendor-set-btn")?.setAttribute("aria-expanded", "true");
+    acc.detail.querySelector("select")?.focus({ preventScroll: true });
+    acc.detail.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
   }
 
   function vendorById(id) {
-    return drawer.vendors.find((v) => v.id === id);
+    return acc.vendors.find((v) => v.id === id);
   }
 
   /** 고른 값에 따라 실제로 처리 요청이 갈 곳 */
@@ -174,17 +190,25 @@
       { class: "av-targets" },
       ...list.map((v) =>
         v.room_name
-          ? KC.roomChip(v.room_name, drawer.vendors.find((x) => x.id === v.id)?.has_messages ?? true)
+          ? KC.roomChip(v.room_name, acc.vendors.find((x) => x.id === v.id)?.has_messages ?? true)
           : el("span", { class: "av-target warn" }, el("span", { class: "ms", text: "warning" }), `${v.name}: 톡방 미지정`),
       ),
     );
   }
 
-  function renderDrawer() {
-    const list = $("av-list");
-    list.replaceChildren();
+  function buildPanel() {
+    const dirty = el("span", { class: "muted small acc-dirty" });
+    const save = el("button", { class: "btn btn-primary btn-small", type: "button", text: "저장", disabled: true });
+    const cancel = el("button", { class: "btn btn-small", type: "button", text: "닫기" });
+    const updateDirty = () => {
+      const n = dirtyCount();
+      dirty.textContent = n ? `변경 ${n}건` : "";
+      save.disabled = n === 0;
+      cancel.textContent = n ? "취소" : "닫기";
+    };
+    const list = el("ul", { class: "acc-list" });
     let slot = 0;
-    for (const row of drawer.rows) {
+    for (const row of acc.rows) {
       const color = row.protected ? 0 : ++slot > 8 ? 0 : slot;
       const select = el("select", { class: "av-select", "aria-label": `${row.category} 담당 업체` });
       const defaultNames = row.defaults.map((d) => d.name).join(", ");
@@ -193,14 +217,14 @@
         el("option", { value: "none", text: "이 아파트는 보내지 않음" }),
       );
       const group = el("optgroup", { label: "업체 지정" });
-      for (const v of drawer.vendors) group.append(el("option", { value: `v:${v.id}`, text: v.room_name ? `${v.name}  ·  ${v.room_name}` : `${v.name}  (톡방 없음)` }));
+      for (const v of acc.vendors) group.append(el("option", { value: `v:${v.id}`, text: v.room_name ? `${v.name}  ·  ${v.room_name}` : `${v.name}  (톡방 없음)` }));
       select.append(group);
       select.value = row.value;
       const targetCell = el("div", { class: "av-target-cell" }, target(row));
       const li = el(
         "li",
         { class: `av-row${row.enabled ? "" : " off"}${row.value !== "default" ? " custom" : ""}` },
-        el("div", { class: "av-cat" }, el("span", { class: `dot c${color}`, "aria-hidden": "true" }), el("strong", { text: row.category }), row.enabled ? null : el("small", { text: "분류 사용 안 함" })),
+        el("div", { class: "av-cat" }, el("span", { class: `dot c${color}`, "aria-hidden": "true" }), el("strong", { text: row.category }), row.enabled ? null : el("small", { text: "사용 안 함" })),
         select,
         targetCell,
       );
@@ -212,53 +236,57 @@
       });
       list.append(li);
     }
-    updateDirty();
-  }
-
-  function updateDirty() {
-    const n = dirtyCount();
-    $("av-dirty").textContent = n ? `변경 ${n}건` : "";
-    $("av-save").disabled = n === 0;
-  }
-
-  async function saveDrawer() {
-    const assignments = drawer.rows.map((r) =>
-      r.value.startsWith("v:") ? { category_id: r.category_id, mode: "vendor", vendor_id: Number(r.value.slice(2)) } : { category_id: r.category_id, mode: r.value },
+    save.addEventListener("click", async () => {
+      const assignments = acc.rows.map((r) =>
+        r.value.startsWith("v:") ? { category_id: r.category_id, mode: "vendor", vendor_id: Number(r.value.slice(2)) } : { category_id: r.category_id, mode: r.value },
+      );
+      save.disabled = true;
+      try {
+        await send("PUT", `/api/admin/apartments/${acc.id}/vendors`, { assignments });
+        const id = acc.id;
+        closeAccordion(true);
+        await loadApartments();
+        const tr = document.querySelector(`#apt-list tr[data-apt="${id}"]`);
+        tr?.classList.add("saved");
+        setTimeout(() => tr?.classList.remove("saved"), 1200);
+      } catch (err) {
+        reportError(err);
+        updateDirty();
+      }
+    });
+    cancel.addEventListener("click", () => closeAccordion());
+    const panel = el(
+      "div",
+      { class: "acc-panel", id: `apt-acc-${acc.id}` },
+      el(
+        "div",
+        { class: "acc-head" },
+        el("span", { class: "ms", "aria-hidden": "true", text: "domain" }),
+        el("div", {}, el("strong", { text: `${acc.apt.name} · 민원 분류별 담당 업체` }), el("p", { text: "분류마다 이 아파트의 민원을 처리할 업체를 고르십시오. 고른 업체의 카톡방으로 처리 요청이 갑니다. '기본 업체'는 민원처리업체 관리에서 정한 담당 업체입니다." })),
+      ),
+      list,
+      el("div", { class: "acc-foot" }, dirty, cancel, save),
     );
-    $("av-save").disabled = true;
-    try {
-      await send("PUT", `/api/admin/apartments/${drawer.apt.id}/vendors`, { assignments });
-      drawer.initial = JSON.stringify(drawer.rows.map((r) => r.value));
-      closeDrawer(true);
-      await loadApartments();
-    } catch (err) {
-      reportError(err);
-      updateDirty();
-    }
+    // 패널 안의 톡방 이름을 누르면 대화 화면으로 이동 (저장 안 한 변경이 있으면 확인)
+    panel.addEventListener(
+      "click",
+      (e) => {
+        if (!e.target.closest("button.room-chip")) return;
+        if (dirtyCount() && !confirm("저장하지 않은 변경이 있습니다. 대화 화면으로 이동할까요?")) {
+          e.stopPropagation();
+          e.preventDefault();
+          return;
+        }
+        closeAccordion(true);
+      },
+      true,
+    );
+    panel.addEventListener("keydown", (e) => e.key === "Escape" && closeAccordion());
+    return el("tr", { class: "apt-detail" }, el("td", { colspan: "7" }, panel));
   }
 
   KC.loaders = Object.assign(KC.loaders || {}, { apartments: loadApartments });
-  $("av-close").addEventListener("click", () => closeDrawer());
-  $("av-cancel").addEventListener("click", () => closeDrawer());
-  $("av-scrim").addEventListener("click", () => closeDrawer());
-  $("av-save").addEventListener("click", () => saveDrawer().catch(reportError));
-  // 창 안의 톡방 이름을 누르면 창을 닫고 그 방 대화로 이동 (저장 안 한 변경이 있으면 확인)
-  $("av-drawer").addEventListener(
-    "click",
-    (e) => {
-      if (!e.target.closest("button.room-chip")) return;
-      if (dirtyCount() && !confirm("저장하지 않은 변경이 있습니다. 대화 화면으로 이동할까요?")) {
-        e.stopPropagation();
-        e.preventDefault();
-        return;
-      }
-      closeDrawer(true);
-    },
-    true,
-  );
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !$("av-drawer").hidden) closeDrawer();
-  });
+
   $("apt-sync").addEventListener("click", () => sync().catch(reportError));
   $("apt-search").addEventListener("input", render);
 })();
