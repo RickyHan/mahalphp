@@ -122,14 +122,18 @@ CREATE TABLE IF NOT EXISTS `app_settings` (
 
 -- 아파트: 별 하나로 시작하는 카톡 채팅방(원래 이름)과 관리용 아파트 이름(별 제외, 수정 가능)
 CREATE TABLE IF NOT EXISTS `apartments` (
-  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `name`       VARCHAR(100)    NOT NULL COMMENT '아파트 이름',
-  `room_name`  VARCHAR(255)    NOT NULL COMMENT '원래 카톡 채팅방 이름',
-  `created_at` DATETIME(3)     NOT NULL,
-  `updated_at` DATETIME(3)     NOT NULL,
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name`        VARCHAR(100)    NOT NULL COMMENT '건물 이름',
+  `room_name`   VARCHAR(255)    NULL     COMMENT '연결된 카톡 채팅방 이름 (없으면 미연결)',
+  `address`     VARCHAR(255)    NULL     COMMENT '주소',
+  `listed`      TINYINT(1)      NOT NULL DEFAULT 0 COMMENT '1=건물 목록에서 등록, 0=별(★) 채팅방에서 자동 추가',
+  `room_mode`   VARCHAR(10)     NOT NULL DEFAULT 'auto' COMMENT 'auto=자동 매핑 대상, manual=직접 지정(자동 매핑 안 함)',
+  `match_score` SMALLINT        NULL     COMMENT '자동 매핑 유사도(%)',
+  `created_at`  DATETIME(3)     NOT NULL,
+  `updated_at`  DATETIME(3)     NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_apartments_room` (`room_name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='아파트';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='건물';
 
 -- 아파트별 민원 분류 담당 업체. 행이 없으면 기본 업체(vendors.category_id), vendor_id 가 NULL 이면 '보내지 않음'
 CREATE TABLE IF NOT EXISTS `apartment_vendors` (

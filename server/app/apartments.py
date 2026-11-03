@@ -1,16 +1,28 @@
-"""아파트 관리: 별(★ 등) 하나로 시작하는 카톡 채팅방을 아파트로 모아 이름을 관리한다.
+"""건물 관리: 건물 목록(이름·주소)을 등록하고, 수집된 카톡 채팅방을 이름이 가장 비슷한 건물에 하나씩 연결한다.
 
-    GET    /api/admin/apartments            목록 (원래 채팅방 이름 · 메시지·민원 수 · 최근 대화)
-    POST   /api/admin/apartments/sync       다시 수집하기: 새로 생긴 '별 하나로 시작하는' 방을 추가 (수정한 이름은 유지)
-    PUT    /api/admin/apartments/{id}       아파트 이름 수정
-    DELETE /api/admin/apartments/{id}       목록에서 삭제 (다시 수집하면 다시 추가됨)
-    GET    /api/admin/apartments/{id}/vendors   민원 분류별 담당 업체 설정 보기
-    PUT    /api/admin/apartments/{id}/vendors   민원 분류별 담당 업체 저장
+    GET    /api/admin/apartments                 목록 (주소 · 연결 채팅방 · 메시지·민원 수 · 최근 대화)
+    POST   /api/admin/apartments                 건물 하나 추가
+    POST   /api/admin/apartments/import          건물 목록 붙여넣기(엑셀 복사: 이름<탭>주소) → 등록 후 자동 매핑
+    POST   /api/admin/apartments/sync            다시 수집하기: 채팅방 자동 매핑 + 목록에 없는 별(★) 방 추가
+    PUT    /api/admin/apartments/{id}            이름·주소 수정
+    DELETE /api/admin/apartments/{id}            삭제
+    GET    /api/admin/apartments/{id}/candidates 연결 후보 (건물 → 채팅방, 목록 외 방 → 건물), 유사도 순
+    PUT    /api/admin/apartments/{id}/room       채팅방 직접 연결·해제
+    GET    /api/admin/apartments/{id}/vendors    민원 분류별 담당 업체 설정 보기
+    PUT    /api/admin/apartments/{id}/vendors    민원 분류별 담당 업체 저장
+
+규칙
+    · 건물 하나에 채팅방 하나, 채팅방 하나는 건물 하나에만 연결한다.
+    · 자동 매핑은 이름이 확실히 비슷할 때만 한다. 후보가 비슷하게 둘 이상이면(예: 101동·102동) 연결하지 않고 남긴다.
+    · 직접 연결·해제한 건물(room_mode=manual)은 자동 매핑이 건드리지 않는다.
+    · 목록에 없는 '별 하나(★)로 시작하는 방'은 '목록 외 채팅방'(listed=0)으로 보여 준다.
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
+from difflib import SequenceMatcher
 from datetime import datetime
 from typing import Any
 
@@ -24,7 +36,7 @@ router = APIRouter(dependencies=[Depends(require_admin)])
 
 # 별 모양 문자 (★ ☆ ⭐ ✩ ✪ ✫ ✬ ✭ ✮ ✯ ✰ 🌟 *). 이모지 변형 선택자(U+FE0F)는 무시
 STARS = "★☆⭐✩✪✫✬✭✮✯✰🌟*"
-_STAR = f"[{re.escape(STARS)}]️?"
+_STAR = f"[{re.escape(STARS)}]\ufe0f?"
 _ONE_STAR_PREFIX = re.compile(rf"^\s*{_STAR}(?!\s*{_STAR})")
 _ALL_STARS = re.compile(_STAR)
 
@@ -35,8 +47,90 @@ def is_apartment_room(room: str) -> bool:
 
 
 def apartment_name(room: str) -> str:
-    """아파트 이름: 별을 모두 빼고 앞뒤 공백 정리"""
+    """방 이름에서 별을 모두 빼고 앞뒤 공백 정리"""
     return re.sub(r"\s+", " ", _ALL_STARS.sub("", room)).strip()
+
+
+# ---- 이름 유사도 ---------------------------------------------------------------------------
+
+# 채팅방 이름 끝에 붙는 말 (예: '★다솜빌라 입주민방') — 끝에서만 반복해 뗀다
+_ROOM_SUFFIXES = ("방", "입주민", "입주자", "입주자대표", "주민", "관리단", "관리소", "관리", "단톡", "톡", "공지", "민원",
+                  "소통", "대화", "채팅", "모임", "가족", "님")
+# 건물·방 이름 공통 끝말
+_KIND_SUFFIXES = ("아파트", "빌라", "apt", "주택", "빌딩", "맨션")
+_PAREN = re.compile(r"\([^)]*\)?|\[[^\]]*\]?")
+MIN_SCORE = 0.78        # 별(★) 방
+MIN_SCORE_PLAIN = 0.86  # 별 없는 방은 더 엄격하게
+AMBIGUOUS_GAP = 0.04    # 1·2위 후보가 이만큼도 차이 나지 않으면 연결하지 않음
+
+
+def _plain(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text or "").lower()
+    return re.sub(r"[^0-9a-z가-힣]", "", text)
+
+
+def _strip_end(text: str, suffixes: tuple[str, ...]) -> str:
+    changed = True
+    while changed and text:
+        changed = False
+        for suf in suffixes:
+            if text.endswith(suf) and len(text) > len(suf) + 1:
+                text = text[: -len(suf)]
+                changed = True
+    return text
+
+
+def name_keys(name: str, room: bool = False) -> set[str]:
+    """비교용 이름들: 기호·공백 제거, 끝말 제거, 괄호 안 제거 판"""
+    keys: set[str] = set()
+    for variant in (name, _PAREN.sub(" ", name or "")):
+        core = _plain(variant)
+        if room:
+            core = _strip_end(core, _ROOM_SUFFIXES)
+        for k in (core, _strip_end(core, _KIND_SUFFIXES)):
+            if k:
+                keys.add(k)
+    return keys
+
+
+def similarity(room: str, building: str) -> float:
+    """0~1. 같으면 1, 한쪽이 다른 쪽을 품으면 0.85 이상, 그 밖에는 글자 배열 유사도"""
+    best = 0.0
+    for r in name_keys(room, room=True):
+        for b in name_keys(building):
+            if r == b:
+                return 1.0
+            short, long_ = sorted((r, b), key=len)
+            if len(short) >= 3 and short in long_:
+                score = 0.85 + 0.1 * len(short) / len(long_)
+            else:
+                score = SequenceMatcher(None, r, b).ratio()
+            best = max(best, score)
+    return best
+
+
+def best_matches(rooms: list[str], buildings: list[dict[str, Any]]) -> list[tuple[str, int, float]]:
+    """채팅방 ↔ 건물 1:1 자동 매핑. 확실한 것만 (방, 건물 id, 점수)로 돌려준다."""
+    scored: dict[str, list[tuple[float, int]]] = {}
+    for room in rooms:
+        floor = MIN_SCORE if is_apartment_room(room) else MIN_SCORE_PLAIN
+        cands = sorted(((similarity(room, b["name"]), b["id"]) for b in buildings), reverse=True)
+        cands = [c for c in cands if c[0] >= floor - AMBIGUOUS_GAP]
+        if cands and cands[0][0] >= floor:
+            scored[room] = cands
+    # 방 기준 애매함: 1·2위 건물 점수가 비슷하면 제외
+    firm = {room: c[0] for room, c in scored.items() if len(c) == 1 or c[0][0] - c[1][0] >= AMBIGUOUS_GAP}
+    # 건물 기준 애매함: 같은 건물을 가장 원하는 방이 비슷한 점수로 둘 이상이면 제외
+    by_building: dict[int, list[tuple[float, str]]] = {}
+    for room, (score, bid) in firm.items():
+        by_building.setdefault(bid, []).append((score, room))
+    result = []
+    for bid, lst in by_building.items():
+        lst.sort(reverse=True)
+        if len(lst) > 1 and lst[0][0] - lst[1][0] < AMBIGUOUS_GAP:
+            continue
+        result.append((lst[0][1], bid, lst[0][0]))
+    return sorted(result, key=lambda x: x[0])
 
 
 def _now(settings) -> datetime:
@@ -47,22 +141,133 @@ def _ser(row: dict[str, Any]) -> dict[str, Any]:
     return {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in row.items()}
 
 
+def _clean(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
 class ApartmentBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    address: str | None = Field(default=None, max_length=255)
+
+
+class ImportBody(BaseModel):
+    text: str = Field(min_length=1, max_length=500_000)
+
+
+class RoomBody(BaseModel):
+    room_name: str | None = Field(default=None, max_length=255)
+
+
+def _vendor_rooms(cur) -> set[str]:
+    cur.execute("SELECT room_name FROM vendors WHERE room_name IS NOT NULL")
+    return {r["room_name"] for r in cur.fetchall()}
+
+
+def _chat_rooms(cur) -> list[str]:
+    """건물에 연결할 수 있는 채팅방 (업체 방 제외)"""
+    from .vendors import is_vendor_room
+
+    vendor_rooms = _vendor_rooms(cur)
+    cur.execute("SELECT DISTINCT room_name FROM kakao_messages")
+    return sorted(r["room_name"] for r in cur.fetchall() if r["room_name"] not in vendor_rooms and not is_vendor_room(r["room_name"]))
+
+
+def _move_vendors(cur, src: int, dst: int) -> None:
+    """목록 외 방(src)에 해 둔 업체 설정을 건물(dst)로 옮긴다. 건물에 이미 있는 분류는 건물 것을 유지."""
+    cur.execute("SELECT category_id FROM apartment_vendors WHERE apartment_id = %s", (dst,))
+    have = {r["category_id"] for r in cur.fetchall()}
+    cur.execute("SELECT id, category_id FROM apartment_vendors WHERE apartment_id = %s", (src,))
+    for r in cur.fetchall():
+        if r["category_id"] in have:
+            cur.execute("DELETE FROM apartment_vendors WHERE id = %s", (r["id"],))
+        else:
+            cur.execute("UPDATE apartment_vendors SET apartment_id = %s WHERE id = %s", (dst, r["id"]))
+
+
+def _attach(cur, building_id: int, room: str, mode: str, score: float | None, now: datetime) -> None:
+    """건물에 채팅방을 연결. 그 방을 가진 다른 행은 정리(목록 외 행은 합치고, 다른 건물은 연결 해제)."""
+    cur.execute("SELECT id, listed FROM apartments WHERE room_name = %s AND id <> %s", (room, building_id))
+    for other in cur.fetchall():
+        if other["listed"]:
+            cur.execute("UPDATE apartments SET room_name = NULL, room_mode = 'manual', match_score = NULL, updated_at = %s WHERE id = %s", (now, other["id"]))
+        else:
+            _move_vendors(cur, other["id"], building_id)
+            cur.execute("DELETE FROM apartments WHERE id = %s", (other["id"],))
+    cur.execute(
+        "UPDATE apartments SET room_name = %s, room_mode = %s, match_score = %s, updated_at = %s WHERE id = %s",
+        (room, mode, None if score is None else round(score * 100), now, building_id),
+    )
+
+
+def _automap(cur, now: datetime) -> dict[str, Any]:
+    """미연결 건물(자동 대상)에 채팅방을 자동 연결하고, 남은 별(★) 방은 '목록 외 채팅방'으로 추가한다."""
+    rooms = _chat_rooms(cur)
+    cur.execute("SELECT id, name, room_name, listed, room_mode FROM apartments")
+    rows = cur.fetchall()
+    taken = {r["room_name"] for r in rows if r["listed"] and r["room_name"]}
+    targets = [r for r in rows if r["listed"] and not r["room_name"] and r["room_mode"] == "auto"]
+    free = [room for room in rooms if room not in taken]
+    mapped = []
+    for room, bid, score in best_matches(free, targets):
+        _attach(cur, bid, room, "auto", score, now)
+        name = next(t["name"] for t in targets if t["id"] == bid)
+        mapped.append({"room_name": room, "name": name, "score": round(score * 100)})
+    cur.execute("SELECT room_name FROM apartments WHERE room_name IS NOT NULL")
+    known = {r["room_name"] for r in cur.fetchall()}
+    added = []
+    for room in rooms:
+        if room in known or not is_apartment_room(room):
+            continue
+        name = apartment_name(room) or room
+        try:
+            cur.execute(
+                "INSERT INTO apartments (name, room_name, listed, room_mode, created_at, updated_at) VALUES (%s, %s, 0, 'auto', %s, %s)",
+                (name, room, now, now),
+            )
+        except db.IntegrityError as exc:  # 동시에 수집한 경우
+            if not db.is_duplicate(exc):
+                raise
+            continue
+        added.append({"name": name, "room_name": room})
+    cur.execute("DELETE FROM app_settings WHERE name = 'apartments_synced_at'")
+    cur.execute("INSERT INTO app_settings (name, value) VALUES ('apartments_synced_at', %s)", (now.isoformat(timespec="seconds"),))
+    return {"mapped": mapped, "added": added, "rooms": len(rooms), "matched": sum(1 for r in rooms if is_apartment_room(r))}
+
+
+def parse_building_list(text: str) -> list[tuple[str, str]]:
+    """엑셀에서 복사한 '이름<탭>주소' 줄들 → [(이름, 주소)]. 머리글·빈 줄·같은 이름은 건너뜀."""
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        if "\t" in line:
+            name, _, address = line.partition("\t")
+        else:
+            parts = re.split(r"\s{2,}", line.strip(), maxsplit=1)
+            name, address = parts[0], parts[1] if len(parts) > 1 else ""
+        name, address = _clean(name)[:100], _clean(address.replace("\t", " "))[:255]
+        if not name or name in ("빌라명", "건물명", "건물 이름", "이름", "아파트명", "name"):
+            continue
+        if name in seen:
+            continue
+        seen.add(name)
+        out.append((name, address))
+    return out
 
 
 @router.get("/api/admin/apartments")
 def list_apartments(settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute(
-            """SELECT a.id, a.name, a.room_name, a.created_at, a.updated_at,
+            """SELECT a.id, a.name, a.room_name, a.address, a.listed, a.room_mode, a.match_score, a.created_at, a.updated_at,
                       COUNT(m.id) AS messages, MAX(m.posted_at) AS last_at,
                       COALESCE(SUM(CASE WHEN c.verdict = 1 THEN 1 ELSE 0 END), 0) AS complaints
                FROM apartments a
                LEFT JOIN kakao_messages m ON m.room_name = a.room_name
                LEFT JOIN complaint_check c ON c.message_id = m.id
-               GROUP BY a.id, a.name, a.room_name, a.created_at, a.updated_at
-               ORDER BY a.name, a.id"""
+               GROUP BY a.id, a.name, a.room_name, a.address, a.listed, a.room_mode, a.match_score, a.created_at, a.updated_at
+               ORDER BY a.listed DESC, a.name, a.id"""
         )
         items = [_ser(r) for r in cur.fetchall()]
         cur.execute(
@@ -74,55 +279,92 @@ def list_apartments(settings: SettingsDep) -> dict[str, Any]:
         row = cur.fetchone()
     for i in items:
         c = custom.get(i["id"])
-        i["assigned"] = int(c["assigned"] or 0) if c else 0   # 이 아파트에 따로 지정한 업체 수
+        i["assigned"] = int(c["assigned"] or 0) if c else 0   # 이 건물에 따로 지정한 업체 수
         i["custom"] = int(c["custom"] or 0) if c else 0       # 따로 정한 분류 수('보내지 않음' 포함)
         i["messages"] = int(i["messages"] or 0)
         i["complaints"] = int(i["complaints"] or 0)
+        i["listed"] = bool(i["listed"])
     return {"ok": True, "items": items, "synced_at": row["value"] if row else None}
+
+
+@router.post("/api/admin/apartments", status_code=201)
+def create_apartment(body: ApartmentBody, settings: SettingsDep) -> dict[str, Any]:
+    name = _clean(body.name)
+    if not name:
+        raise HTTPException(422, "건물 이름을 입력하십시오.")
+    now = _now(settings)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM apartments WHERE name = %s AND listed = 1", (name,))
+        if cur.fetchone():
+            raise HTTPException(409, f"'{name}' 건물이 이미 있습니다.")
+        cur.execute(
+            "INSERT INTO apartments (name, address, listed, room_mode, created_at, updated_at) VALUES (%s, %s, 1, 'auto', %s, %s)",
+            (name, _clean(body.address or "") or None, now, now),
+        )
+        new_id = cur.lastrowid
+        result = _automap(cur, now)
+    live.bump("apartment")
+    return {"ok": True, "id": new_id, **result}
+
+
+@router.post("/api/admin/apartments/import")
+def import_apartments(body: ImportBody, settings: SettingsDep) -> dict[str, Any]:
+    rows = parse_building_list(body.text)
+    if not rows:
+        raise HTTPException(422, "등록할 건물이 없습니다. 엑셀에서 '건물 이름'과 '주소' 두 열을 복사해 붙여 넣으십시오.")
+    if len(rows) > 5000:
+        raise HTTPException(422, "한 번에 5,000곳까지 등록할 수 있습니다.")
+    now = _now(settings)
+    created = updated = 0
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, name, listed FROM apartments")
+        existing = cur.fetchall()
+        listed = {r["name"]: r["id"] for r in existing if r["listed"]}
+        unlisted = {r["name"]: r["id"] for r in existing if not r["listed"]}
+        for name, address in rows:
+            if name in listed:
+                cur.execute("UPDATE apartments SET address = %s, updated_at = %s WHERE id = %s", (address or None, now, listed[name]))
+                updated += 1
+            elif name in unlisted:  # 이미 별(★) 방으로 들어와 있던 같은 이름 → 목록 건물로 전환 (연결·업체 설정 유지)
+                cur.execute(
+                    "UPDATE apartments SET listed = 1, address = %s, room_mode = 'manual', match_score = 100, updated_at = %s WHERE id = %s",
+                    (address or None, now, unlisted.pop(name)),
+                )
+                updated += 1
+            else:
+                cur.execute(
+                    "INSERT INTO apartments (name, address, listed, room_mode, created_at, updated_at) VALUES (%s, %s, 1, 'auto', %s, %s)",
+                    (name, address or None, now, now),
+                )
+                created += 1
+        result = _automap(cur, now)
+    live.bump("apartment")
+    return {"ok": True, "parsed": len(rows), "created": created, "updated": updated, **result}
 
 
 @router.post("/api/admin/apartments/sync")
 def sync_apartments(settings: SettingsDep) -> dict[str, Any]:
     now = _now(settings)
-    added: list[dict[str, str]] = []
     with db.transaction(settings) as conn, conn.cursor() as cur:
-        cur.execute("SELECT DISTINCT room_name FROM kakao_messages")
-        rooms = [r["room_name"] for r in cur.fetchall()]
-        cur.execute("SELECT room_name FROM apartments")
-        known = {r["room_name"] for r in cur.fetchall()}
-        matched = [r for r in rooms if is_apartment_room(r)]
-        for room in sorted(matched):
-            if room in known:
-                continue
-            name = apartment_name(room) or room
-            try:
-                cur.execute(
-                    "INSERT INTO apartments (name, room_name, created_at, updated_at) VALUES (%s, %s, %s, %s)",
-                    (name, room, now, now),
-                )
-            except db.IntegrityError as exc:  # 동시에 수집한 경우
-                if not db.is_duplicate(exc):
-                    raise
-                continue
-            added.append({"name": name, "room_name": room})
-        cur.execute("DELETE FROM app_settings WHERE name = 'apartments_synced_at'")
-        cur.execute("INSERT INTO app_settings (name, value) VALUES ('apartments_synced_at', %s)", (now.isoformat(timespec="seconds"),))
+        result = _automap(cur, now)
     live.bump("apartment")
-    return {"ok": True, "added": added, "matched": len(matched), "rooms": len(rooms)}
+    return {"ok": True, **result}
 
 
 @router.put("/api/admin/apartments/{apartment_id}")
 def rename_apartment(apartment_id: int, body: ApartmentBody, settings: SettingsDep) -> dict[str, Any]:
-    name = re.sub(r"\s+", " ", body.name).strip()
+    name = _clean(body.name)
     if not name:
-        raise HTTPException(422, "아파트 이름을 입력하십시오.")
+        raise HTTPException(422, "건물 이름을 입력하십시오.")
     with db.transaction(settings) as conn, conn.cursor() as cur:
-        cur.execute("SELECT id FROM apartments WHERE id = %s", (apartment_id,))
-        if cur.fetchone() is None:
-            raise HTTPException(404, "아파트가 없습니다.")
-        cur.execute("UPDATE apartments SET name = %s, updated_at = %s WHERE id = %s", (name, _now(settings), apartment_id))
+        cur.execute("SELECT id, address FROM apartments WHERE id = %s", (apartment_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(404, "건물이 없습니다.")
+        address = row["address"] if body.address is None else (_clean(body.address) or None)
+        cur.execute("UPDATE apartments SET name = %s, address = %s, updated_at = %s WHERE id = %s", (name, address, _now(settings), apartment_id))
     live.bump("apartment")
-    return {"ok": True, "name": name}
+    return {"ok": True, "name": name, "address": address}
 
 
 @router.delete("/api/admin/apartments/{apartment_id}")
@@ -134,7 +376,62 @@ def delete_apartment(apartment_id: int, settings: SettingsDep) -> dict[str, Any]
     return {"ok": True}
 
 
-# ---- 아파트별 민원 분류 담당 업체 ------------------------------------------------------------------
+@router.get("/api/admin/apartments/{apartment_id}/candidates")
+def link_candidates(apartment_id: int, settings: SettingsDep) -> dict[str, Any]:
+    """목록 건물이면 채팅방 후보, 목록 외 채팅방이면 건물 후보를 유사도 순으로"""
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, name, room_name, listed FROM apartments WHERE id = %s", (apartment_id,))
+        me = cur.fetchone()
+        if me is None:
+            raise HTTPException(404, "건물이 없습니다.")
+        cur.execute("SELECT id, name, room_name, listed FROM apartments")
+        rows = cur.fetchall()
+        if me["listed"]:
+            holder = {r["room_name"]: r for r in rows if r["room_name"]}
+            cur.execute("SELECT room_name, COUNT(*) AS n FROM kakao_messages GROUP BY room_name")
+            counts = {r["room_name"]: int(r["n"]) for r in cur.fetchall()}
+            items = []
+            for room in _chat_rooms(cur):
+                h = holder.get(room)
+                items.append({
+                    "room_name": room, "messages": counts.get(room, 0), "score": round(similarity(room, me["name"]) * 100),
+                    "linked_to": h["name"] if h and h["listed"] and h["id"] != me["id"] else None,
+                    "current": room == me["room_name"],
+                })
+            items.sort(key=lambda x: (-x["score"], x["room_name"]))
+            return {"ok": True, "kind": "rooms", "items": items}
+    items = [
+        {"id": r["id"], "name": r["name"], "linked_room": r["room_name"], "score": round(similarity(me["room_name"] or me["name"], r["name"]) * 100)}
+        for r in rows if r["listed"]
+    ]
+    items.sort(key=lambda x: (x["linked_room"] is not None, -x["score"], x["name"]))
+    return {"ok": True, "kind": "buildings", "items": items}
+
+
+@router.put("/api/admin/apartments/{apartment_id}/room")
+def set_room(apartment_id: int, body: RoomBody, settings: SettingsDep) -> dict[str, Any]:
+    """건물에 채팅방을 직접 연결(room_name) 또는 해제(null). 직접 정한 건물은 자동 매핑이 바꾸지 않는다."""
+    now = _now(settings)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, listed, room_name FROM apartments WHERE id = %s", (apartment_id,))
+        me = cur.fetchone()
+        if me is None:
+            raise HTTPException(404, "건물이 없습니다.")
+        if not me["listed"]:
+            raise HTTPException(422, "목록 외 채팅방은 '건물 지정'으로 목록의 건물에 연결하십시오.")
+        room = (body.room_name or "").strip() or None
+        if room is None:
+            cur.execute("UPDATE apartments SET room_name = NULL, room_mode = 'manual', match_score = NULL, updated_at = %s WHERE id = %s", (now, apartment_id))
+        else:
+            if room not in set(_chat_rooms(cur)):
+                raise HTTPException(422, "수집된 채팅방이 아닙니다. 화면을 새로 고친 뒤 다시 고르십시오.")
+            _attach(cur, apartment_id, room, "manual", None, now)
+        _automap(cur, now)  # 풀려난 별(★) 방은 목록 외 채팅방으로 다시 보이게
+    live.bump("apartment")
+    return {"ok": True}
+
+
+# ---- 건물별 민원 분류 담당 업체 ------------------------------------------------------------------
 
 class Assignment(BaseModel):
     category_id: int
@@ -150,7 +447,7 @@ def _apartment(cur, apartment_id: int) -> dict[str, Any]:
     cur.execute("SELECT id, name, room_name FROM apartments WHERE id = %s", (apartment_id,))
     row = cur.fetchone()
     if row is None:
-        raise HTTPException(404, "아파트가 없습니다.")
+        raise HTTPException(404, "건물이 없습니다.")
     return row
 
 

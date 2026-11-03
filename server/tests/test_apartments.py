@@ -127,7 +127,7 @@ def test_stats_by_apartment(admin, settings):
     whole = admin.get("/api/admin/stats", params={"period": "today"}).json()
     groups = {g[0]: g for g in whole["group_detail"]}
     assert groups["통계A단지"][1] == 2 and groups["통계A단지"][2] == {"소음": 1, "주차": 1}
-    assert "통계아파트B" in groups and groups["아파트 외 방"][1] >= 1
+    assert "통계아파트B" in groups and groups["건물 외 방"][1] >= 1
     assert whole["apartment"] is None and any(a["id"] == a_id for a in whole["apartments"])
 
     one = admin.get("/api/admin/stats", params={"period": "today", "apartment_id": a_id}).json()

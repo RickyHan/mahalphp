@@ -338,13 +338,13 @@ def complaint_stats(
 ) -> dict[str, Any]:
     """apartment_id 를 주면 그 아파트 채팅방의 민원만, 없으면 전체 + 아파트별 묶음(group_detail)"""
     with db.transaction(settings) as conn, conn.cursor() as cur:
-        cur.execute("SELECT id, name, room_name FROM apartments ORDER BY name, id")
+        cur.execute("SELECT id, name, room_name FROM apartments WHERE room_name IS NOT NULL ORDER BY name, id")
         apartments = cur.fetchall()
         apartment = None
         if apartment_id is not None:
             apartment = next((a for a in apartments if a["id"] == apartment_id), None)
             if apartment is None:
-                raise HTTPException(404, "아파트가 없습니다.")
+                raise HTTPException(404, "건물이 없거나 연결된 채팅방이 없습니다.")
         rows = store.complaint_rows(cur)
         if apartment:
             rows = [r for r in rows if r["room_name"] == apartment["room_name"]]

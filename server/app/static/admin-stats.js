@@ -275,11 +275,11 @@
   async function loadStats() {
     for (const b of $("st-periods").children) b.setAttribute("aria-pressed", String(b.dataset.period === period));
     const s = await api("/api/admin/stats", { period, apartment_id: apartmentId || null });
-    // 아파트 선택 칸 (목록이 바뀌면 다시 채움, 고른 값 유지)
+    // 건물 선택 칸 (목록이 바뀌면 다시 채움, 고른 값 유지)
     const sel = $("st-apartment");
     const sig = s.apartments.map((a) => `${a.id}:${a.name}`).join("|");
     if (sel.dataset.sig !== sig) {
-      sel.replaceChildren(el("option", { value: "", text: `전체 아파트·방${s.apartments.length ? ` (아파트 ${s.apartments.length}곳)` : ""}` }), ...s.apartments.map((a) => el("option", { value: String(a.id), text: a.name })));
+      sel.replaceChildren(el("option", { value: "", text: `전체 건물·방${s.apartments.length ? ` (건물 ${s.apartments.length}곳)` : ""}` }), ...s.apartments.map((a) => el("option", { value: String(a.id), text: a.name })));
       sel.dataset.sig = sig;
     }
     sel.value = apartmentId;
@@ -312,7 +312,7 @@
       : null;
     const placeCard = s.apartment
       ? card("민원 제기자 TOP 10", hbars(s.by_sender, s.issues), "span-12")
-      : card("아파트별 문제 TOP 10", hstack(s.group_detail || [], cats, slotOf, pickApartment), "span-6", "누르면 그 아파트 통계");
+      : card("건물별 문제 TOP 10", hstack(s.group_detail || [], cats, slotOf, pickApartment), "span-6", "누르면 그 건물 통계");
     $("st-body").replaceChildren(
       ...(scope ? [scope] : []),
       kpis(s),

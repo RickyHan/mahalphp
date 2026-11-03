@@ -270,8 +270,8 @@ PERIODS = {"today": 1, "week": 7, "month": 30, "all": None}
 
 
 def compute_stats(groups: list[Group], period: str, now: datetime, top: int = 10,
-                  room_label: dict[str, str] | None = None, other_label: str = "아파트 외 방") -> dict[str, Any]:
-    """room_label 을 주면 방 이름을 그 이름(예: 아파트)으로 묶은 group_detail 도 만든다 (없는 방은 other_label)."""
+                  room_label: dict[str, str] | None = None, other_label: str = "건물 외 방") -> dict[str, Any]:
+    """room_label 을 주면 방 이름을 그 이름(예: 건물)으로 묶은 group_detail 도 만든다 (없는 방은 other_label)."""
     days = PERIODS.get(period, 7)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     start = today - timedelta(days=days - 1) if days else None

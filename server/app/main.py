@@ -8,7 +8,7 @@
     GET  /api/admin/stream         실시간 갱신 신호 (Server-Sent Events)
     /api/admin/categories          민원 카테고리 관리 (app/categories.py)
     /api/admin/data/*              수집 데이터 삭제 (app/datamgmt.py)
-    /api/admin/apartments*         아파트 관리 (app/apartments.py)
+    /api/admin/apartments*         건물 관리 (app/apartments.py)
     /api/admin/schedules*          예약 메시지 (app/schedules.py)
 
 POST /api/messages 는 헤더 X-Api-Key 가 .env 의 API_KEY 와 같아야 한다.

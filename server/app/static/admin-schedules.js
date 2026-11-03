@@ -198,7 +198,7 @@
     const sel = $("sc-room");
     const rooms = [...new Set([...(current ? [current] : []), ...state.rooms])];
     const groups = [
-      ["아파트 (★)", (r) => /^\s*[★☆⭐]/.test(r)],
+      ["건물 (★)", (r) => /^\s*[★☆⭐]/.test(r)],
       ["민원처리업체 (●)", (r) => /^\s*[●⚫⬤🔴🟠🟡🟢🔵🟣🟤]/u.test(r)],
       ["그 밖의 방", () => true],
     ];

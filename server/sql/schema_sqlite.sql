@@ -120,11 +120,15 @@ CREATE TABLE IF NOT EXISTS complaint_categories (
 );
 
 CREATE TABLE IF NOT EXISTS apartments (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT NOT NULL,
-  room_name  TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT NOT NULL,
+  room_name   TEXT UNIQUE,
+  address     TEXT,
+  listed      INTEGER NOT NULL DEFAULT 0,
+  room_mode   TEXT NOT NULL DEFAULT 'auto',
+  match_score INTEGER,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS apartment_vendors (

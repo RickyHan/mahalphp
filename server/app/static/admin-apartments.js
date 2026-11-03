@@ -1,6 +1,6 @@
 "use strict";
 
-// '아파트 관리' 탭: 별 하나로 시작하는 채팅방을 아파트로 모아 이름 관리. 서버 데이터는 텍스트 노드로만 넣는다(innerHTML 금지).
+// '건물 관리' 탭: 건물 목록 등록 · 채팅방 자동/직접 매핑 · 건물별 담당 업체. 서버 데이터는 텍스트 노드로만 넣는다(innerHTML 금지).
 (() => {
   const $ = (id) => document.getElementById(id);
   const KC = window.KC;
@@ -32,27 +32,40 @@
     );
   }
 
+  let filter = "all";
+
   async function loadApartments() {
     const data = await api("/api/admin/apartments");
     items = data.items;
-    const active = items.filter((a) => a.messages > 0).length;
+    const listed = items.filter((a) => a.listed);
+    const linked = listed.filter((a) => a.room_name).length;
+    const extra = items.length - listed.length;
     $("apt-kpis").replaceChildren(
-      kpi("apartment", "blue", "관리 중인 아파트", items.length, "곳"),
-      kpi("forum", "green", "대화가 있는 아파트 방", active, `/ ${items.length}`),
-      kpi("assignment", "rose", "아파트 방 민원", items.reduce((n, a) => n + a.complaints, 0), "건"),
-      kpi("sync", "slate", "마지막 수집", data.synced_at ? fmtDateTime(data.synced_at).slice(5, 16) : "–", ""),
+      kpi("apartment", "blue", "등록 건물", listed.length, "곳"),
+      kpi("link", "green", "채팅방 연결", linked, `/ ${listed.length}`),
+      kpi("do_not_disturb_alt", "amber", "미연결 건물", listed.length - linked, "곳"),
+      kpi("forum", "slate", "목록 외 채팅방", extra, "개"),
     );
     render();
   }
 
+  const FILTERS = {
+    all: () => true,
+    linked: (a) => a.listed && a.room_name,
+    unlinked: (a) => a.listed && !a.room_name,
+    extra: (a) => !a.listed,
+  };
+
   function render() {
     const q = $("apt-search").value.trim().toLowerCase();
-    const shown = items.filter((a) => !q || a.name.toLowerCase().includes(q) || a.room_name.toLowerCase().includes(q));
-    $("apt-count").textContent = q ? `${shown.length} / ${items.length}곳` : `${items.length}곳`;
+    const hit = (a) => !q || [a.name, a.address, a.room_name].some((v) => (v || "").toLowerCase().includes(q));
+    const shown = items.filter((a) => FILTERS[filter](a) && hit(a));
+    $("apt-count").textContent = shown.length === items.length ? `${items.length}곳` : `${shown.length} / ${items.length}곳`;
     const list = $("apt-list");
     list.replaceChildren();
     if (!shown.length) {
-      list.append(el("tr", {}, el("td", { colspan: "7", class: "empty-cell", text: items.length ? "검색 결과가 없습니다." : "아직 등록된 아파트가 없습니다. 오른쪽 위 '다시 수집하기'를 누르십시오." })));
+      const msg = items.length ? "조건에 맞는 항목이 없습니다." : "아직 등록된 건물이 없습니다. 오른쪽 위 '건물 목록 붙여넣기'로 등록하십시오.";
+      list.append(el("tr", {}, el("td", { colspan: "7", class: "empty-cell", text: msg })));
       return;
     }
     for (const a of shown) {
@@ -61,10 +74,72 @@
     }
   }
 
+  function badge(a) {
+    if (!a.listed) return el("span", { class: "map-badge extra", title: "건물 목록에 없는 별(★) 채팅방", text: "목록 외" });
+    if (!a.room_name) return el("span", { class: "map-badge none", text: "미연결" });
+    if (a.room_mode === "manual") return el("span", { class: "map-badge manual", text: "직접 연결" });
+    return el("span", { class: "map-badge auto", title: "이름 유사도", text: `자동 ${a.match_score ?? ""}%` });
+  }
+
+  /** 연결 편집: 목록 건물 → 채팅방 고르기, 목록 외 방 → 건물 고르기 */
+  async function openLinker(a, cell) {
+    const data = await api(`/api/admin/apartments/${a.id}/candidates`);
+    const select = el("select", { "aria-label": a.listed ? `${a.name} 에 연결할 채팅방` : `${a.room_name} 을 붙일 건물` });
+    if (data.kind === "rooms") {
+      select.append(el("option", { value: "", text: a.room_name ? "— 연결 해제 —" : "채팅방을 고르십시오" }));
+      const groups = [
+        ["비슷한 이름", data.items.filter((r) => r.score >= 50 && !r.linked_to && !r.current)],
+        ["연결 안 된 채팅방", data.items.filter((r) => r.score < 50 && !r.linked_to && !r.current).sort((x, y) => x.room_name.localeCompare(y.room_name, "ko"))],
+        ["다른 건물에 연결된 채팅방 (옮겨 옴)", data.items.filter((r) => r.linked_to)],
+      ];
+      for (const [label, rows] of groups) {
+        if (!rows.length) continue;
+        const g = el("optgroup", { label });
+        for (const r of rows) {
+          const extraText = r.linked_to ? `  → ${r.linked_to}` : r.score >= 50 ? `  · ${r.score}%` : "";
+          g.append(el("option", { value: r.room_name, text: `${r.room_name}${extraText}` }));
+        }
+        select.append(g);
+      }
+      if (a.room_name) select.value = "";
+    } else {
+      select.append(el("option", { value: "", text: "붙일 건물을 고르십시오" }));
+      const free = data.items.filter((b) => !b.linked_room);
+      const used = data.items.filter((b) => b.linked_room);
+      for (const [label, rows] of [["미연결 건물", free], ["채팅방이 있는 건물 (바꿔 연결)", used]]) {
+        if (!rows.length) continue;
+        const g = el("optgroup", { label });
+        for (const b of rows) g.append(el("option", { value: String(b.id), text: `${b.name}${b.score >= 50 ? `  · ${b.score}%` : ""}${b.linked_room ? `  (현재: ${b.linked_room})` : ""}` }));
+        select.append(g);
+      }
+    }
+    const ok = el("button", { class: "btn btn-small btn-primary", type: "button", text: data.kind === "rooms" ? "연결" : "지정" });
+    const cancel = el("button", { class: "btn btn-small", type: "button", text: "취소", onclick: () => render() });
+    ok.addEventListener("click", async () => {
+      const v = select.value;
+      try {
+        if (data.kind === "rooms") {
+          if (!v && !a.room_name) return;
+          if (!v && !confirm(`'${a.name}' 의 채팅방 연결을 해제하시겠습니까?\n(직접 해제한 건물은 자동 매핑이 다시 연결하지 않습니다)`)) return;
+          await send("PUT", `/api/admin/apartments/${a.id}/room`, { room_name: v || null });
+        } else {
+          if (!v) return;
+          await send("PUT", `/api/admin/apartments/${v}/room`, { room_name: a.room_name });
+        }
+        await loadApartments();
+      } catch (err) {
+        reportError(err);
+      }
+    });
+    select.addEventListener("keydown", (e) => e.key === "Escape" && render());
+    cell.replaceChildren(el("div", { class: "link-edit" }, select, ok, cancel));
+    select.focus();
+  }
+
   function row(a) {
-    const input = el("input", { class: "apt-name", value: a.name, maxlength: "100", "aria-label": `${a.room_name} 아파트 이름` });
+    const input = el("input", { class: "apt-name", value: a.name, maxlength: "100", "aria-label": `${a.name} 건물 이름` });
     const save = el("button", { class: "btn btn-small btn-primary", type: "button", text: "저장", disabled: true });
-    const tr = el("tr", { class: acc.id === a.id ? "acc-open" : "", "data-apt": a.id });
+    const tr = el("tr", { class: `${acc.id === a.id ? "acc-open" : ""}${a.listed ? "" : " extra-row"}`, "data-apt": a.id });
     input.addEventListener("input", () => {
       const changed = input.value.trim() !== a.name;
       save.disabled = !changed || !input.value.trim();
@@ -91,14 +166,23 @@
       type: "button",
       text: "삭제",
       onclick: async () => {
-        if (!confirm(`'${a.name}' 을(를) 아파트 목록에서 삭제하시겠습니까?\n(대화 데이터는 지워지지 않으며, 다시 수집하면 다시 추가됩니다)`)) return;
+        const note = a.listed ? "(대화 데이터는 지워지지 않습니다)" : "(대화 데이터는 지워지지 않으며, 다시 수집하면 다시 보입니다)";
+        if (!confirm(`'${a.name}' 을(를) 목록에서 삭제하시겠습니까?\n${note}`)) return;
         await send("DELETE", `/api/admin/apartments/${a.id}`).catch(reportError);
         await loadApartments();
       },
     });
+    const roomCell = el("td", {});
+    const linkBtn = el("button", {
+      class: "link-btn", type: "button",
+      text: a.listed ? (a.room_name ? "변경" : "채팅방 연결") : "건물 지정",
+      onclick: () => openLinker(a, roomCell).catch(reportError),
+    });
+    roomCell.append(el("div", { class: "apt-room" }, a.room_name ? KC.roomChip(a.room_name, a.messages > 0) : null, badge(a), linkBtn));
+    const hasRoom = Boolean(a.room_name);
     tr.append(
-      el("td", { class: "apt-name-cell" }, input),
-      el("td", {}, KC.roomChip(a.room_name, a.messages > 0)),
+      el("td", { class: "apt-name-cell" }, input, a.address ? el("span", { class: "apt-addr", title: a.address, text: a.address }) : null),
+      roomCell,
       el("td", {}, el("button", {
           class: `vendor-set-btn${a.custom ? " has" : ""}`, type: "button", "aria-expanded": String(acc.id === a.id), "aria-controls": `apt-acc-${a.id}`,
           onclick: () => toggleAccordion(a, tr).catch(reportError),
@@ -106,35 +190,75 @@
         el("span", { class: "ms", "aria-hidden": "true", text: "domain" }),
         a.custom ? `업체 ${a.assigned}곳 지정${a.custom > a.assigned ? ` · 보내지 않음 ${a.custom - a.assigned}` : ""}` : "기본 업체 사용",
         el("span", { class: "ms vendor-set-go", "aria-hidden": "true", text: "expand_more" }))),
-      el("td", { class: "num", text: a.messages.toLocaleString("ko-KR") }),
-      el("td", { class: "num" }, el("span", { class: `count-pill${a.complaints ? " has" : ""}`, text: `${a.complaints}건` })),
-      el("td", { class: "muted small", text: a.last_at ? fmtDateTime(a.last_at).slice(0, 16) : "대화 없음" }),
+      el("td", { class: "num", text: hasRoom ? a.messages.toLocaleString("ko-KR") : "–" }),
+      el("td", { class: "num" }, hasRoom ? el("span", { class: `count-pill${a.complaints ? " has" : ""}`, text: `${a.complaints}건` }) : "–"),
+      el("td", { class: "muted small", text: a.last_at ? fmtDateTime(a.last_at).slice(0, 16) : hasRoom ? "대화 없음" : "–" }),
       el("td", { class: "right-col" }, el("div", { class: "row-actions" }, save, remove)),
     );
     return tr;
+  }
+
+  function showResult(lines, details) {
+    const box = $("apt-result");
+    box.hidden = false;
+    box.classList.toggle("has-new", details.some(([, list]) => list.length));
+    box.replaceChildren(el("span", { class: "ms", "aria-hidden": "true", text: "check_circle" }), lines.join(" · "));
+    for (const [title, list] of details) {
+      if (!list.length) continue;
+      box.append(el("details", {}, el("summary", { text: `${title} ${list.length}건 보기` }), el("ul", {}, ...list.map((t) => el("li", { text: t })))));
+    }
+  }
+
+  function summarize(r, head = []) {
+    const mapped = r.mapped.map((m) => `${m.room_name} → ${m.name} (${m.score}%)`);
+    const added = r.added.map((a) => a.room_name);
+    showResult(
+      [...head, `자동 연결 ${r.mapped.length}건`, `목록 외 채팅방 추가 ${r.added.length}건`, `수집된 채팅방 ${r.rooms}개`],
+      [["자동 연결", mapped], ["목록 외 채팅방", added]],
+    );
   }
 
   async function sync() {
     const btn = $("apt-sync");
     btn.disabled = true;
     try {
-      const r = await send("POST", "/api/admin/apartments/sync");
-      const box = $("apt-result");
-      box.hidden = false;
-      box.replaceChildren(
-        el("span", { class: "ms", "aria-hidden": "true", text: r.added.length ? "new_releases" : "check_circle" }),
-        r.added.length
-          ? `새 아파트 ${r.added.length}곳을 추가했습니다: ${r.added.map((a) => a.name).join(", ")}`
-          : `새로 추가할 아파트가 없습니다. (채팅방 ${r.rooms}개 중 별 하나로 시작하는 방 ${r.matched}개, 모두 등록됨)`,
-      );
-      box.classList.toggle("has-new", r.added.length > 0);
+      summarize(await send("POST", "/api/admin/apartments/sync"));
       await loadApartments();
     } finally {
       btn.disabled = false;
     }
   }
 
-  // ---- 아파트별 담당 업체 (행 아래로 펼치는 아코디언, 한 번에 하나) ------------------------------------
+  // ---- 건물 목록 붙여넣기 ------------------------------------------------------------------------
+
+  function importLines() {
+    return $("apt-import-text").value.split(/\r?\n/).filter((l) => l.trim() && !/^\s*(빌라명|건물명|건물 이름|이름|아파트명)\s*(\t|$)/.test(l));
+  }
+
+  function toggleImport(open) {
+    $("apt-import").hidden = !open;
+    $("apt-import-open").setAttribute("aria-expanded", String(open));
+    if (open) $("apt-import-text").focus();
+  }
+
+  async function runImport() {
+    const btn = $("apt-import-run");
+    btn.disabled = true;
+    try {
+      const r = await send("POST", "/api/admin/apartments/import", { text: $("apt-import-text").value });
+      summarize(r, [`건물 ${r.parsed}곳 읽음 (새로 ${r.created} · 갱신 ${r.updated})`]);
+      $("apt-import-text").value = "";
+      $("apt-import-count").textContent = "";
+      toggleImport(false);
+      await loadApartments();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      btn.disabled = !importLines().length;
+    }
+  }
+
+  // ---- 건물별 담당 업체 (행 아래로 펼치는 아코디언, 한 번에 하나) ------------------------------------
 
   const acc = { id: null, apt: null, rows: [], vendors: [], initial: "", detail: null };
 
@@ -214,7 +338,7 @@
       const defaultNames = row.defaults.map((d) => d.name).join(", ");
       select.append(
         el("option", { value: "default", text: defaultNames ? `기본 업체 따름 (${defaultNames})` : "기본 업체 따름 (없음)" }),
-        el("option", { value: "none", text: "이 아파트는 보내지 않음" }),
+        el("option", { value: "none", text: "이 건물은 보내지 않음" }),
       );
       const group = el("optgroup", { label: "업체 지정" });
       for (const v of acc.vendors) group.append(el("option", { value: `v:${v.id}`, text: v.room_name ? `${v.name}  ·  ${v.room_name}` : `${v.name}  (톡방 없음)` }));
@@ -262,7 +386,7 @@
         "div",
         { class: "acc-head" },
         el("span", { class: "ms", "aria-hidden": "true", text: "domain" }),
-        el("div", {}, el("strong", { text: `${acc.apt.name} · 민원 분류별 담당 업체` }), el("p", { text: "분류마다 이 아파트의 민원을 처리할 업체를 고르십시오. 고른 업체의 카톡방으로 처리 요청이 갑니다. '기본 업체'는 민원처리업체 관리에서 정한 담당 업체입니다." })),
+        el("div", {}, el("strong", { text: `${acc.apt.name} · 민원 분류별 담당 업체` }), el("p", { text: "분류마다 이 건물의 민원을 처리할 업체를 고르십시오. 고른 업체의 카톡방으로 처리 요청이 갑니다. '기본 업체'는 민원처리업체 관리에서 정한 담당 업체입니다." })),
       ),
       list,
       el("div", { class: "acc-foot" }, dirty, cancel, save),
@@ -289,4 +413,19 @@
 
   $("apt-sync").addEventListener("click", () => sync().catch(reportError));
   $("apt-search").addEventListener("input", render);
+  for (const b of document.querySelectorAll(".apt-filter .seg-btn")) {
+    b.addEventListener("click", () => {
+      filter = b.dataset.filter;
+      for (const x of document.querySelectorAll(".apt-filter .seg-btn")) x.classList.toggle("on", x === b);
+      render();
+    });
+  }
+  $("apt-import-open").addEventListener("click", () => toggleImport($("apt-import").hidden));
+  $("apt-import-cancel").addEventListener("click", () => toggleImport(false));
+  $("apt-import-text").addEventListener("input", () => {
+    const n = importLines().length;
+    $("apt-import-count").textContent = n ? `${n.toLocaleString("ko-KR")}줄` : "";
+    $("apt-import-run").disabled = n === 0;
+  });
+  $("apt-import-run").addEventListener("click", runImport);
 })();

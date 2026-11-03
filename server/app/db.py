@@ -165,6 +165,27 @@ def _add_column_if_missing(conn, settings: Settings, table: str, column: str, dd
             conn.commit()
 
 
+def _sqlite_room_nullable(conn) -> None:
+    """이전 버전 SQLite 의 apartments.room_name NOT NULL 을 풀기 위해 표를 다시 만든다."""
+    with conn.cursor() as cur:
+        cur.execute("PRAGMA table_info(apartments)")
+        col = next((r for r in cur.fetchall() if r["name"] == "room_name"), None)
+    if not col or not col["notnull"]:
+        return
+    conn.executescript(
+        """BEGIN;
+        CREATE TABLE apartments_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, room_name TEXT UNIQUE, address TEXT,
+          listed INTEGER NOT NULL DEFAULT 0, room_mode TEXT NOT NULL DEFAULT 'auto', match_score INTEGER,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        INSERT INTO apartments_new (id, name, room_name, address, listed, room_mode, match_score, created_at, updated_at)
+          SELECT id, name, room_name, address, listed, room_mode, match_score, created_at, updated_at FROM apartments;
+        DROP TABLE apartments;
+        ALTER TABLE apartments_new RENAME TO apartments;
+        COMMIT;"""
+    )
+
+
 def install_schema(settings: Settings) -> list[str]:
     """스키마와 테이블을 생성(이미 있으면 유지)하고, 생성된 테이블 목록을 반환한다."""
     if settings.db_engine == "sqlite":
@@ -179,6 +200,9 @@ def install_schema(settings: Settings) -> list[str]:
             _add_column_if_missing(conn, settings, "reply_queue", "vendor_id", "INTEGER")
             _add_column_if_missing(conn, settings, "reply_queue", "vendor_name", "TEXT")
             _add_column_if_missing(conn, settings, "reply_queue", "schedule_id", "INTEGER")
+            for col, ddl in (("address", "TEXT"), ("listed", "INTEGER NOT NULL DEFAULT 0"), ("room_mode", "TEXT NOT NULL DEFAULT 'auto'"), ("match_score", "INTEGER")):
+                _add_column_if_missing(conn, settings, "apartments", col, ddl)
+            _sqlite_room_nullable(conn)
             with conn.cursor() as cur:
                 cur.execute("SELECT name AS t FROM sqlite_master WHERE type = 'table' AND name LIKE 'kakao!_%' ESCAPE '!' ORDER BY name")
                 return [row["t"] for row in cur.fetchall()]
@@ -197,6 +221,22 @@ def install_schema(settings: Settings) -> list[str]:
             _add_column_if_missing(conn, settings, "reply_queue", "vendor_id", "BIGINT UNSIGNED NULL")
             _add_column_if_missing(conn, settings, "reply_queue", "vendor_name", "VARCHAR(100) NULL")
             _add_column_if_missing(conn, settings, "reply_queue", "schedule_id", "BIGINT UNSIGNED NULL")
+            for col, ddl in (
+                ("address", "VARCHAR(255) NULL"),
+                ("listed", "TINYINT(1) NOT NULL DEFAULT 0"),
+                ("room_mode", "VARCHAR(10) NOT NULL DEFAULT 'auto'"),
+                ("match_score", "SMALLINT NULL"),
+            ):
+                _add_column_if_missing(conn, settings, "apartments", col, ddl)
+            # 이전 버전은 apartments.room_name 이 NOT NULL → 채팅방 없는 건물을 위해 NULL 허용
+            cur.execute(
+                "SELECT is_nullable FROM information_schema.columns WHERE table_schema = %s AND table_name = 'apartments' AND column_name = 'room_name'",
+                (settings.db_name,),
+            )
+            row = cur.fetchone()
+            if row and str(row["is_nullable"]).upper() == "NO":
+                cur.execute(f"ALTER TABLE `{settings.db_name}`.apartments MODIFY `room_name` VARCHAR(255) NULL")
+                conn.commit()
             # 이전 버전은 reply_queue.text 가 VARCHAR(500) → 긴 업체 요청·예약 메시지를 위해 TEXT 로
             cur.execute(
                 "SELECT data_type FROM information_schema.columns WHERE table_schema = %s AND table_name = 'reply_queue' AND column_name = 'text'",
