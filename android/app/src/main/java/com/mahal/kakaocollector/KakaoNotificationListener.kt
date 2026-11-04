@@ -23,6 +23,8 @@ class KakaoNotificationListener : NotificationListenerService() {
         relayTask = relayTimer.scheduleWithFixedDelay({
             runCatching { if (AppSettings(this).captureEnabled) ReplyRelay.relayOnce(this) }
                 .onFailure { Log.w(TAG, "relay", it) }
+            // 서버 재시작·네트워크 끊김 뒤 남은 메시지를 30초 안에 다시 보낸다
+            runCatching { UploadWorker.kick(this) }.onFailure { Log.w(TAG, "upload kick", it) }
         }, 5, RELAY_SECONDS, TimeUnit.SECONDS)
         // 권한을 막 켰거나 서비스가 재시작된 경우, 이미 떠 있는 알림도 수집한다(중복은 큐에서 걸러짐)
         runCatching { activeNotifications }.getOrNull()?.forEach(::onNotificationPosted)

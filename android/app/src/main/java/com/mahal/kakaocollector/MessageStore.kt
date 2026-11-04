@@ -149,6 +149,13 @@ class MessageStore private constructor(context: Context) :
 
     fun pending(limit: Int): List<Row> = query("status = ?", arrayOf(PENDING), "id ASC", limit)
 
+    /** [afterId] 다음의 대기 메시지 (한 번 전송하는 동안 실패한 메시지를 건너뛰고 뒤 메시지를 보내기 위함) */
+    fun pendingAfter(afterId: Long, limit: Int): List<Row> =
+        query("status = ? AND id > ?", arrayOf(PENDING, afterId.toString()), "id ASC", limit)
+
+    fun hasPending(): Boolean =
+        readableDatabase.rawQuery("SELECT 1 FROM queue WHERE status = ? LIMIT 1", arrayOf(PENDING)).use { it.moveToFirst() }
+
     fun recent(limit: Int): List<Row> = query(null, null, "id DESC", limit)
 
     /** 서버에 저장되면 사진 파일은 지운다(휴대폰은 수집만) */

@@ -45,6 +45,20 @@ class MessageStoreTest {
     }
 
     @Test
+    fun pendingAfterSkipsAMessageTheServerRejected() {
+        (1..4).forEach { store.insert(msg("m$it", it.toLong()), null) }
+        assertTrue(store.hasPending())
+        val first = store.pending(1).single()
+        store.markRetry(first, "HTTP 500")            // 서버가 이 메시지만 처리 못 함 → 대기로 남음
+        val rest = store.pendingAfter(first.id, 10)   // 뒤 메시지는 계속 보낸다
+        assertEquals(listOf("m2", "m3", "m4"), rest.map { it.text })
+        rest.forEach(store::markSent)
+        assertEquals(listOf("m1"), store.pending(10).map { it.text })
+        store.markSent(store.pending(1).single())
+        assertFalse(store.hasPending())
+    }
+
+    @Test
     fun sentRowsDropPhotoAndArePruned() {
         val photo = File(context.filesDir, "media").apply { mkdirs() }.resolve("p.jpg").apply { writeBytes(byteArrayOf(1)) }
         store.insert(KakaoMessage("방", "a", "사진을 보냈습니다.", MessageType.PHOTO, true, 1, "k"), photo.absolutePath)

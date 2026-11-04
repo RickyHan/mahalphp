@@ -14,8 +14,11 @@ class ApiClient(private val settings: AppSettings) {
 
     sealed interface Result {
         data object Ok : Result
-        /** 네트워크 오류·서버 일시 오류: 나중에 다시 시도 */
-        data class Retry(val reason: String) : Result
+        /**
+         * 네트워크 오류·서버 일시 오류: 나중에 다시 시도.
+         * thisMessageOnly = 서버는 응답했지만 이 메시지 처리만 실패(HTTP 500) → 다음 메시지는 계속 보낸다.
+         */
+        data class Retry(val reason: String, val thisMessageOnly: Boolean = false) : Result
         /** 요청 자체가 잘못됨: 다시 보내도 실패 */
         data class Rejected(val reason: String) : Result
     }
@@ -97,7 +100,8 @@ class ApiClient(private val settings: AppSettings) {
             val code = res.code
             when {
                 res.isSuccessful -> Result.Ok
-                code == 401 || code == 408 || code == 429 || code >= 500 ->
+                code == 500 -> Result.Retry("HTTP $code ${res.body?.string()?.take(200).orEmpty()}", thisMessageOnly = true)
+                code == 401 || code == 408 || code == 429 || code > 500 ->
                     Result.Retry("HTTP $code ${res.body?.string()?.take(200).orEmpty()}")
                 else -> Result.Rejected("HTTP $code ${res.body?.string()?.take(200).orEmpty()}")
             }
