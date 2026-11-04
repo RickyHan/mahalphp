@@ -964,3 +964,13 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .vd-unlinked { border-color: color-mix(in srgb, var(--warn) 35%, var(--border)); }
 .vd-unlinked .card-head { flex-wrap: wrap; gap: 8px; }
 .vd-unlinked select { min-width: 200px; max-width: 280px; height: 30px; }
+
+/* 건물 관리: 연결할 채팅방·건물 검색 고르기 */
+.link-edit { align-items: flex-start; }
+.link-pick { display: grid; gap: 6px; min-width: min(360px, 70vw); }
+.link-search-row { display: flex; align-items: center; gap: 8px; }
+.link-search { flex: 1; height: 32px; }
+.link-count { white-space: nowrap; }
+.link-list { width: 100%; max-width: none !important; height: auto !important; min-height: 180px; padding: 4px; border-radius: 8px; }
+.link-list option { padding: 5px 8px; border-radius: 4px; }
+.link-actions { display: flex; gap: 6px; padding-top: 0; }

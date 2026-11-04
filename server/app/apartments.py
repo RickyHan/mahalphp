@@ -109,6 +109,16 @@ def similarity(room: str, building: str) -> float:
     return best
 
 
+def common_run(room: str, building: str) -> int:
+    """두 이름(비교용으로 다듬은 것)에서 이어서 같은 글자 수의 최댓값 — 비슷한 순 정렬의 보조 기준"""
+    best = 0
+    for r in name_keys(room, room=True):
+        for b in name_keys(building):
+            m = SequenceMatcher(None, r, b).find_longest_match(0, len(r), 0, len(b))
+            best = max(best, m.size)
+    return best
+
+
 def best_matches(rooms: list[str], buildings: list[dict[str, Any]], open_ids: set[int] | None = None) -> list[tuple[str, int, float]]:
     """채팅방 ↔ 건물 1:1 자동 매핑. 확실한 것만 (방, 건물 id, 점수)로 돌려준다.
 
@@ -411,16 +421,19 @@ def link_candidates(apartment_id: int, settings: SettingsDep) -> dict[str, Any]:
                 h = holder.get(room)
                 items.append({
                     "room_name": room, "messages": counts.get(room, 0), "score": round(similarity(room, me["name"]) * 100),
+                    "common": common_run(room, me["name"]),
                     "linked_to": h["name"] if h and h["listed"] and h["id"] != me["id"] else None,
                     "current": room == me["room_name"],
                 })
-            items.sort(key=lambda x: (-x["score"], x["room_name"]))
+            items.sort(key=lambda x: (-x["score"], -x["common"], x["room_name"]))
             return {"ok": True, "kind": "rooms", "items": items}
     items = [
-        {"id": r["id"], "name": r["name"], "linked_room": r["room_name"], "score": round(similarity(me["room_name"] or me["name"], r["name"]) * 100)}
+        {"id": r["id"], "name": r["name"], "linked_room": r["room_name"],
+         "score": round(similarity(me["room_name"] or me["name"], r["name"]) * 100),
+         "common": common_run(me["room_name"] or me["name"], r["name"])}
         for r in rows if r["listed"]
     ]
-    items.sort(key=lambda x: (x["linked_room"] is not None, -x["score"], x["name"]))
+    items.sort(key=lambda x: (x["linked_room"] is not None, -x["score"], -x["common"], x["name"]))
     return {"ok": True, "kind": "buildings", "items": items}
 
 

@@ -117,59 +117,70 @@
     return el("span", { class: "map-badge auto", text: "자동 연결" });
   }
 
-  /** 연결 편집: 목록 건물 → 채팅방 고르기, 목록 외 방 → 건물 고르기 */
+  /**
+   * 연결 편집: 목록 건물 → 채팅방 고르기, 목록 외 방 → 건물 고르기.
+   * 검색 칸 + 목록. 이름이 비슷한 순으로 위에 오고, 이미 다른 곳에 연결된 항목은 아래에 둔다.
+   */
   async function openLinker(a, cell) {
     const data = await api(`/api/admin/apartments/${a.id}/candidates`);
-    const select = el("select", { "aria-label": a.listed ? `${a.name} 에 연결할 채팅방` : `${a.room_name} 을 붙일 건물` });
-    if (data.kind === "rooms") {
-      select.append(el("option", { value: "", text: a.room_name ? "— 연결 해제 —" : "채팅방을 고르십시오" }));
-      const groups = [
-        ["비슷한 이름", data.items.filter((r) => r.score >= 50 && !r.linked_to && !r.current)],
-        ["연결 안 된 채팅방", data.items.filter((r) => r.score < 50 && !r.linked_to && !r.current).sort((x, y) => x.room_name.localeCompare(y.room_name, "ko"))],
-        ["다른 건물에 연결된 채팅방 (옮겨 옴)", data.items.filter((r) => r.linked_to)],
-      ];
-      for (const [label, rows] of groups) {
-        if (!rows.length) continue;
-        const g = el("optgroup", { label });
-        for (const r of rows) {
-          const extraText = r.linked_to ? `  → ${r.linked_to}` : "";
-          g.append(el("option", { value: r.room_name, text: `${r.room_name}${extraText}` }));
-        }
-        select.append(g);
-      }
-      if (a.room_name) select.value = "";
-    } else {
-      select.append(el("option", { value: "", text: "붙일 건물을 고르십시오" }));
-      const free = data.items.filter((b) => !b.linked_room);
-      const used = data.items.filter((b) => b.linked_room);
-      for (const [label, rows] of [["미연결 건물", free], ["채팅방이 있는 건물 (바꿔 연결)", used]]) {
-        if (!rows.length) continue;
-        const g = el("optgroup", { label });
-        for (const b of rows) g.append(el("option", { value: String(b.id), text: `${b.name}${b.linked_room ? `  (현재: ${b.linked_room})` : ""}` }));
-        select.append(g);
-      }
-    }
-    const ok = el("button", { class: "btn btn-small btn-primary", type: "button", text: data.kind === "rooms" ? "연결" : "지정" });
+    const rooms = data.kind === "rooms";
+    // { value, label, note, linked }
+    let options = rooms
+      ? data.items.filter((r) => !r.current).map((r) => ({ value: r.room_name, label: r.room_name, note: r.linked_to ? `→ ${r.linked_to}` : "", linked: Boolean(r.linked_to), score: r.score }))
+      : data.items.map((b) => ({ value: String(b.id), label: b.name, note: b.linked_room ? `현재: ${b.linked_room}` : "", linked: Boolean(b.linked_room), score: b.score }));
+    options.sort((x, y) => x.linked - y.linked); // 서버가 비슷한 순으로 보냄. 이미 다른 곳에 연결된 것만 아래로
+    if (rooms && a.room_name) options = [{ value: "", label: "— 연결 해제 —", note: "", linked: false, score: 0, unlink: true }, ...options];
+
+    const search = el("input", { type: "search", class: "link-search", placeholder: rooms ? "채팅방 이름 검색" : "건물 이름 검색", "aria-label": "검색", autocomplete: "off" });
+    const list = el("select", { class: "link-list", size: "8", "aria-label": rooms ? `${a.name} 에 연결할 채팅방` : `${a.room_name} 을 붙일 건물` });
+    const count = el("span", { class: "muted small link-count" });
+    const fill = () => {
+      const q = search.value.trim().toLowerCase().replace(/\s+/g, "");
+      const shown = options.filter((o) => o.unlink || !q || o.label.toLowerCase().replace(/\s+/g, "").includes(q));
+      list.replaceChildren(...shown.map((o) => el("option", { value: o.value, text: o.note ? `${o.label}   (${o.note})` : o.label })));
+      const real = shown.filter((o) => !o.unlink).length;
+      count.textContent = q ? `${real}개 찾음` : `${real}개 · 비슷한 이름 순`;
+      if (list.options.length) list.selectedIndex = shown[0]?.unlink && shown.length > 1 ? 1 : 0;
+    };
+    fill();
+
+    const ok = el("button", { class: "btn btn-small btn-primary", type: "button", text: rooms ? "연결" : "지정" });
     const cancel = el("button", { class: "btn btn-small", type: "button", text: "취소", onclick: () => render() });
-    ok.addEventListener("click", async () => {
-      const v = select.value;
+    const confirmPick = async () => {
+      if (list.selectedIndex < 0) return reportError(new Error(rooms ? "연결할 채팅방을 고르십시오." : "붙일 건물을 고르십시오."));
+      const v = list.value;
       try {
-        if (data.kind === "rooms") {
-          if (!v && !a.room_name) return;
+        if (rooms) {
           if (!v && !confirm(`'${a.name}' 의 채팅방 연결을 해제하시겠습니까?\n(직접 해제한 건물은 자동 매핑이 다시 연결하지 않습니다)`)) return;
           await send("PUT", `/api/admin/apartments/${a.id}/room`, { room_name: v || null });
         } else {
-          if (!v) return;
           await send("PUT", `/api/admin/apartments/${v}/room`, { room_name: a.room_name });
         }
         await loadApartments();
       } catch (err) {
         reportError(err);
       }
+    };
+    ok.addEventListener("click", confirmPick);
+    list.addEventListener("dblclick", confirmPick);
+    search.addEventListener("input", fill);
+    search.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        list.focus();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        confirmPick();
+      } else if (e.key === "Escape") render();
     });
-    select.addEventListener("keydown", (e) => e.key === "Escape" && render());
-    cell.replaceChildren(el("div", { class: "link-edit" }, select, ok, cancel));
-    select.focus();
+    list.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        confirmPick();
+      } else if (e.key === "Escape") render();
+    });
+    cell.replaceChildren(el("div", { class: "link-edit" }, el("div", { class: "link-pick" }, el("div", { class: "link-search-row" }, search, count), list), el("div", { class: "link-actions" }, ok, cancel)));
+    search.focus();
   }
 
   function row(a) {
