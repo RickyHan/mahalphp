@@ -54,6 +54,77 @@ def vendor_name_from_room(room: str) -> str:
     return re.sub(r"\s+", " ", _ALL_CIRCLES.sub("", room)).strip()
 
 
+# ---- 업체 톡방 ↔ 등록된 업체 이름 유사도 (다시 수집하기 때 자동 연결) ------------------------------------
+
+_ROOM_TAIL = ("방", "단톡", "톡", "업체", "협력사", "협력", "공지", "소통", "대화", "채팅", "님")
+_COMPANY = re.compile(r"\(주\)|㈜|주식회사|\(유\)|유한회사")
+VENDOR_MIN_SCORE = 0.8
+VENDOR_GAP = 0.04
+
+
+def _vkey(text: str) -> str:
+    import unicodedata
+
+    text = unicodedata.normalize("NFKC", _COMPANY.sub("", text or "")).lower()
+    return re.sub(r"[^0-9a-z가-힣]", "", text)
+
+
+def _room_keys(room: str) -> set[str]:
+    from .apartments import _strip_end
+
+    base = vendor_name_from_room(room)
+    keys = set()
+    for variant in (base, re.sub(r"\([^)]*\)", " ", base)):
+        k = _vkey(variant)
+        for kk in (k, _strip_end(k, _ROOM_TAIL)):
+            if kk:
+                keys.add(kk)
+    return keys
+
+
+def vendor_similarity(room: str, name: str) -> float:
+    """1 = 같음. 톡방 이름이 업체 이름을 품으면(예: ●성도엘리베이터 ⊃ 성도) 0.85 이상, 그 밖에는 글자 배열 유사도"""
+    from difflib import SequenceMatcher
+
+    best = 0.0
+    for v in {_vkey(name), _vkey(re.sub(r"\([^)]*\)", " ", name))} - {""}:
+        for r in _room_keys(room):
+            if r == v:
+                return 1.0
+            if len(v) >= 2 and v in r:
+                best = max(best, 0.85 + 0.1 * len(v) / len(r))
+            elif len(r) >= 3 and r in v:
+                best = max(best, 0.82 + 0.1 * len(r) / len(v))
+            else:
+                best = max(best, SequenceMatcher(None, r, v).ratio())
+    return best
+
+
+def match_vendor_rooms(rooms: list[str], vendors: list[dict[str, Any]]) -> tuple[list[tuple[str, int, float]], list[str]]:
+    """톡방 ↔ 톡방 없는 업체 1:1. (확실한 짝, 후보가 비슷하게 여럿이라 남긴 방)"""
+    firm: dict[str, tuple[float, int]] = {}
+    ambiguous: list[str] = []
+    for room in rooms:
+        cands = sorted(((vendor_similarity(room, v["name"]), v["id"]) for v in vendors), reverse=True)
+        if not cands or cands[0][0] < VENDOR_MIN_SCORE:
+            continue
+        if len(cands) > 1 and cands[0][0] - cands[1][0] < VENDOR_GAP:
+            ambiguous.append(room)
+            continue
+        firm[room] = cands[0]
+    by_vendor: dict[int, list[tuple[float, str]]] = {}
+    for room, (score, vid) in firm.items():
+        by_vendor.setdefault(vid, []).append((score, room))
+    pairs = []
+    for vid, lst in by_vendor.items():
+        lst.sort(reverse=True)
+        if len(lst) > 1 and lst[0][0] - lst[1][0] < VENDOR_GAP:
+            ambiguous.extend(r for _, r in lst)
+            continue
+        pairs.append((lst[0][1], vid, lst[0][0]))
+    return sorted(pairs), sorted(ambiguous)
+
+
 def docs_root(settings: Settings) -> Path:
     return settings.media_root.parent / "vendor-docs"
 
@@ -141,8 +212,9 @@ def list_vendors(settings: SettingsDep) -> dict[str, Any]:
 
 @router.post("/api/admin/vendors/sync")
 def sync_vendors(settings: SettingsDep) -> dict[str, Any]:
-    """꽉 찬 동그라미로 시작하는 방 중 아직 어느 업체에도 연결되지 않은 방을 업체로 추가.
-    같은 이름의 업체가 톡방 없이 등록돼 있으면 새로 만들지 않고 그 업체에 방을 연결한다. 고친 업체 이름은 유지."""
+    """꽉 찬 동그라미로 시작하는 방 중 아직 어느 업체에도 연결되지 않은 방을 정리한다.
+    톡방 없이 등록된 업체 중 이름이 같거나 확실히 비슷한 업체가 있으면 그 업체에 방을 연결하고(예: ●성도엘리베이터 → 성도),
+    비슷한 업체가 없으면 새 업체로 추가한다. 후보가 비슷하게 여럿이면 연결도 추가도 하지 않고 남긴다(직접 연결). 고친 업체 이름은 유지."""
     now = _now(settings)
     added: list[dict[str, str]] = []
     linked: list[dict[str, str]] = []
@@ -152,31 +224,106 @@ def sync_vendors(settings: SettingsDep) -> dict[str, Any]:
         cur.execute("SELECT id, name, room_name FROM vendors")
         vendors = cur.fetchall()
         used = {v["room_name"] for v in vendors if v["room_name"]}
-        roomless = {v["name"]: v["id"] for v in vendors if not v["room_name"]}
+        roomless = [v for v in vendors if not v["room_name"]]
         matched = sorted(r for r in rooms if is_vendor_room(r))
-        for room in matched:
-            if room in used:
+        free = [r for r in matched if r not in used]
+        pairs, ambiguous = match_vendor_rooms(free, roomless)
+        names = {v["id"]: v["name"] for v in roomless}
+        for room, vid, score in pairs:
+            cur.execute("UPDATE vendors SET room_name = %s, updated_at = %s WHERE id = %s", (room, now, vid))
+            linked.append({"name": names[vid], "room_name": room, "exact": score >= 1.0})
+            used.add(room)
+        skip = set(ambiguous)
+        for room in free:
+            if room in used or room in skip:
                 continue
             name = vendor_name_from_room(room) or room
-            if name in roomless:
-                cur.execute("UPDATE vendors SET room_name = %s, updated_at = %s WHERE id = %s", (room, now, roomless.pop(name)))
-                linked.append({"name": name, "room_name": room})
-            else:
-                cur.execute(
-                    """INSERT INTO vendors (name, biz_no, phone, address, room_name, created_at, updated_at)
-                       VALUES (%s, '', '', '', %s, %s, %s)""",
-                    (name[:100], room, now, now),
-                )
-                added.append({"name": name, "room_name": room})
+            cur.execute(
+                """INSERT INTO vendors (name, biz_no, phone, address, room_name, created_at, updated_at)
+                   VALUES (%s, '', '', '', %s, %s, %s)""",
+                (name[:100], room, now, now),
+            )
+            added.append({"name": name, "room_name": room})
             used.add(room)
         cur.execute("DELETE FROM app_settings WHERE name = 'vendors_synced_at'")
         cur.execute("INSERT INTO app_settings (name, value) VALUES ('vendors_synced_at', %s)", (now.isoformat(timespec="seconds"),))
     live.bump("vendor")
-    return {"ok": True, "added": added, "linked": linked, "matched": len(matched), "rooms": len(rooms)}
+    return {"ok": True, "added": added, "linked": linked, "ambiguous": ambiguous, "matched": len(matched), "rooms": len(rooms)}
 
 
 class NameBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+
+
+class RoomBody(BaseModel):
+    room_name: str = Field(min_length=1, max_length=255)
+
+
+@router.get("/api/admin/vendors/unlinked-rooms")
+def unlinked_rooms(settings: SettingsDep) -> dict[str, Any]:
+    """● 로 시작하는데 어느 업체에도 연결되지 않은 톡방 + 연결 후보(톡방 없는 업체, 비슷한 순)"""
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT room_name, COUNT(*) AS n, MAX(posted_at) AS last_at FROM kakao_messages GROUP BY room_name")
+        stats = {r["room_name"]: r for r in cur.fetchall()}
+        cur.execute("SELECT id, name, room_name FROM vendors ORDER BY name, id")
+        vendors = cur.fetchall()
+    used = {v["room_name"] for v in vendors if v["room_name"]}
+    roomless = [v for v in vendors if not v["room_name"]]
+    items = []
+    for room in sorted(r for r in stats if is_vendor_room(r) and r not in used):
+        st = stats[room]
+        cands = sorted(((vendor_similarity(room, v["name"]), v) for v in roomless), key=lambda x: (-x[0], x[1]["name"]))
+        items.append({
+            "room_name": room,
+            "messages": int(st["n"]),
+            "last_at": st["last_at"].isoformat() if isinstance(st["last_at"], datetime) else st["last_at"],
+            "suggested": [{"id": v["id"], "name": v["name"]} for score, v in cands[:5] if score >= 0.5],
+        })
+    return {"ok": True, "items": items, "vendors": [{"id": v["id"], "name": v["name"]} for v in roomless]}
+
+
+@router.post("/api/admin/vendors/{vendor_id}/room")
+def link_room(vendor_id: int, body: RoomBody, settings: SettingsDep) -> dict[str, Any]:
+    """업체에 톡방 연결 (연결 안 된 업체 톡방 목록에서)"""
+    room = body.room_name.strip()
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM vendors WHERE id = %s", (vendor_id,))
+        if cur.fetchone() is None:
+            raise HTTPException(404, "업체가 없습니다.")
+        cur.execute("SELECT name FROM vendors WHERE room_name = %s AND id <> %s", (room, vendor_id))
+        other = cur.fetchone()
+        if other:
+            raise HTTPException(409, f"이 톡방은 이미 '{other['name']}' 에 연결되어 있습니다.")
+        cur.execute("SELECT 1 FROM kakao_messages WHERE room_name = %s LIMIT 1", (room,))
+        if cur.fetchone() is None:
+            raise HTTPException(422, "수집된 채팅방이 아닙니다.")
+        cur.execute("UPDATE vendors SET room_name = %s, updated_at = %s WHERE id = %s", (room, _now(settings), vendor_id))
+    live.bump("vendor")
+    return {"ok": True}
+
+
+@router.post("/api/admin/vendors/from-room", status_code=201)
+def vendor_from_room(body: RoomBody, settings: SettingsDep) -> dict[str, Any]:
+    """연결 안 된 톡방을 새 업체로 추가 (업체 이름 = 방 이름에서 ● 를 뺀 것)"""
+    room = body.room_name.strip()
+    now = _now(settings)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT name FROM vendors WHERE room_name = %s", (room,))
+        other = cur.fetchone()
+        if other:
+            raise HTTPException(409, f"이 톡방은 이미 '{other['name']}' 에 연결되어 있습니다.")
+        cur.execute("SELECT 1 FROM kakao_messages WHERE room_name = %s LIMIT 1", (room,))
+        if cur.fetchone() is None:
+            raise HTTPException(422, "수집된 채팅방이 아닙니다.")
+        name = (vendor_name_from_room(room) or room)[:100]
+        cur.execute(
+            """INSERT INTO vendors (name, biz_no, phone, address, room_name, created_at, updated_at)
+               VALUES (%s, '', '', '', %s, %s, %s)""",
+            (name, room, now, now),
+        )
+        new_id = cur.lastrowid
+    live.bump("vendor")
+    return {"ok": True, "id": new_id, "name": name}
 
 
 @router.patch("/api/admin/vendors/{vendor_id}/name")

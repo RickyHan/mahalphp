@@ -134,3 +134,48 @@ def test_stats_by_apartment(admin, settings):
     assert one["issues"] == 2 and dict(one["by_category"]) == {"소음": 1, "주차": 1}
     assert one["apartment"]["name"] == "통계A단지" and one["group_detail"] == []
     assert admin.get("/api/admin/stats", params={"apartment_id": 999999}).status_code == 404
+
+
+def test_vendor_sync_links_similar_names(admin):
+    """다시 수집하기: 톡방 없는 업체에 비슷한 이름의 ● 방을 자동 연결, 애매하면 남김, 없으면 새 업체"""
+    from app import vendors as vd
+
+    assert vd.vendor_similarity("●성도엘리베이터", "성도") >= 0.85
+    assert vd.vendor_similarity("●꽃청소닷컴 단톡방", "꽃청소닷컴") == 1.0
+    assert vd.vendor_similarity("●(주)하이엔드소방", "하이엔드") >= 0.85
+    assert vd.vendor_similarity("●한빛설비", "하이엔드") < 0.8
+    for name in ("유사성도", "유사꽃청소", "유사꽃청소닷컴", "유사하이", "유사하이엔드", "유사GYG"):
+        assert admin.post("/api/admin/vendors", data={"name": name}).status_code == 201
+    for room in ("●유사성도엘리베이터", "●유사꽃청소닷컴 단톡방", "●유사하이 엔드", "●유사gyg", "●유사신규설비"):
+        _post(room)
+    r = admin.post("/api/admin/vendors/sync").json()
+    linked = {x["room_name"]: (x["name"], x["exact"]) for x in r["linked"]}
+    assert linked["●유사성도엘리베이터"] == ("유사성도", False)
+    assert linked["●유사꽃청소닷컴 단톡방"] == ("유사꽃청소닷컴", True)        # 더 긴(정확한) 이름이 이김
+    assert linked["●유사gyg"] == ("유사GYG", True)                          # 대소문자·공백 무시
+    assert linked["●유사하이 엔드"] == ("유사하이엔드", True)
+    assert [a["room_name"] for a in r["added"]] == ["●유사신규설비"]            # 비슷한 업체 없음 → 새 업체
+    items = {v["name"]: v for v in admin.get("/api/admin/vendors").json()["items"]}
+    assert items["유사성도"]["room_name"] == "●유사성도엘리베이터" and items["유사꽃청소"]["room_name"] is None
+
+
+def test_unlinked_vendor_rooms(admin):
+    """● 톡방 중 연결 안 된 방 목록 · 업체에 연결 · 새 업체로 추가"""
+    assert admin.post("/api/admin/vendors", data={"name": "미연결테스트설비"}).status_code == 201
+    for room in ("●미연결테스트설비 공지", "●미연결전혀다른방"):
+        _post(room)
+    data = admin.get("/api/admin/vendors/unlinked-rooms").json()
+    rows = {r["room_name"]: r for r in data["items"]}
+    assert {"●미연결테스트설비 공지", "●미연결전혀다른방"} <= set(rows)
+    target = rows["●미연결테스트설비 공지"]["suggested"][0]
+    assert target["name"] == "미연결테스트설비" and rows["●미연결테스트설비 공지"]["messages"] == 1
+    assert admin.post(f"/api/admin/vendors/{target['id']}/room", json={"room_name": "●미연결테스트설비 공지"}).status_code == 200
+    r = admin.post("/api/admin/vendors/from-room", json={"room_name": "●미연결전혀다른방"})
+    assert r.status_code == 201 and r.json()["name"] == "미연결전혀다른방"
+    left = {x["room_name"] for x in admin.get("/api/admin/vendors/unlinked-rooms").json()["items"]}
+    assert "●미연결테스트설비 공지" not in left and "●미연결전혀다른방" not in left
+    # 이미 연결된 방·없는 방·없는 업체
+    assert admin.post("/api/admin/vendors/from-room", json={"room_name": "●미연결전혀다른방"}).status_code == 409
+    assert admin.post(f"/api/admin/vendors/{target['id']}/room", json={"room_name": "●없는방"}).status_code == 422
+    assert admin.post("/api/admin/vendors/999999/room", json={"room_name": "●미연결전혀다른방"}).status_code == 404
+    assert TestClient(app).get("/api/admin/vendors/unlinked-rooms").status_code == 401

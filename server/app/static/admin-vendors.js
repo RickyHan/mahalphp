@@ -31,11 +31,66 @@
   }
 
   async function loadVendors() {
-    const [data, dispatch] = await Promise.all([api("/api/admin/vendors"), api("/api/admin/vendor-dispatch", { limit: 50 }), loadRooms(), loadCategories()]);
+    const [data, dispatch, unlinked] = await Promise.all([
+      api("/api/admin/vendors"), api("/api/admin/vendor-dispatch", { limit: 50 }), api("/api/admin/vendors/unlinked-rooms"), loadRooms(), loadCategories(),
+    ]);
     state.items = data.items;
     renderKpis(data.synced_at);
     render();
     renderDispatch(dispatch);
+    renderUnlinked(unlinked);
+  }
+
+  // ---- 연결 안 된 업체 톡방 ----------------------------------------------------------------------
+
+  function renderUnlinked(data) {
+    $("vd-unlinked-card").hidden = !data.items.length;
+    $("vd-unlinked-count").textContent = `${data.items.length}개`;
+    const list = $("vd-unlinked");
+    list.replaceChildren();
+    for (const r of data.items) {
+      const select = el("select", { "aria-label": `${r.room_name} 에 연결할 업체` }, el("option", { value: "", text: data.vendors.length ? "업체를 고르십시오" : "톡방 없는 업체가 없습니다" }));
+      if (r.suggested.length) select.append(el("optgroup", { label: "비슷한 이름" }, ...r.suggested.map((v) => el("option", { value: String(v.id), text: v.name }))));
+      const others = data.vendors.filter((v) => !r.suggested.some((x) => x.id === v.id));
+      if (others.length) select.append(el("optgroup", { label: "톡방 없는 업체 전체" }, ...others.map((v) => el("option", { value: String(v.id), text: v.name }))));
+      if (r.suggested.length) select.value = String(r.suggested[0].id);
+      const link = el("button", { class: "btn btn-small btn-primary", type: "button", text: "연결" });
+      link.addEventListener("click", async () => {
+        if (!select.value) return reportError(new Error("연결할 업체를 고르십시오."));
+        link.disabled = true;
+        try {
+          await sendJson("POST", `/api/admin/vendors/${select.value}/room`, { room_name: r.room_name });
+          await loadVendors();
+        } catch (err) {
+          link.disabled = false;
+          reportError(err);
+        }
+      });
+      const create = el("button", {
+        class: "btn btn-small",
+        type: "button",
+        text: "새 업체로 추가",
+        onclick: async () => {
+          try {
+            await sendJson("POST", "/api/admin/vendors/from-room", { room_name: r.room_name });
+            await loadVendors();
+          } catch (err) {
+            reportError(err);
+          }
+        },
+      });
+      list.append(
+        el(
+          "tr",
+          {},
+          el("td", {}, KC.roomChip(r.room_name, true)),
+          el("td", { class: "num", text: r.messages.toLocaleString("ko-KR") }),
+          el("td", { class: "muted small", text: r.last_at ? fmtDateTime(r.last_at).slice(5, 16) : "–" }),
+          el("td", {}, select),
+          el("td", { class: "right-col" }, el("div", { class: "row-actions" }, link, create)),
+        ),
+      );
+    }
   }
 
   // ---- 업체 카톡방 전달 이력 -------------------------------------------------------------------
@@ -185,12 +240,16 @@
       const box = $("vd-result");
       const parts = [];
       if (r.added.length) parts.push(`새 업체 ${r.added.length}곳 추가: ${r.added.map((a) => a.name).join(", ")}`);
-      if (r.linked.length) parts.push(`기존 업체에 톡방 연결 ${r.linked.length}곳: ${r.linked.map((a) => a.name).join(", ")}`);
+      const exact = r.linked.filter((a) => a.exact);
+      const similar = r.linked.filter((a) => !a.exact);
+      if (exact.length) parts.push(`같은 이름의 업체에 톡방 연결 ${exact.length}곳: ${exact.map((a) => a.name).join(", ")}`);
+      if (similar.length) parts.push(`비슷한 이름으로 연결 ${similar.length}곳(확인 바랍니다): ${similar.map((a) => `${a.room_name} → ${a.name}`).join(", ")}`);
+      if (r.ambiguous?.length) parts.push(`후보가 여럿이라 남긴 톡방 ${r.ambiguous.length}개(업체 수정에서 직접 연결): ${r.ambiguous.join(", ")}`);
       box.hidden = false;
       box.classList.toggle("has-new", parts.length > 0);
       box.replaceChildren(
         el("span", { class: "ms", "aria-hidden": "true", text: parts.length ? "new_releases" : "check_circle" }),
-        parts.length ? `${parts.join(" · ")} — 담당 카테고리를 지정해 주십시오.` : `새로 추가할 업체가 없습니다. (채팅방 ${r.rooms}개 중 ● 로 시작하는 방 ${r.matched}개, 모두 등록됨)`,
+        parts.length ? parts.join(" · ") : `새로 추가할 업체가 없습니다. (채팅방 ${r.rooms}개 중 ● 로 시작하는 방 ${r.matched}개, 모두 등록됨)`,
       );
       await loadVendors();
     } finally {

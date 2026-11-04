@@ -959,3 +959,8 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .fq-status.bad { background: var(--danger-soft); color: var(--danger); }
 @media (max-width: 900px) { .fq-edit-grid { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .fq-switch { margin-left: 0; } }
+
+/* 민원처리업체: 연결 안 된 업체 톡방 */
+.vd-unlinked { border-color: color-mix(in srgb, var(--warn) 35%, var(--border)); }
+.vd-unlinked .card-head { flex-wrap: wrap; gap: 8px; }
+.vd-unlinked select { min-width: 200px; max-width: 280px; height: 30px; }
