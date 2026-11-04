@@ -47,6 +47,31 @@
       kpi("forum", "slate", "목록 외 채팅방", extra, "개"),
     );
     render();
+    renderUnlinked();
+  }
+
+  /** ★ 방인데 목록의 건물에 연결되지 않은 톡방 (목록 외 채팅방) */
+  function renderUnlinked() {
+    const rows = items.filter((a) => !a.listed && a.room_name).sort((x, y) => (y.last_at || "").localeCompare(x.last_at || ""));
+    $("apt-unlinked-card").hidden = !rows.length;
+    $("apt-unlinked-count").textContent = `${rows.length}개`;
+    const body = $("apt-unlinked");
+    body.replaceChildren();
+    for (const a of rows) {
+      const cell = el("td", {});
+      const pick = el("button", { class: "btn btn-small btn-primary", type: "button", text: "건물 지정", onclick: () => openLinker(a, cell).catch(reportError) });
+      cell.append(pick);
+      body.append(
+        el(
+          "tr",
+          {},
+          el("td", {}, KC.roomChip(a.room_name, a.messages > 0)),
+          el("td", { class: "num", text: a.messages.toLocaleString("ko-KR") }),
+          el("td", { class: "muted small", text: a.last_at ? fmtDateTime(a.last_at).slice(5, 16) : "–" }),
+          cell,
+        ),
+      );
+    }
   }
 
   const FILTERS = {
@@ -145,7 +170,8 @@
     fill();
 
     const ok = el("button", { class: "btn btn-small btn-primary", type: "button", text: rooms ? "연결" : "지정" });
-    const cancel = el("button", { class: "btn btn-small", type: "button", text: "취소", onclick: () => render() });
+    const reset = () => (render(), renderUnlinked());
+    const cancel = el("button", { class: "btn btn-small", type: "button", text: "취소", onclick: reset });
     const confirmPick = async () => {
       if (list.selectedIndex < 0) return reportError(new Error(rooms ? "연결할 채팅방을 고르십시오." : "붙일 건물을 고르십시오."));
       const v = list.value;
@@ -171,13 +197,13 @@
       } else if (e.key === "Enter") {
         e.preventDefault();
         confirmPick();
-      } else if (e.key === "Escape") render();
+      } else if (e.key === "Escape") reset();
     });
     list.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
         confirmPick();
-      } else if (e.key === "Escape") render();
+      } else if (e.key === "Escape") reset();
     });
     cell.replaceChildren(el("div", { class: "link-edit" }, el("div", { class: "link-pick" }, el("div", { class: "link-search-row" }, search, count), list), el("div", { class: "link-actions" }, ok, cancel)));
     search.focus();
