@@ -15,7 +15,7 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** 로컬 큐의 대기 메시지를 서버로 전송한다. 실패 시 30초 간격(늘어남)으로 재시도하고, 알림 서비스가 30초마다 남은 메시지를 다시 확인한다. */
+/** 휴대폰에 저장해 둔 메시지를 서버로 보낸다. 5분마다(알림 서비스가 확인), 관리자 웹 '지금 동기화', 앱의 '지금 전송' 때 실행. */
 class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -23,6 +23,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         if (!settings.isConfigured) return@withContext Result.success() // 서버 설정을 저장하면 다시 예약됨
         val store = MessageStore.get(applicationContext)
         val api = ApiClient(settings)
+        settings.lastUploadAttemptAt = System.currentTimeMillis()
 
         // id 순서로 한 번 훑는다. 서버가 한 메시지만 거절(500)하면 그 메시지는 남겨 두고 뒤 메시지를 계속 보낸다.
         // 서버에 닿지 않으면(네트워크·재시작 중) 바로 멈추고 다시 시도한다.
@@ -87,9 +88,19 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
         private val scheduler = Executors.newSingleThreadExecutor()
 
-        /** 보낼 메시지가 남아 있으면 전송을 시작한다 (알림 수신 서비스가 30초마다 호출: 서버가 돌아오면 바로 이어서 보냄) */
-        fun kick(context: Context) {
-            if (AppSettings(context).isConfigured && MessageStore.get(context).hasPending()) enqueue(context)
+        /** 휴대폰에 쌓아 두었다가 이 간격마다 서버로 보낸다 */
+        const val INTERVAL_MS = 5 * 60 * 1000L
+
+        /**
+         * 알림 수신 서비스가 30초마다 호출: 보낼 메시지가 있고 마지막 전송 후 5분이 지났으면 전송한다.
+         * (새 메시지가 올 때마다 바로 보내지 않고 휴대폰에 먼저 저장 → 서버가 잠시 멈춰도 빠지지 않음)
+         */
+        fun kick(context: Context, now: Long = System.currentTimeMillis()) {
+            val settings = AppSettings(context)
+            if (!settings.isConfigured || !MessageStore.get(context).hasPending()) return
+            if (isDue(settings.lastUploadAttemptAt, now)) enqueue(context)
         }
+
+        fun isDue(lastAttempt: Long, now: Long): Boolean = now - lastAttempt >= INTERVAL_MS || now < lastAttempt
     }
 }

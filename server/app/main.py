@@ -145,10 +145,13 @@ async def create_message(
 
 @app.get("/api/replies/pending", dependencies=[Authorized])
 def replies_pending(settings: SettingsDep, device_id: Annotated[str, Query(min_length=1, max_length=64)]) -> dict[str, Any]:
-    """서버가 결정한 안내 메시지 중 이 휴대폰이 카톡 '답장'으로 보내야 할 것"""
+    """서버가 결정한 안내 메시지 중 이 휴대폰이 카톡 '답장'으로 보내야 할 것.
+    휴대폰은 30초마다 묻는다 → 마지막 연락 시각을 기록하고, 관리자 웹의 '지금 동기화' 요청 시각을 함께 알려 준다."""
     with db.transaction(settings) as conn, conn.cursor() as cur:
         items = store.pending_replies(cur, device_id, store.now_local(settings))
-    return {"ok": True, "items": items}
+        store.touch_device(cur, device_id, store.now_local(settings))
+        sync_at = store.sync_requested_at(cur)
+    return {"ok": True, "items": items, "sync_requested_at": sync_at}
 
 
 @app.post("/api/replies/{reply_id}/result", dependencies=[Authorized])

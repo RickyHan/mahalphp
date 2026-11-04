@@ -59,6 +59,28 @@ class MessageStoreTest {
     }
 
     @Test
+    fun sameTextInManyRoomsIsKeptPerRoom() {
+        // 같은 사람이 같은 공지를 같은 시각에 여러 방에 보내도 방마다 따로 저장
+        for (room in listOf("★A빌라", "★B빌라", "★C빌라")) {
+            val m = KakaoMessage(room, "관리소", "내일 단수 예정입니다", MessageType.TEXT, true, 5_000, "k|$room")
+            assertFalse(store.contains(m))
+            assertTrue(store.insert(m, null))
+        }
+        assertEquals(3, store.pending(10).size)
+        // 같은 방에 같은 글이 다시 알림으로 와도(카톡이 지난 대화를 다시 보여 줌) 한 번만
+        assertFalse(store.insert(KakaoMessage("★A빌라", "관리소", "내일 단수 예정입니다", MessageType.TEXT, true, 5_000, "k|★A빌라"), null))
+    }
+
+    @Test
+    fun uploadsEveryFiveMinutes() {
+        val t = 10_000_000L
+        assertTrue(UploadWorker.isDue(0, t))                                   // 처음
+        assertFalse(UploadWorker.isDue(t - 60_000, t))                          // 1분 전에 보냄
+        assertTrue(UploadWorker.isDue(t - UploadWorker.INTERVAL_MS, t))         // 5분 지남
+        assertTrue(UploadWorker.isDue(t + 60_000, t))                           // 시계가 뒤로 감
+    }
+
+    @Test
     fun sentRowsDropPhotoAndArePruned() {
         val photo = File(context.filesDir, "media").apply { mkdirs() }.resolve("p.jpg").apply { writeBytes(byteArrayOf(1)) }
         store.insert(KakaoMessage("방", "a", "사진을 보냈습니다.", MessageType.PHOTO, true, 1, "k"), photo.absolutePath)

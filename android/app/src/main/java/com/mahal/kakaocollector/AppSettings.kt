@@ -45,6 +45,16 @@ class AppSettings(context: Context) {
         get() = prefs.getLong(KEY_LAST_UPLOAD, 0)
         set(value) = prefs.edit().putLong(KEY_LAST_UPLOAD, value).apply()
 
+    /** 마지막으로 전송을 시작한 시각 (5분마다 전송 판단용) */
+    var lastUploadAttemptAt: Long
+        get() = prefs.getLong(KEY_LAST_ATTEMPT, 0)
+        set(value) = prefs.edit().putLong(KEY_LAST_ATTEMPT, value).apply()
+
+    /** 마지막으로 처리한 관리자 웹 '지금 동기화' 요청 시각 (서버 시각, epoch ms) */
+    var lastSyncHandled: Long
+        get() = prefs.getLong(KEY_SYNC_HANDLED, 0)
+        set(value) = prefs.edit().putLong(KEY_SYNC_HANDLED, value).apply()
+
     /** 마지막 전송 실패 사유 (성공하면 null) */
     var lastUploadError: String?
         get() = prefs.getString(KEY_LAST_UPLOAD_ERROR, null)
@@ -73,5 +83,7 @@ class AppSettings(context: Context) {
         const val KEY_LAST_CAPTURED = "last_captured_at"
         const val KEY_LAST_UPLOAD = "last_upload_at"
         const val KEY_LAST_UPLOAD_ERROR = "last_upload_error"
+        const val KEY_LAST_ATTEMPT = "last_upload_attempt_at"
+        const val KEY_SYNC_HANDLED = "last_sync_handled"
     }
 }

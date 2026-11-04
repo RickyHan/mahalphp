@@ -9,7 +9,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
-/** 카카오톡 알림을 받아 전송 대기열에 넣고 서버 업로드를 예약한다. 조회·분류·이력은 서버가 처리. */
+/** 카카오톡 알림을 받아 휴대폰(전송 대기열)에 먼저 저장하고, 5분마다 서버로 보낸다. 조회·분류·이력은 서버가 처리. */
 class KakaoNotificationListener : NotificationListenerService() {
 
     private val worker = Executors.newSingleThreadExecutor()
@@ -23,7 +23,7 @@ class KakaoNotificationListener : NotificationListenerService() {
         relayTask = relayTimer.scheduleWithFixedDelay({
             runCatching { if (AppSettings(this).captureEnabled) ReplyRelay.relayOnce(this) }
                 .onFailure { Log.w(TAG, "relay", it) }
-            // 서버 재시작·네트워크 끊김 뒤 남은 메시지를 30초 안에 다시 보낸다
+            // 쌓아 둔 메시지: 마지막 전송 후 5분이 지났으면 서버로 보낸다
             runCatching { UploadWorker.kick(this) }.onFailure { Log.w(TAG, "upload kick", it) }
         }, 5, RELAY_SECONDS, TimeUnit.SECONDS)
         // 권한을 막 켰거나 서비스가 재시작된 경우, 이미 떠 있는 알림도 수집한다(중복은 큐에서 걸러짐)
@@ -74,7 +74,7 @@ class KakaoNotificationListener : NotificationListenerService() {
             }
             if (queued > 0) {
                 settings.lastCapturedAt = System.currentTimeMillis()
-                if (settings.isConfigured) UploadWorker.enqueue(this)
+                // 바로 보내지 않고 휴대폰에 저장만 한다. 5분마다(또는 '지금 동기화' 요청 때) 묶어서 서버로 보낸다.
                 StatusNotifier.update(this)
             }
         } catch (e: Exception) {

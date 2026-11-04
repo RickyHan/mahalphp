@@ -50,18 +50,25 @@ class ApiClient(private val settings: AppSettings) {
 
     data class Reply(val id: Long, val room: String, val text: String)
 
+    /** 보낼 답장 목록 + 관리자 웹 '지금 동기화' 요청 시각(epoch ms, 없으면 0) */
+    data class Pending(val replies: List<Reply>, val syncRequestedAt: Long)
+
     /** 서버가 정한 '민원 접수 안내' 중 이 휴대폰이 카톡 답장으로 보내야 할 것 (실패 시 null) */
-    fun pendingReplies(): List<Reply>? {
+    fun pendingReplies(): Pending? {
         val url = "${settings.serverUrl}/api/replies/pending?device_id=" + java.net.URLEncoder.encode(settings.deviceId, "UTF-8")
         val request = Request.Builder().url(url).header("X-Api-Key", settings.apiKey).get().build()
         return try {
             client.newCall(request).execute().use { res ->
                 if (!res.isSuccessful) return null
-                val items = org.json.JSONObject(res.body?.string().orEmpty()).getJSONArray("items")
-                (0 until items.length()).map { i ->
-                    val o = items.getJSONObject(i)
-                    Reply(o.getLong("id"), o.getString("room_name"), o.getString("text"))
-                }
+                val json = org.json.JSONObject(res.body?.string().orEmpty())
+                val items = json.getJSONArray("items")
+                Pending(
+                    (0 until items.length()).map { i ->
+                        val o = items.getJSONObject(i)
+                        Reply(o.getLong("id"), o.getString("room_name"), o.getString("text"))
+                    },
+                    json.optLong("sync_requested_at", 0),
+                )
             }
         } catch (e: Exception) {
             null

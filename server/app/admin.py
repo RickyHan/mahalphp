@@ -472,6 +472,22 @@ def put_app_settings(body: SettingsBody, settings: SettingsDep) -> dict[str, Any
     return get_app_settings(settings)
 
 
+@router.get("/api/admin/sync", dependencies=[Admin])
+def sync_status(settings: SettingsDep) -> dict[str, Any]:
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        return {"ok": True, "requested_at": store.sync_requested_at(cur), "devices": store.device_status(cur)}
+
+
+@router.post("/api/admin/sync", dependencies=[Admin])
+def sync_now(settings: SettingsDep) -> dict[str, Any]:
+    """'지금 동기화': 휴대폰이 30초 안에(다음 확인 때) 쌓아 둔 메시지를 바로 보낸다"""
+    import time
+
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        store.request_sync(cur, int(time.time() * 1000))
+    return sync_status(settings)
+
+
 @router.post("/api/admin/classify", dependencies=[Admin])
 def classify_now(settings: SettingsDep, retry_failed: bool = False) -> dict[str, Any]:
     reset = 0

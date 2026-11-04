@@ -201,3 +201,26 @@ def test_admin_page_has_new_tabs(admin):
         assert f'data-tab="{tab}"' in page and f'id="view-{tab}"' in page
     assert "/admin/static/admin-ops.js" in page
     assert admin.get("/admin/static/admin-ops.js").status_code == 200
+
+
+def test_same_text_in_many_rooms_all_kept(admin, settings):
+    """같은 사람이 같은 내용을 같은 시각에 여러 방에 보내도 방마다 모두 저장 (방이 다르면 다른 메시지)"""
+    c = TestClient(app)
+    when = _now(settings)
+    rooms = ["★동시공지A", "★동시공지B", "★동시공지C"]
+    ids = [_post(c, r, "관리소", "내일 오전 10시 단수 예정입니다", when) for r in rooms]
+    assert len(set(ids)) == 3
+    again = _post(c, rooms[0], "관리소", "내일 오전 10시 단수 예정입니다", when)  # 같은 방·같은 글을 다시 올리면 중복
+    assert again == ids[0]
+
+
+def test_sync_request_reaches_phone(admin, settings):
+    """관리자 웹 '지금 동기화' → 휴대폰이 30초마다 묻는 응답에 요청 시각이 실림, 휴대폰 연락 기록"""
+    before = admin.get("/api/admin/sync").json()
+    assert TestClient(app).post("/api/admin/sync").status_code == 401
+    r = admin.post("/api/admin/sync").json()
+    assert r["requested_at"] > (before["requested_at"] or 0)
+    res = TestClient(app).get("/api/replies/pending", params={"device_id": "sync-phone"}, headers=KEY).json()
+    assert res["sync_requested_at"] == r["requested_at"]
+    devs = {d["device_id"]: d for d in admin.get("/api/admin/sync").json()["devices"]}
+    assert devs["sync-phone"]["last_seen"]

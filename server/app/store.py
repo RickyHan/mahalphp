@@ -443,3 +443,43 @@ def enqueue_faq_answers(cur, conf: dict[str, str], matches: list[cp.FaqMatch], b
 
         live.bump("faq")
     return answered
+
+
+# ---- 휴대폰 동기화 ('지금 동기화' 요청 · 휴대폰 마지막 연락) --------------------------------------------
+
+def touch_device(cur, device_id: str, at: datetime) -> None:
+    name = f"device_seen:{device_id}"[:64]
+    cur.execute("DELETE FROM app_settings WHERE name = %s", (name,))
+    cur.execute("INSERT INTO app_settings (name, value) VALUES (%s, %s)", (name, at.isoformat(timespec="seconds")))
+
+
+def sync_requested_at(cur) -> int:
+    """관리자 웹에서 '지금 동기화'를 누른 시각 (epoch ms, 없으면 0)"""
+    cur.execute("SELECT value FROM app_settings WHERE name = 'sync_requested_at'")
+    row = cur.fetchone()
+    try:
+        return int(row["value"]) if row else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def request_sync(cur, now_ms: int) -> None:
+    cur.execute("DELETE FROM app_settings WHERE name = 'sync_requested_at'")
+    cur.execute("INSERT INTO app_settings (name, value) VALUES ('sync_requested_at', %s)", (str(now_ms),))
+
+
+def device_status(cur) -> list[dict[str, Any]]:
+    """휴대폰별 마지막 연락(30초마다 확인) · 마지막으로 받은 메시지 시각"""
+    cur.execute("SELECT name, value FROM app_settings WHERE name LIKE %s ESCAPE '!'", (db.like("device_seen:").replace("%", "", 1),))
+    seen = {r["name"].split(":", 1)[1]: r["value"] for r in cur.fetchall()}
+    cur.execute("SELECT device_id, MAX(received_at) AS last FROM kakao_messages GROUP BY device_id")
+    received = {r["device_id"]: r["last"] for r in cur.fetchall()}
+    out = []
+    for dev in sorted(set(seen) | set(received)):
+        last = received.get(dev)
+        out.append({
+            "device_id": dev,
+            "last_seen": seen.get(dev),
+            "last_received": last.isoformat() if isinstance(last, datetime) else last,
+        })
+    return out

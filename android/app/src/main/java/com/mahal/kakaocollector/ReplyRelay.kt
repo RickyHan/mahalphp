@@ -14,7 +14,13 @@ object ReplyRelay {
         val settings = AppSettings(context)
         if (!settings.isConfigured) return 0
         val api = ApiClient(settings)
-        val replies = api.pendingReplies() ?: return -1
+        val pending = api.pendingReplies() ?: return -1
+        // 관리자 웹에서 '지금 동기화'를 눌렀으면 5분을 기다리지 않고 바로 전송
+        if (pending.syncRequestedAt > settings.lastSyncHandled) {
+            settings.lastSyncHandled = pending.syncRequestedAt
+            UploadWorker.enqueue(context)
+        }
+        val replies = pending.replies
         var sent = 0
         for (r in replies) {
             when (val result = ReplyRegistry.send(context, r.room, r.text)) {

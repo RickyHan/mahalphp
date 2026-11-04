@@ -815,6 +815,50 @@
     return select;
   }
 
+  // ---- 지금 동기화: 휴대폰이 30초 안에(다음 확인 때) 쌓아 둔 메시지를 보냄 ------------------------------
+
+  const hm = (iso) => (iso ? fmtDateTime(iso).slice(11, 16) : "–");
+
+  function renderSync(d) {
+    const devs = d.devices || [];
+    const seen = devs.map((x) => x.last_seen).filter(Boolean).sort().pop();
+    const recv = devs.map((x) => x.last_received).filter(Boolean).sort().pop();
+    const req = d.requested_at ? new Date(d.requested_at) : null;
+    const waiting = req && (!seen || new Date(seen) < req);
+    $("sync-state").textContent = waiting ? `요청 ${req.toTimeString().slice(0, 5)} · 휴대폰 응답 대기` : `휴대폰 확인 ${hm(seen)} · 수신 ${hm(recv)}`;
+    $("sync-now").title = devs.length
+      ? devs.map((x) => `휴대폰 ${x.device_id.slice(0, 8)} — 마지막 확인 ${x.last_seen ? fmtDateTime(x.last_seen) : "없음"}, 마지막 수신 ${x.last_received ? fmtDateTime(x.last_received) : "없음"}`).join("\n")
+      : "아직 연락한 휴대폰이 없습니다";
+  }
+
+  async function loadSync() {
+    renderSync(await api("/api/admin/sync"));
+  }
+
+  let syncPoll = null;
+  async function syncNow() {
+    const btn = $("sync-now");
+    btn.disabled = true;
+    try {
+      renderSync(await postJson("/api/admin/sync", {}));
+      // 2분 동안 10초마다 상태 확인 (휴대폰은 30초 안에 응답)
+      clearInterval(syncPoll);
+      let n = 0;
+      syncPoll = setInterval(() => {
+        if (++n > 12) clearInterval(syncPoll);
+        loadSync().catch(() => {});
+      }, 10000);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setTimeout(() => (btn.disabled = false), 3000);
+    }
+  }
+
+  $("sync-now").addEventListener("click", syncNow);
+  loadSync().catch(() => {});
+  setInterval(() => loadSync().catch(() => {}), 60000);
+
   // admin-ops.js 에서 쓰는 공용 함수
   window.KC = Object.assign(window.KC || {}, {
     api, el, postJson, reportError, fmtDateTime, openRoom: (room, id) => openRoom(room, id).catch(reportError),
