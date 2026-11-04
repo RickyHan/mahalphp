@@ -418,19 +418,35 @@
       select.append(group);
       select.value = row.value;
       const targetCell = el("div", { class: "av-target-cell" }, target(row));
+      // '보내지 않음' 바로 고르기 (목록이 길어 위쪽 항목이 잘 안 보이므로 따로 버튼)
+      let before = row.value === "none" ? "default" : row.value;
+      const noneBtn = el("button", { type: "button", class: "av-none-btn", "aria-pressed": String(row.value === "none") });
+      const syncNone = () => {
+        const on = row.value === "none";
+        noneBtn.setAttribute("aria-pressed", String(on));
+        noneBtn.replaceChildren(el("span", { class: "ms", "aria-hidden": "true", text: on ? "check" : "block" }), on ? "보내지 않음 해제" : "보내지 않음");
+      };
+      syncNone();
       const li = el(
         "li",
         { class: `av-row${row.enabled ? "" : " off"}${row.value !== "default" ? " custom" : ""}` },
         el("div", { class: "av-cat" }, el("span", { class: `dot c${color}`, "aria-hidden": "true" }), el("strong", { text: row.category }), row.enabled ? null : el("small", { text: "사용 안 함" })),
-        select,
+        el("div", { class: "av-pick" }, select, noneBtn),
         targetCell,
       );
-      select.addEventListener("change", () => {
-        row.value = select.value;
+      const apply = (value) => {
+        if (row.value !== "none") before = row.value;
+        row.value = value;
+        select.value = value;
         targetCell.replaceChildren(target(row));
         li.classList.toggle("custom", row.value !== "default");
+        li.classList.toggle("none", row.value === "none");
+        syncNone();
         updateDirty();
-      });
+      };
+      li.classList.toggle("none", row.value === "none");
+      select.addEventListener("change", () => apply(select.value));
+      noneBtn.addEventListener("click", () => apply(row.value === "none" ? before : "none"));
       list.append(li);
     }
     save.addEventListener("click", async () => {

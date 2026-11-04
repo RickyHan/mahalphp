@@ -974,3 +974,12 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .link-list { width: 100%; max-width: none !important; height: auto !important; min-height: 180px; padding: 4px; border-radius: 8px; }
 .link-list option { padding: 5px 8px; border-radius: 4px; }
 .link-actions { display: flex; gap: 6px; padding-top: 0; }
+
+/* 건물별 담당 업체: 업체 고르기 + '보내지 않음' 버튼 */
+.av-pick { grid-area: select; display: flex; gap: 8px; align-items: center; min-width: 0; }
+.av-pick .av-select { flex: 1; min-width: 0; }
+.av-none-btn { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--muted); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.av-none-btn .ms { font-size: 16px; }
+.av-none-btn:hover { border-color: var(--danger); color: var(--danger); }
+.av-none-btn[aria-pressed="true"] { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); }
+.av-row.none { background: color-mix(in srgb, var(--surface-2) 70%, var(--surface)); }
