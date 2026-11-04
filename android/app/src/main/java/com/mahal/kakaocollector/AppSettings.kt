@@ -31,6 +31,11 @@ class AppSettings(context: Context) {
         get() = prefs.getStringSet(KEY_ROOMS, emptySet())?.toSet() ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_ROOMS, value).apply()
 
+    /** 알림창의 카톡 알림을 최대 20개로 유지 (넘치면 오래된 것부터 지움) */
+    var limitKakaoNotifications: Boolean
+        get() = prefs.getBoolean(KEY_LIMIT_NOTI, true)
+        set(value) = prefs.edit().putBoolean(KEY_LIMIT_NOTI, value).apply()
+
     /** 알림줄 상태 알림 표시 */
     var statusNotification: Boolean
         get() = prefs.getBoolean(KEY_STATUS_NOTI, true)
@@ -80,6 +85,7 @@ class AppSettings(context: Context) {
         const val KEY_ROOM_MODE = "room_filter_mode"
         const val KEY_ROOMS = "selected_rooms"
         const val KEY_STATUS_NOTI = "status_notification"
+        const val KEY_LIMIT_NOTI = "limit_kakao_notifications"
         const val KEY_LAST_CAPTURED = "last_captured_at"
         const val KEY_LAST_UPLOAD = "last_upload_at"
         const val KEY_LAST_UPLOAD_ERROR = "last_upload_error"

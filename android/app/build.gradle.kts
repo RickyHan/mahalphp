@@ -26,8 +26,8 @@ android {
         applicationId = "com.mahal.kakaocollector"
         minSdk = 26
         targetSdk = 34
-        versionCode = 23
-        versionName = "2.3.0"
+        versionCode = 24
+        versionName = "2.3.1"
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"${secret("serverUrl")}\"")
         buildConfigField("String", "DEFAULT_API_KEY", "\"${secret("apiKey")}\"")
     }

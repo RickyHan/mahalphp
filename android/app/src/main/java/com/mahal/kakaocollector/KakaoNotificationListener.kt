@@ -1,5 +1,6 @@
 package com.mahal.kakaocollector
 
+import android.app.Notification
 import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -28,6 +29,7 @@ class KakaoNotificationListener : NotificationListenerService() {
         }, 5, RELAY_SECONDS, TimeUnit.SECONDS)
         // 권한을 막 켰거나 서비스가 재시작된 경우, 이미 떠 있는 알림도 수집한다(중복은 큐에서 걸러짐)
         runCatching { activeNotifications }.getOrNull()?.forEach(::onNotificationPosted)
+        worker.execute { trimKakaoNotifications() } // 수집이 끝난 뒤 20개 넘는 오래된 알림 정리
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -79,6 +81,28 @@ class KakaoNotificationListener : NotificationListenerService() {
             }
         } catch (e: Exception) {
             Log.w(TAG, "알림 처리 실패", e)
+        }
+        trimKakaoNotifications()
+    }
+
+    /**
+     * 알림창의 카톡 알림을 최대 20개로 유지: 넘치면 가장 오래된 것부터 지운다(이미 저장한 뒤라 수집에서 빠지지 않음).
+     * 업체 톡방(●) 알림은 업체 처리 요청 '답장'에 필요하므로 남긴다.
+     */
+    private fun trimKakaoNotifications() {
+        if (!AppSettings(this).limitKakaoNotifications) return
+        val active = runCatching { activeNotifications }.getOrNull() ?: return
+        val kakao = active.filter { it.packageName == KakaoParser.KAKAO_PACKAGE }
+        if (kakao.count { it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 } <= NotificationTrim.MAX) return
+        val items = kakao.map { sbn ->
+            val summary = sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0
+            val room = if (summary) null else runCatching {
+                KakaoParser.parse(NotificationExtractor.extract(sbn, conversationShortcut(sbn)?.first)).firstOrNull()?.room
+            }.getOrNull()
+            NotificationTrim.Item(sbn.key, sbn.postTime, room, summary, sbn.isClearable)
+        }
+        for (key in NotificationTrim.toCancel(items)) {
+            runCatching { cancelNotification(key) }.onFailure { Log.w(TAG, "알림 정리 실패", it) }
         }
     }
 

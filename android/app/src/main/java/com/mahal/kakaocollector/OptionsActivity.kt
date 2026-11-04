@@ -29,6 +29,10 @@ class OptionsActivity : AppCompatActivity() {
             isChecked = settings.captureImages
             setOnCheckedChangeListener { _, on -> settings.captureImages = on }
         }
+        findViewById<MaterialSwitch>(R.id.limitNotifications).apply {
+            isChecked = settings.limitKakaoNotifications
+            setOnCheckedChangeListener { _, on -> settings.limitKakaoNotifications = on }
+        }
         findViewById<MaterialSwitch>(R.id.statusNotification).apply {
             isChecked = settings.statusNotification
             setOnCheckedChangeListener { _, on ->

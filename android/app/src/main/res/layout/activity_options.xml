@@ -22,6 +22,8 @@
 
                 <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/captureImages" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/capture_images" />
                 <TextView style="@style/Hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:text="@string/capture_images_hint" />
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/limitNotifications" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/limit_notifications" />
+                <TextView style="@style/Hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:text="@string/limit_notifications_hint" />
                 <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/statusNotification" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/status_notification" />
                 <TextView style="@style/Hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/status_notification_hint" />
             </LinearLayout>
