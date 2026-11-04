@@ -983,3 +983,19 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .av-none-btn:hover { border-color: var(--danger); color: var(--danger); }
 .av-none-btn[aria-pressed="true"] { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); }
 .av-row.none { background: color-mix(in srgb, var(--surface-2) 70%, var(--surface)); }
+
+/* 선택 칸 검색 (KC.searchable): 검색 칸이 선택 칸 바로 위에 붙음 */
+.sel-wrap { display: grid; gap: 4px; min-width: 0; width: 100%; }
+.sel-search-row { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 8px; height: 30px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); }
+.sel-search-row:focus-within { border-color: var(--primary); background: var(--surface); }
+.sel-search-row .ms { font-size: 16px; color: var(--muted); position: static !important; }
+.sel-search { flex: 1; min-width: 0; height: 26px !important; border: 0 !important; background: transparent !important; box-shadow: none !important; padding: 0 !important; font-size: 13px; outline: none; }
+.sel-count { white-space: nowrap; }
+.sel-wrap > select { width: 100%; }
+.av-pick .sel-wrap { flex: 1; }
+/* 통계 건물 선택: 검색 칸을 선택 칸 왼쪽에 */
+.st-apt > .ms { display: none; }
+.st-apt .sel-wrap { grid-template-columns: minmax(140px, 200px) auto; align-items: center; width: auto; }
+.st-apt .sel-search-row { height: 42px; border-radius: var(--radius); }
+.st-apt select { padding-left: 12px !important; }
+@media (max-width: 720px) { .st-apt .sel-wrap { grid-template-columns: 1fr; width: 100%; } }

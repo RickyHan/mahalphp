@@ -410,8 +410,8 @@
       const select = el("select", { class: "av-select", "aria-label": `${row.category} 담당 업체` });
       const defaultNames = row.defaults.map((d) => d.name).join(", ");
       select.append(
-        el("option", { value: "default", text: defaultNames ? `기본 업체 따름 (${defaultNames})` : "기본 업체 따름 (없음)" }),
-        el("option", { value: "none", text: "이 건물은 보내지 않음" }),
+        el("option", { value: "default", "data-keep": "", text: defaultNames ? `기본 업체 따름 (${defaultNames})` : "기본 업체 따름 (없음)" }),
+        el("option", { value: "none", "data-keep": "", text: "이 건물은 보내지 않음" }),
       );
       const group = el("optgroup", { label: "업체 지정" });
       for (const v of acc.vendors) group.append(el("option", { value: `v:${v.id}`, text: v.room_name ? `${v.name}  ·  ${v.room_name}` : `${v.name}  (톡방 없음)` }));
@@ -445,6 +445,7 @@
         updateDirty();
       };
       li.classList.toggle("none", row.value === "none");
+      KC.searchable(select, "업체 검색");
       select.addEventListener("change", () => apply(select.value));
       noneBtn.addEventListener("click", () => apply(row.value === "none" ? before : "none"));
       list.append(li);

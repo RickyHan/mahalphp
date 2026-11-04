@@ -748,10 +748,77 @@
     );
   }
 
+  /**
+   * 선택 칸(select) 위에 검색 칸을 붙인다. 입력하면 맞는 항목만 남기고(공백·대소문자 무시) 맞는 첫 항목을 고른다.
+   * 값이 빈 항목(예: '(지정 안 함)')과 data-keep 항목은 항상 남긴다. 화면 코드가 항목을 다시 채우면 검색어를 지우고 새 목록을 쓴다.
+   */
+  function searchable(select, placeholder = "검색") {
+    if (!select || select._searchable) return select;
+    select._searchable = true;
+    const norm = (t) => (t || "").toLowerCase().replace(/\s+/g, "");
+    const input = el("input", { type: "search", class: "sel-search", placeholder, "aria-label": placeholder, autocomplete: "off" });
+    const count = el("span", { class: "sel-count muted small" });
+    const wrap = el("div", { class: "sel-wrap" });
+    select.parentNode.insertBefore(wrap, select);
+    wrap.append(el("div", { class: "sel-search-row" }, el("span", { class: "ms", "aria-hidden": "true", text: "search" }), input, count), select);
+    let master = null;
+    const observer = new MutationObserver(() => {
+      master = null; // 화면 코드가 목록을 바꿈 → 검색 초기화
+      input.value = "";
+      count.textContent = "";
+    });
+    observer.observe(select, { childList: true, subtree: true });
+    const apply = () => {
+      if (!master) master = [...select.children].map((n) => n.cloneNode(true));
+      const q = norm(input.value);
+      const before = select.value;
+      const keep = (o) => !q || o.value === "" || o.dataset.keep !== undefined || norm(o.textContent).includes(q);
+      const nodes = [];
+      let hits = 0;
+      for (const n of master) {
+        if (n.tagName === "OPTGROUP") {
+          const kids = [...n.children].filter(keep);
+          hits += kids.filter((o) => o.value !== "").length;
+          if (kids.length) {
+            const group = n.cloneNode(false);
+            group.append(...kids.map((o) => o.cloneNode(true)));
+            nodes.push(group);
+          }
+        } else if (keep(n)) {
+          if (n.value !== "" && n.dataset.keep === undefined) hits++;
+          nodes.push(n.cloneNode(true));
+        }
+      }
+      select.replaceChildren(...nodes);
+      observer.takeRecords(); // 우리가 바꾼 것은 무시
+      const values = [...select.options].map((o) => o.value);
+      if (q && (!values.includes(before) || before === "")) {
+        const first = [...select.options].find((o) => o.value !== "" && o.dataset.keep === undefined);
+        if (first) select.value = first.value;
+      } else if (values.includes(before)) {
+        select.value = before;
+      }
+      count.textContent = q ? `${hits}개` : "";
+      if (select.value !== before) select.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    input.addEventListener("input", apply);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        select.focus();
+      } else if (e.key === "Escape" && input.value) {
+        e.stopPropagation();
+        input.value = "";
+        apply();
+      }
+    });
+    return select;
+  }
+
   // admin-ops.js 에서 쓰는 공용 함수
   window.KC = Object.assign(window.KC || {}, {
     api, el, postJson, reportError, fmtDateTime, openRoom: (room, id) => openRoom(room, id).catch(reportError),
-    refreshAfterDelete, deleteRoom, roomChip,
+    refreshAfterDelete, deleteRoom, roomChip, searchable,
     currentRoom: () => state.room, currentTab: () => state.tab,
   });
 

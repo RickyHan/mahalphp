@@ -330,6 +330,7 @@
   }
 
   KC.loaders = Object.assign(KC.loaders || {}, { stats: loadStats });
+  KC.searchable($("st-apartment"), "건물 검색");
   $("st-apartment").addEventListener("change", (e) => {
     apartmentId = e.target.value;
     loadStats().catch(reportError);

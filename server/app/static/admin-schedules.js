@@ -343,6 +343,7 @@
       updatePreview();
     });
   }
+  KC.searchable($("sc-room"), "채팅방 검색");
   for (const id of ["sc-room", "sc-text", "sc-time", "sc-date", "sc-mday"]) $(id).addEventListener("input", updatePreview);
   $("sc-room").addEventListener("change", updatePreview);
   $("sc-tokens").append(

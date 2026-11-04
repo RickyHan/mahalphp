@@ -90,6 +90,7 @@
           el("td", { class: "right-col" }, el("div", { class: "row-actions" }, link, create)),
         ),
       );
+      KC.searchable(select, "업체 검색");
     }
   }
 
@@ -356,6 +357,7 @@
 
   // ---- 연결 -------------------------------------------------------------------------------
 
+  KC.searchable($("vd-room"), "카톡 대화방 검색");
   KC.loaders = Object.assign(KC.loaders || {}, { vendors: loadVendors });
   $("vd-sync").addEventListener("click", () => sync().catch(reportError));
   $("vd-doc").addEventListener("change", () => {
