@@ -136,12 +136,12 @@ def test_summary(admin, seeded):
 
 def test_rooms_aggregate_latest_first(admin, seeded):
     items = admin.get("/api/admin/rooms", params={"q": "관리자테스트"}).json()["items"]
-    assert [r["room_name"] for r in items] == [ROOM_B, ROOM_A]  # B방이 가장 마지막에 저장됨(id 기준)
-    room_a = items[1]
+    assert [r["room_name"] for r in items] == [ROOM_A, ROOM_B]  # 메시지 시각 기준: A방 마지막(+20초)이 B방(+5초)보다 최근
+    room_a, room_b = items[0], items[1]
     assert room_a["message_count"] == 3
     assert room_a["photo_count"] == 1
     assert room_a["last_sender"] == "홍길동" and room_a["last_type"] == "photo"
-    assert room_a["is_group_chat"] is True and items[0]["is_group_chat"] is False
+    assert room_a["is_group_chat"] is True and room_b["is_group_chat"] is False
 
 
 def test_messages_paging_and_media(admin, seeded):

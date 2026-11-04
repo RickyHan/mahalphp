@@ -171,14 +171,18 @@ def rooms(settings: SettingsDep, q: str | None = None) -> dict[str, Any]:
     where, params = "", []
     if q:
         where, params = "WHERE room_name LIKE %s ESCAPE '!'", [db.like(q)]
+    # 최근 메시지(보낸 시각 posted_at 기준)가 있는 방부터. 휴대폰에 쌓였다 늦게 올라온 옛 메시지가
+    # 순서를 흐트러뜨리지 않도록, 받은 순서(id)가 아니라 메시지 시각으로 정렬하고 그 메시지를 미리보기로 쓴다.
     sql = f"""
         SELECT r.room_name, r.message_count, r.photo_count, m.id AS last_id, m.sender_name AS last_sender,
                m.message_text AS last_message, m.message_type AS last_type, m.posted_at AS last_posted_at,
                m.is_group_chat
-        FROM (SELECT room_name, COUNT(*) AS message_count, SUM(has_media) AS photo_count, MAX(id) AS last_id
+        FROM (SELECT room_name, COUNT(*) AS message_count, SUM(has_media) AS photo_count
               FROM kakao_messages {where} GROUP BY room_name) r
-        JOIN kakao_messages m ON m.id = r.last_id
-        ORDER BY m.id DESC
+        JOIN kakao_messages m ON m.id = (
+            SELECT m2.id FROM kakao_messages m2 WHERE m2.room_name = r.room_name
+            ORDER BY m2.posted_at DESC, m2.id DESC LIMIT 1)
+        ORDER BY m.posted_at DESC, m.id DESC
         LIMIT 500"""
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute(sql, params)

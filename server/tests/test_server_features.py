@@ -224,3 +224,16 @@ def test_sync_request_reaches_phone(admin, settings):
     assert res["sync_requested_at"] == r["requested_at"]
     devs = {d["device_id"]: d for d in admin.get("/api/admin/sync").json()["devices"]}
     assert devs["sync-phone"]["last_seen"]
+
+
+def test_rooms_sorted_by_latest_message_time(admin, settings):
+    """대화방 목록: 늦게 올라온 옛 메시지가 아니라 메시지 시각이 최근인 방부터"""
+    c = TestClient(app)
+    now = _now(settings)
+    _post(c, "정렬테스트-최근방", "가", "지금 막 보낸 메시지입니다", now - timedelta(minutes=1))
+    _post(c, "정렬테스트-옛방", "나", "이틀 전 메시지가 늦게 올라옴", now - timedelta(days=2))  # 나중에 받음(id 가 더 큼)
+    items = [r for r in admin.get("/api/admin/rooms", params={"q": "정렬테스트"}).json()["items"]]
+    assert [r["room_name"] for r in items] == ["정렬테스트-최근방", "정렬테스트-옛방"]
+    _post(c, "정렬테스트-최근방", "가", "더 예전 메시지가 늦게 도착", now - timedelta(days=5))
+    top = admin.get("/api/admin/rooms", params={"q": "정렬테스트"}).json()["items"][0]
+    assert top["room_name"] == "정렬테스트-최근방" and top["last_message"] == "지금 막 보낸 메시지입니다"  # 미리보기도 최신 시각 메시지
