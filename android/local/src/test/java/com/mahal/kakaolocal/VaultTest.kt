@@ -62,8 +62,16 @@ class VaultTest {
         val older = store.messages("회사방", beforeId = page.first().id, limit = 10)
         assertEquals(listOf("회의 3시", "m1", "m2"), older.map { it.text })
 
+        val photo2 = File(context.filesDir, "media").resolve("b.jpg").apply { writeBytes(byteArrayOf(2)) }
+        store.insert(KakaoMessage("회사방", "팀장", "사진을 보냈습니다.", MessageType.PHOTO, true, 4_000, "k"), photo2.absolutePath)
+        assertEquals(listOf(photo2.absolutePath, photo.absolutePath), store.photos().map { it.imagePath })   // 모든 방, 최신 순
+        assertEquals(listOf(photo.absolutePath), store.photos("가족방").map { it.imagePath })              // 방별
+        assertEquals(listOf(photo.absolutePath), store.photos(beforeId = store.photos().first().id).map { it.imagePath })
+        assertEquals(listOf("가족방" to 1, "회사방" to 1), store.photoRooms())
+        store.deleteRoom("회사방")
+
         assertEquals(2, store.deleteRoom("가족방"))
         assertFalse("방을 지우면 사진 파일도 지움", photo.exists())
-        assertEquals(listOf("회사방"), store.rooms().map { it.room })
+        assertTrue(store.rooms().isEmpty() && store.photos().isEmpty())
     }
 }

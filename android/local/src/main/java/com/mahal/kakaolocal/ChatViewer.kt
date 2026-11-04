@@ -14,11 +14,17 @@ import android.util.LruCache
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AbsListView
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.BaseAdapter
 import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.GridView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -97,6 +103,11 @@ class ChatRoomsActivity : AppCompatActivity() {
     override fun onDestroy() {
         io.shutdownNow()
         super.onDestroy()
+    }
+
+    override fun onSupportNavigateUp(): Boolean {
+        finish()
+        return true
     }
 
     private fun filter() {
@@ -204,6 +215,23 @@ class ChatActivity : AppCompatActivity() {
         load(older = false)
     }
 
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        menu.add(0, MENU_PHOTOS, 0, "이 방 사진만").setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_ALWAYS)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        if (item.itemId == MENU_PHOTOS) {
+            startActivity(Intent(this, PhotoGridActivity::class.java).putExtra(EXTRA_ROOM, room))
+            return true
+        }
+        if (item.itemId == android.R.id.home) {
+            finish()
+            return true
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
     override fun onDestroy() {
         io.shutdownNow()
         super.onDestroy()
@@ -279,9 +307,7 @@ class ChatActivity : AppCompatActivity() {
                     if (bmp != null) thumbs.put(path, bmp)
                     main.post { if (photo.getTag(R.id.photoPath) == path) photo.setImageBitmap(bmp) }
                 }
-                photo.setOnClickListener {
-                    startActivity(Intent(this@ChatActivity, PhotoActivity::class.java).putExtra(PhotoActivity.EXTRA_PATH, path))
-                }
+                photo.setOnClickListener { PhotoActivity.open(this@ChatActivity, r) }
             }
             return box
         }
@@ -292,27 +318,192 @@ class ChatActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_ROOM = "room"
         private const val PAGE = 200
+        private const val MENU_PHOTOS = 1
     }
 }
 
-/** 사진 크게 보기 (누르면 닫힘) */
+/** 사진 크게 보기 (누르면 닫힘). 아래에 방 · 보낸 사람 · 시각 */
 class PhotoActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val path = intent.getStringExtra(EXTRA_PATH) ?: return finish()
-        val view = ImageView(this).apply {
+        val root = FrameLayout(this).apply {
             setBackgroundColor(0xFF000000.toInt())
-            scaleType = ImageView.ScaleType.FIT_CENTER
             setOnClickListener { finish() }
+        }
+        val view = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = "사진"
         }
-        setContentView(view)
+        root.addView(view, FrameLayout.LayoutParams(-1, -1))
+        intent.getStringExtra(EXTRA_CAPTION)?.let { caption ->
+            root.addView(TextView(this).apply {
+                text = caption
+                textSize = 13f
+                setTextColor(0xFFFFFFFF.toInt())
+                setBackgroundColor(0x99000000.toInt())
+                val p = (12 * resources.displayMetrics.density).toInt()
+                setPadding(p, p, p, p)
+            }, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        }
+        setContentView(root)
         val max = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
         Thread { decodeSampled(path, max)?.let { b -> runOnUiThread { view.setImageBitmap(b) } } }.start()
     }
 
     companion object {
         const val EXTRA_PATH = "path"
+        const val EXTRA_CAPTION = "caption"
+
+        fun open(context: android.content.Context, row: MessageStore.Row) {
+            context.startActivity(
+                Intent(context, PhotoActivity::class.java)
+                    .putExtra(EXTRA_PATH, row.imagePath)
+                    .putExtra(EXTRA_CAPTION, "${row.room}\n${row.sender} · ${shortTime(row.postedAt)}"),
+            )
+        }
+    }
+}
+
+/**
+ * 사진 모아보기: 저장된 사진을 최신 순 격자로. 위에서 방을 고르면 그 방 사진만.
+ * 아래로 내리면 더 불러오고, 누르면 크게 본다.
+ */
+class PhotoGridActivity : AppCompatActivity() {
+
+    private val io = Executors.newFixedThreadPool(3)
+    private val main = Handler(Looper.getMainLooper())
+    private val rows = mutableListOf<MessageStore.Row>()
+    private var room: String? = null
+    private var loading = false
+    private var hasMore = true
+    private lateinit var adapter: GridAdapter
+    private lateinit var empty: TextView
+    private var cell = 0
+
+    private val thumbs = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        title = getString(R.string.photos_title)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        room = intent.getStringExtra(ChatActivity.EXTRA_ROOM)
+        cell = resources.displayMetrics.widthPixels / COLUMNS
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(ContextCompat.getColor(context, R.color.surface))
+        }
+        val spinner = Spinner(this)
+        root.addView(spinner, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(12), dp(8), dp(12), dp(4)) })
+        empty = TextView(this).apply {
+            text = "저장된 사진이 없습니다.\n'수집 옵션'에서 사진 미리보기 수집이 켜져 있는지 확인하십시오."
+            gravity = Gravity.CENTER
+            setPadding(dp(24), dp(40), dp(24), dp(24))
+            setTextColor(ContextCompat.getColor(context, R.color.text_secondary))
+            visibility = View.GONE
+        }
+        root.addView(empty)
+        adapter = GridAdapter()
+        val grid = GridView(this).apply {
+            numColumns = COLUMNS
+            stretchMode = GridView.STRETCH_COLUMN_WIDTH
+            horizontalSpacing = dp(2)
+            verticalSpacing = dp(2)
+            this.adapter = this@PhotoGridActivity.adapter
+            setOnItemClickListener { _, _, pos, _ -> PhotoActivity.open(this@PhotoGridActivity, rows[pos]) }
+            setOnScrollListener(object : AbsListView.OnScrollListener {
+                override fun onScrollStateChanged(view: AbsListView?, state: Int) = Unit
+                override fun onScroll(view: AbsListView?, first: Int, visible: Int, total: Int) {
+                    if (hasMore && !loading && total > 0 && first + visible >= total - COLUMNS * 2) load(more = true)
+                }
+            })
+        }
+        root.addView(grid, LinearLayout.LayoutParams(-1, 0, 1f))
+        setContentView(root)
+
+        io.execute {
+            val rooms = MessageStore.get(this).photoRooms()
+            main.post {
+                val labels = listOf("전체 방 (${rooms.sumOf { it.second }}장)") + rooms.map { "${it.first} (${it.second}장)" }
+                spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
+                spinner.setSelection(room?.let { r -> rooms.indexOfFirst { it.first == r } + 1 }?.coerceAtLeast(0) ?: 0, false)
+                spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
+                        val next = if (pos == 0) null else rooms[pos - 1].first
+                        if (next != room) {
+                            room = next
+                            load(more = false)
+                        }
+                    }
+                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                }
+            }
+        }
+        load(more = false)
+    }
+
+    override fun onDestroy() {
+        io.shutdownNow()
+        super.onDestroy()
+    }
+
+    override fun onSupportNavigateUp(): Boolean {
+        finish()
+        return true
+    }
+
+    private fun load(more: Boolean) {
+        loading = true
+        val target = room
+        val before = if (more) rows.lastOrNull()?.id ?: Long.MAX_VALUE else Long.MAX_VALUE
+        io.execute {
+            val page = MessageStore.get(this).photos(target, before, PAGE).filter { r -> r.imagePath?.let { File(it).exists() } == true }
+            main.post {
+                if (target != room) return@post // 그 사이 방을 바꿈
+                if (!more) rows.clear()
+                rows.addAll(page)
+                hasMore = page.size >= PAGE / 2
+                loading = false
+                empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+                adapter.notifyDataSetChanged()
+            }
+        }
+    }
+
+    private inner class GridAdapter : BaseAdapter() {
+        override fun getCount() = rows.size
+        override fun getItem(position: Int) = rows[position]
+        override fun getItemId(position: Int) = rows[position].id
+
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val r = rows[position]
+            val path = r.imagePath.orEmpty()
+            val img = (convertView as? ImageView) ?: ImageView(parent.context).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                layoutParams = AbsListView.LayoutParams(-1, cell)
+                setBackgroundColor(ContextCompat.getColor(context, R.color.outline))
+            }
+            img.contentDescription = "${r.room} ${r.sender} 사진"
+            img.setTag(R.id.photoPath, path)
+            val cached = thumbs.get(path)
+            img.setImageBitmap(cached)
+            if (cached == null) io.execute {
+                val bmp = decodeSampled(path, cell)
+                if (bmp != null) thumbs.put(path, bmp)
+                main.post { if (img.getTag(R.id.photoPath) == path) img.setImageBitmap(bmp) }
+            }
+            return img
+        }
+    }
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    companion object {
+        private const val COLUMNS = 3
+        private const val PAGE = 90
     }
 }
 

@@ -39,7 +39,8 @@ class MainActivity : AppCompatActivity() {
 
     /** 바둑판 메뉴 항목: 아이콘 · 제목 · 그라데이션 색 */
     enum class Tile(val icon: String, val title: String, val colorA: Int, val colorB: Int) {
-        VIEW("💬", "대화 · 사진 보기", R.color.tile_blue_a, R.color.tile_blue_b),
+        VIEW("💬", "대화 보기", R.color.tile_blue_a, R.color.tile_blue_b),
+        PHOTOS("🖼️", "사진 모아보기", R.color.tile_pink_a, R.color.tile_pink_b),
         ROOMS("✅", "수집할 방", R.color.tile_green_a, R.color.tile_green_b),
         OPTIONS("⚙️", "수집 옵션", R.color.tile_teal_a, R.color.tile_teal_b),
         PERMISSION("🛡️", "권한 설정", R.color.tile_amber_a, R.color.tile_amber_b),
@@ -134,6 +135,7 @@ class MainActivity : AppCompatActivity() {
     private fun onTile(tile: Tile) {
         when (tile) {
             Tile.VIEW -> startActivity(Intent(this, ChatRoomsActivity::class.java))
+            Tile.PHOTOS -> startActivity(Intent(this, PhotoGridActivity::class.java))
             Tile.ROOMS -> startActivity(Intent(this, RoomFilterActivity::class.java))
             Tile.OPTIONS, Tile.PERMISSION -> {
                 // 알림 접근이 꺼져 있으면 바로 시스템 설정으로, 아니면 권한·옵션 화면으로
@@ -173,7 +175,8 @@ class MainActivity : AppCompatActivity() {
 
         val granted = listenerGranted()
         val batteryOk = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
-        setTile(Tile.VIEW, "저장 ${counts.total}건 · 사진 ${counts.photos}장")
+        setTile(Tile.VIEW, "저장 ${counts.total}건")
+        setTile(Tile.PHOTOS, "사진 ${counts.photos}장")
         setTile(Tile.ROOMS, RoomFilterActivity.summary(settings.roomFilterMode, settings.selectedRooms.size))
         setTile(
             Tile.OPTIONS,

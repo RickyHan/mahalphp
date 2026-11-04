@@ -201,6 +201,16 @@ class MessageStore private constructor(context: Context) :
     fun messages(room: String, beforeId: Long = Long.MAX_VALUE, limit: Int = 200): List<Row> =
         query("room = ? AND id < ?", arrayOf(room, beforeId.toString()), "id DESC", limit).reversed()
 
+    /** 사진이 있는 메시지 (최신 순). [room] 이 null 이면 모든 방, [beforeId] 보다 앞선 것만 */
+    fun photos(room: String? = null, beforeId: Long = Long.MAX_VALUE, limit: Int = 120): List<Row> =
+        if (room == null) query("image_path IS NOT NULL AND id < ?", arrayOf(beforeId.toString()), "id DESC", limit)
+        else query("image_path IS NOT NULL AND room = ? AND id < ?", arrayOf(room, beforeId.toString()), "id DESC", limit)
+
+    /** 사진이 있는 방과 사진 수 (사진 많은 순) */
+    fun photoRooms(): List<Pair<String, Int>> = readableDatabase.rawQuery(
+        "SELECT room, COUNT(*) AS n FROM queue WHERE image_path IS NOT NULL GROUP BY room ORDER BY n DESC, room", null,
+    ).use { c -> buildList { while (c.moveToNext()) add(c.getString(0) to c.getInt(1)) } }
+
     /** 한 방의 대화와 사진을 모두 지운다 */
     fun deleteRoom(room: String): Int {
         val rows = query("room = ?", arrayOf(room), "id ASC", Int.MAX_VALUE)

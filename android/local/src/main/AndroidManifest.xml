@@ -39,6 +39,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".PhotoGridActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".PhotoActivity"
             android:theme="@style/Theme.Collector"
             android:exported="false" />
