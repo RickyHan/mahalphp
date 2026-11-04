@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 카톡 메시지 보관함: 인터넷 권한 없음 (서버로 보내지 않고 휴대폰에만 저장) -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:name=".LocalApp"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Collector.WithBar">
+
+        <activity
+            android:name=".LockActivity"
+            android:theme="@style/Theme.Collector"
+            android:excludeFromRecents="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:theme="@style/Theme.Collector"
+            android:exported="false" />
+
+        <activity
+            android:name=".ChatRoomsActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ChatActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".PhotoActivity"
+            android:theme="@style/Theme.Collector"
+            android:exported="false" />
+
+        <activity
+            android:name=".DiagnosticsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".RoomFilterActivity"
+            android:exported="false"
+            android:label="@string/room_filter_title" />
+
+        <activity
+            android:name=".OptionsActivity"
+            android:exported="false"
+            android:label="@string/section_options" />
+
+        <receiver
+            android:name=".CaptureToggleReceiver"
+            android:exported="false" />
+
+        <service
+            android:name=".KakaoNotificationListener"
+            android:exported="true"
+            android:label="@string/listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

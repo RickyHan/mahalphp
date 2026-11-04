@@ -10,6 +10,7 @@ server/.env
 android/.gradle/
 android/build/
 android/app/build/
+android/local/build/
 android/local.properties
 android/keystore.properties
 *.jks
