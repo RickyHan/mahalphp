@@ -179,3 +179,7 @@ def test_unlinked_vendor_rooms(admin):
     assert admin.post(f"/api/admin/vendors/{target['id']}/room", json={"room_name": "●없는방"}).status_code == 422
     assert admin.post("/api/admin/vendors/999999/room", json={"room_name": "●미연결전혀다른방"}).status_code == 404
     assert TestClient(app).get("/api/admin/vendors/unlinked-rooms").status_code == 401
+    # 목록에서 바로 해제 → 다시 '연결 안 된 톡방'으로
+    assert admin.delete(f"/api/admin/vendors/{target['id']}/room").status_code == 200
+    assert "●미연결테스트설비 공지" in {x["room_name"] for x in admin.get("/api/admin/vendors/unlinked-rooms").json()["items"]}
+    assert admin.delete("/api/admin/vendors/999999/room").status_code == 404

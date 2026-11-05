@@ -200,12 +200,23 @@
     };
     save.addEventListener("click", doSave);
     input.addEventListener("keydown", (e) => e.key === "Enter" && doSave());
-    const room = v.room_name ? KC.roomChip(v.room_name, v.messages > 0) : el("span", { class: "warn-text", text: "미지정 — 요청 못 보냄" });
+    const roomCell = el("td", {});
+    const showRoom = () => {
+      roomCell.replaceChildren(
+        el(
+          "div",
+          { class: "vd-room-cell" },
+          v.room_name ? KC.roomChip(v.room_name, v.messages > 0) : el("span", { class: "warn-text", text: "미지정 — 요청 못 보냄" }),
+          el("button", { class: "link-btn", type: "button", text: v.room_name ? "변경" : "톡방 설정", onclick: () => openRoomPicker(v, roomCell, showRoom) }),
+        ),
+      );
+    };
+    showRoom();
     const tel = v.phone ? el("a", { class: "tel-link", href: `tel:${v.phone.replace(/[^0-9+]/g, "")}`, text: v.phone }) : el("span", { class: "muted", text: "—" });
     const doc = v.has_doc ? el("a", { class: "doc-link", href: `/api/admin/vendors/${v.id}/doc`, target: "_blank", rel: "noopener", title: "사업자등록증 보기" }, el("span", { class: "ms", text: "description" })) : null;
     tr.append(
       el("td", { class: "apt-name-cell" }, el("div", { class: "name-with-doc" }, input, doc)),
-      el("td", {}, room),
+      roomCell,
       el("td", {}, v.category_name ? el("span", { class: "chip-cat", text: v.category_name }) : el("span", { class: "warn-text", text: "미지정" })),
       el("td", {}, tel),
       el("td", { class: "num", text: (v.messages || 0).toLocaleString("ko-KR") }),
@@ -223,6 +234,60 @@
       ),
     );
     return tr;
+  }
+
+  // ---- 목록에서 바로 처리 요청 톡방 설정 ----------------------------------------------------------
+
+  const normName = (t) => (t || "").replace(/[●⚫⬤⏺🔴🟠🟡🟢🔵🟣🟤★☆\s()（）㈜]|\(주\)|주식회사/g, "").toLowerCase();
+  const VENDOR_ROOM = /^\s*[●⚫⬤⏺🔴🟠🟡🟢🔵🟣🟤]/u;
+
+  /** 톡방 고르기: 이름 비슷한 방 → 업체 톡방(●) → 다른 채팅방 순, 다른 업체에 연결된 방은 고를 수 없음. 위에 검색 칸. */
+  function openRoomPicker(v, cell, restore) {
+    const usedBy = new Map(state.items.filter((x) => x.room_name && x.id !== v.id).map((x) => [x.room_name, x.name]));
+    const key = normName(v.name);
+    const similar = [], circle = [], other = [], taken = [];
+    for (const r of state.rooms) {
+      if (r.name === v.room_name) continue;
+      if (usedBy.has(r.name)) taken.push(r);
+      else if (key.length >= 2 && (normName(r.name).includes(key) || (normName(r.name).length >= 2 && key.includes(normName(r.name))))) similar.push(r);
+      else if (VENDOR_ROOM.test(r.name)) circle.push(r);
+      else other.push(r);
+    }
+    const opt = (r, disabled) => el("option", { value: r.name, disabled, text: disabled ? `${r.name}   (현재: ${usedBy.get(r.name)})` : r.name });
+    const select = el("select", { class: "vd-room-select", "aria-label": `${v.name} 처리 요청 톡방` });
+    select.append(el("option", { value: "", text: v.room_name ? `현재: ${v.room_name}` : "톡방을 고르십시오" }));
+    if (v.room_name) select.append(el("option", { value: "__none", "data-keep": "", text: "— 연결 해제 (요청 보내지 않음) —" }));
+    for (const [label, rows, disabled] of [["이름이 비슷한 방", similar, false], ["업체 톡방 (●)", circle, false], ["다른 채팅방", other, false], ["다른 업체에 연결된 방", taken, true]]) {
+      if (rows.length) select.append(el("optgroup", { label }, ...rows.map((r) => opt(r, disabled))));
+    }
+    if (similar.length) select.value = similar[0].name;
+    const ok = el("button", { class: "btn btn-small btn-primary", type: "button", text: "저장" });
+    const cancel = el("button", { class: "btn btn-small", type: "button", text: "취소", onclick: restore });
+    ok.addEventListener("click", async () => {
+      const value = select.value;
+      if (!value) return reportError(new Error("톡방을 고르십시오."));
+      ok.disabled = true;
+      try {
+        if (value === "__none") {
+          if (!confirm(`'${v.name}' 의 톡방 연결을 해제하시겠습니까? 이 업체로는 처리 요청을 보내지 않게 됩니다.`)) {
+            ok.disabled = false;
+            return;
+          }
+          await sendJson("DELETE", `/api/admin/vendors/${v.id}/room`);
+        } else {
+          await sendJson("POST", `/api/admin/vendors/${v.id}/room`, { room_name: value });
+        }
+        await loadVendors();
+      } catch (err) {
+        ok.disabled = false;
+        reportError(err);
+      }
+    });
+    const box = el("div", { class: "vd-room-edit" }, select, el("div", { class: "vd-room-actions" }, ok, cancel));
+    cell.replaceChildren(box);
+    KC.searchable(select, "카톡 대화방 검색");
+    box.querySelector(".sel-search")?.focus();
+    box.addEventListener("keydown", (e) => e.key === "Escape" && restore());
   }
 
   async function sendJson(method, path, body) {

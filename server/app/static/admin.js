@@ -793,7 +793,7 @@
       observer.takeRecords(); // 우리가 바꾼 것은 무시
       const values = [...select.options].map((o) => o.value);
       if (q && (!values.includes(before) || before === "")) {
-        const first = [...select.options].find((o) => o.value !== "" && o.dataset.keep === undefined);
+        const first = [...select.options].find((o) => o.value !== "" && o.dataset.keep === undefined && !o.disabled);
         if (first) select.value = first.value;
       } else if (values.includes(before)) {
         select.value = before;

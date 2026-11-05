@@ -302,6 +302,18 @@ def link_room(vendor_id: int, body: RoomBody, settings: SettingsDep) -> dict[str
     return {"ok": True}
 
 
+@router.delete("/api/admin/vendors/{vendor_id}/room")
+def unlink_room(vendor_id: int, settings: SettingsDep) -> dict[str, Any]:
+    """업체의 처리 요청 톡방 연결 해제"""
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM vendors WHERE id = %s", (vendor_id,))
+        if cur.fetchone() is None:
+            raise HTTPException(404, "업체가 없습니다.")
+        cur.execute("UPDATE vendors SET room_name = NULL, updated_at = %s WHERE id = %s", (_now(settings), vendor_id))
+    live.bump("vendor")
+    return {"ok": True}
+
+
 @router.post("/api/admin/vendors/from-room", status_code=201)
 def vendor_from_room(body: RoomBody, settings: SettingsDep) -> dict[str, Any]:
     """연결 안 된 톡방을 새 업체로 추가 (업체 이름 = 방 이름에서 ● 를 뺀 것)"""
