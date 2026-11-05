@@ -75,9 +75,18 @@ class KakaoNotificationListener : NotificationListenerService() {
             val shortcut = conversationShortcut(sbn)
             val messages = KakaoParser.parse(NotificationExtractor.extract(sbn, shortcut?.first))
             val parsed = messages.joinToString("\n") { "  → 방=[${it.room}] 보낸사람=[${it.sender}] 단톡=${it.isGroupChat} 종류=${it.type.wire} 내용=[${it.text.take(40)}]" }
-            // 수집 제외 방의 알림은 진단 기록에도 남기지 않는다 (해석 실패 알림은 원인 확인을 위해 기록)
-            if (messages.isEmpty() || messages.any { settings.allowsRoom(it.room) }) {
-                store.addNotificationLog(System.currentTimeMillis(), NotificationExtractor.dump(sbn, shortcut?.let { "short=[${it.first}] long=[${it.second}]" }) + "해석 결과:\n" + parsed.ifEmpty { "  (대화 알림 아님 — 건너뜀)" })
+            // 진단 기록: 수집 제외 방·카톡의 빈 묶음 알림(내용 없는 요약)은 남기지 않는다 (해석 실패 알림은 원인 확인을 위해 기록)
+            val emptySummary = messages.isEmpty() && (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0 ||
+                sbn.notification.extras.getCharSequence(Notification.EXTRA_TEXT).isNullOrBlank() &&
+                sbn.notification.extras.getCharSequence(Notification.EXTRA_TITLE).isNullOrBlank())
+            if (!emptySummary && (messages.isEmpty() || messages.any { settings.allowsRoom(it.room) })) {
+                // 카톡이 보낸 사람을 '(알 수 없음)'으로 보낸 알림은 찾기 쉽게 표시
+                val unknown = messages.any { it.sender.contains("알 수 없음") }
+                store.addNotificationLog(
+                    System.currentTimeMillis(),
+                    (if (unknown) "⚠️ [보낸 사람 알 수 없음]\n" else "") +
+                        NotificationExtractor.dump(sbn, shortcut?.let { "short=[${it.first}] long=[${it.second}]" }) + "해석 결과:\n" + parsed.ifEmpty { "  (대화 알림 아님 — 건너뜀)" },
+                )
             }
             var queued = 0
             // 이 방에 보낼 '답장' 수단을 기억 (내가 보낸 글 제외). 수집 제외 방·이미 받은 글이어도 기억해 둔다.

@@ -305,3 +305,21 @@ def test_unknown_sender_uses_real_name_by_key(admin, settings):
         assert store.fill_all_unknown(cur) >= 1
         cur.execute("SELECT sender_name FROM kakao_messages WHERE id = %s", (early,))
         assert cur.fetchone()["sender_name"] == "김청소"
+
+
+def test_unknown_sender_fixed_when_message_reappears(admin, settings):
+    """카톡이 다음 알림에 지난 메시지를 실제 이름으로 다시 보여 주면: 새로 저장하지 않고 그 기록의 이름을 고침"""
+    c = TestClient(app)
+    when = _now(settings) - timedelta(minutes=3)
+    room = "●다시보임테스트업체"
+    first = _post(c, room, "(알 수 없음)", "안녕하세요 오늘 청소 마감했습니다", when, sender_key="k-room-a")
+    again = _post(c, room, "블루오션 김반장", "안녕하세요 오늘 청소 마감했습니다", when, sender_key="k-room-a")
+    assert again == first
+    items = admin.get("/api/admin/messages", params={"room": room}).json()["items"]
+    assert [(m["id"], m["sender_name"]) for m in items] == [(first, "블루오션 김반장")]
+    # 반대로 실제 이름으로 저장된 뒤 '(알 수 없음)'으로 다시 와도 새로 저장하지 않음
+    back = _post(c, room, "(알 수 없음)", "안녕하세요 오늘 청소 마감했습니다", when)
+    assert back == first and len(admin.get("/api/admin/messages", params={"room": room}).json()["items"]) == 1
+    # 이름만 다른 진짜 다른 사람(둘 다 실제 이름)은 따로 저장
+    other = _post(c, room, "다른사람", "안녕하세요 오늘 청소 마감했습니다", when)
+    assert other != first

@@ -101,28 +101,43 @@ async def create_message(
 
     with db.transaction(settings) as conn, conn.cursor() as cur:
         duplicate = False
+        renamed = False
         stored_sender = sender_name
         if sender_key and store.is_unknown_sender(sender_name):
             stored_sender = store.known_name(cur, sender_key) or sender_name  # '(알 수 없음)' → 같은 사람의 실제 이름
-        try:
-            cur.execute(
-                """INSERT INTO kakao_messages
-                   (device_id, room_name, sender_name, message_text, message_type, is_group_chat,
-                    has_media, posted_at, received_at, notification_key, sender_key, dedup_key)
-                   VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, %s, %s, %s)""",
-                (device_id, room_name, stored_sender, text, message_type, int(is_group_chat), posted,
-                 datetime.now(settings.timezone).replace(tzinfo=None), notification_key, sender_key or None, key),
-            )
-            message_id = cur.lastrowid
-            store.fill_unknown(cur, sender_key or None, stored_sender)  # 지난 '(알 수 없음)' 메시지에도 이름 채움
-            # 참여자 이력: 입장·퇴장 안내 메시지 또는 발언자(첫 발언·대화명 변경)
-            store.track_members(cur, room_name, stored_sender, sender_key or None, text, is_group_chat, posted)
-        except db.IntegrityError as exc:
-            if not db.is_duplicate(exc):
-                raise
+        # 카톡이 다음 알림에 지난 메시지를 다시 보여 줄 때 이름이 바뀌어 올 수 있다('(알 수 없음)' ↔ 실제 이름).
+        # 같은 방·같은 시각·같은 내용이면 같은 메시지: 새로 저장하지 않고, 이름을 알게 됐으면 기존 기록을 고친다.
+        same = store.same_message_other_name(cur, device_id, room_name, posted, text, stored_sender)
+        if same is not None:
             duplicate = True
-            cur.execute("SELECT id FROM kakao_messages WHERE dedup_key = %s", (key,))
-            message_id = cur.fetchone()["id"]
+            message_id = same["id"]
+            if store.is_unknown_sender(same["sender_name"]) and not store.is_unknown_sender(stored_sender):
+                cur.execute(
+                    "UPDATE kakao_messages SET sender_name = %s, sender_key = COALESCE(%s, sender_key) WHERE id = %s",
+                    (stored_sender, sender_key or None, message_id),
+                )
+                store.fill_unknown(cur, sender_key or None, stored_sender)
+                renamed = True
+        else:
+            try:
+                cur.execute(
+                    """INSERT INTO kakao_messages
+                       (device_id, room_name, sender_name, message_text, message_type, is_group_chat,
+                        has_media, posted_at, received_at, notification_key, sender_key, dedup_key)
+                       VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, %s, %s, %s)""",
+                    (device_id, room_name, stored_sender, text, message_type, int(is_group_chat), posted,
+                     datetime.now(settings.timezone).replace(tzinfo=None), notification_key, sender_key or None, key),
+                )
+                message_id = cur.lastrowid
+                store.fill_unknown(cur, sender_key or None, stored_sender)  # 지난 '(알 수 없음)' 메시지에도 이름 채움
+                # 참여자 이력: 입장·퇴장 안내 메시지 또는 발언자(첫 발언·대화명 변경)
+                store.track_members(cur, room_name, stored_sender, sender_key or None, text, is_group_chat, posted)
+            except db.IntegrityError as exc:
+                if not db.is_duplicate(exc):
+                    raise
+                duplicate = True
+                cur.execute("SELECT id FROM kakao_messages WHERE dedup_key = %s", (key,))
+                message_id = cur.fetchone()["id"]
 
         media_id = None
         if stored is not None:
@@ -142,6 +157,8 @@ async def create_message(
     if not duplicate:
         worker.wake()
         live.bump("message")
+    elif renamed:
+        live.bump("message")  # '(알 수 없음)' 이 실제 이름으로 바뀜 → 화면 갱신
     return {"ok": True, "id": message_id, "duplicate": duplicate, "media_id": media_id}
 
 

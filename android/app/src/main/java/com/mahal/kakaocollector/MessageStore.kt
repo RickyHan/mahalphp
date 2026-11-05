@@ -218,7 +218,7 @@ class MessageStore private constructor(context: Context) :
         const val PENDING = "pending"
         const val SENT = "sent"
         const val FAILED = "failed"
-        const val LOG_KEEP = 30
+        const val LOG_KEEP = 100
 
         @Volatile private var instance: MessageStore? = null
 

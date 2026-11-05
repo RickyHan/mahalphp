@@ -35,7 +35,7 @@
     <string name="open_diagnostics">알림 구조 진단 (방 이름이 이상할 때)</string>
     <string name="diagnostics_title">알림 구조 진단</string>
     <string name="diagnostics_share">이 내용 보내기 (카톡·메일 등)</string>
-    <string name="diagnostics_empty">아직 기록된 카톡 알림이 없습니다.\n알림 접근 권한을 켠 뒤 카톡을 받으면 최근 30건이 여기에 기록됩니다.</string>
+    <string name="diagnostics_empty">아직 기록된 카톡 알림이 없습니다.\n알림 접근 권한을 켠 뒤 카톡을 받으면 최근 100건이 여기에 기록됩니다.</string>
     <string name="save_and_test">저장하고 연결 확인</string>
     <string name="server_hint">서버 주소 예: http://61.83.189.246:28000 · API 키는 서버 설치 시 출력된 값입니다.</string>
     <string name="capture_images_hint">카톡 알림에 붙은 사진 미리보기를 함께 저장합니다.</string>

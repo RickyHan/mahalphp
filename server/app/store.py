@@ -107,6 +107,18 @@ def known_name(cur, sender_key: str | None) -> str | None:
     return row["sender_name"] if row else None
 
 
+def same_message_other_name(cur, device_id: str, room: str, posted: datetime, text: str, sender: str) -> dict[str, Any] | None:
+    """같은 휴대폰·방·시각·내용의 메시지가 이름만 '(알 수 없음)' ↔ 실제 이름으로 달리 이미 있으면 그 행"""
+    cur.execute(
+        "SELECT id, sender_name FROM kakao_messages WHERE device_id = %s AND room_name = %s AND posted_at = %s AND message_text = %s",
+        (device_id, room, posted, text),
+    )
+    for row in cur.fetchall():
+        if row["sender_name"] != sender and (is_unknown_sender(row["sender_name"]) or is_unknown_sender(sender)):
+            return row
+    return None
+
+
 def fill_unknown(cur, sender_key: str | None, name: str) -> int:
     """이름이 제대로 들어온 사람의 지난 '(알 수 없음)' 메시지에 그 이름을 채운다"""
     if not sender_key or is_unknown_sender(name):
