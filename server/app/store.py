@@ -84,9 +84,65 @@ def record_sender(cur, room: str, sender_key: str | None, name: str, at: datetim
     )
 
 
+# ---- '(알 수 없음)' 보낸 사람 → 같은 사람(고유 키)의 실제 이름 ---------------------------------------------
+
+# 카카오톡이 보낸 사람 프로필을 모를 때(나감·탈퇴·프로필 미수신) 알림에 넣는 이름
+UNKNOWN_SENDERS = ("(알 수 없음)", "알 수 없음", "(Unknown)", "Unknown")
+
+
+def is_unknown_sender(name: str | None) -> bool:
+    return (name or "").strip() in UNKNOWN_SENDERS
+
+
+def known_name(cur, sender_key: str | None) -> str | None:
+    """같은 고유 키로 이름이 제대로 찍힌 가장 최근 이름"""
+    if not sender_key:
+        return None
+    marks = ", ".join(["%s"] * len(UNKNOWN_SENDERS))
+    cur.execute(
+        f"SELECT sender_name FROM kakao_messages WHERE sender_key = %s AND sender_name NOT IN ({marks}) ORDER BY id DESC LIMIT 1",
+        (sender_key, *UNKNOWN_SENDERS),
+    )
+    row = cur.fetchone()
+    return row["sender_name"] if row else None
+
+
+def fill_unknown(cur, sender_key: str | None, name: str) -> int:
+    """이름이 제대로 들어온 사람의 지난 '(알 수 없음)' 메시지에 그 이름을 채운다"""
+    if not sender_key or is_unknown_sender(name):
+        return 0
+    marks = ", ".join(["%s"] * len(UNKNOWN_SENDERS))
+    cur.execute(
+        f"SELECT COUNT(*) AS n FROM kakao_messages WHERE sender_key = %s AND sender_name IN ({marks})",
+        (sender_key, *UNKNOWN_SENDERS),
+    )
+    n = int(cur.fetchone()["n"])
+    if n:
+        cur.execute(
+            f"UPDATE kakao_messages SET sender_name = %s WHERE sender_key = %s AND sender_name IN ({marks})",
+            (name, sender_key, *UNKNOWN_SENDERS),
+        )
+    return n
+
+
+def fill_all_unknown(cur) -> int:
+    """이미 쌓인 '(알 수 없음)' 메시지를 한꺼번에 정리 (서버 시작 때)"""
+    marks = ", ".join(["%s"] * len(UNKNOWN_SENDERS))
+    cur.execute(
+        f"SELECT DISTINCT sender_key FROM kakao_messages WHERE sender_key IS NOT NULL AND sender_name IN ({marks})",
+        UNKNOWN_SENDERS,
+    )
+    total = 0
+    for r in cur.fetchall():
+        name = known_name(cur, r["sender_key"])
+        if name:
+            total += fill_unknown(cur, r["sender_key"], name)
+    return total
+
+
 def track_members(cur, room: str, sender: str, sender_key: str | None, text: str, is_group: bool, at: datetime) -> None:
-    if not is_group or sender == cp.SELF_SENDER:
-        return
+    if not is_group or sender == cp.SELF_SENDER or is_unknown_sender(sender):
+        return  # '(알 수 없음)' 은 참여자 이름으로 기록하지 않음 (가짜 '대화명 변경' 방지)
     events = cp.detect_member_events(text)
     if events:
         for type_, member, actor in events:

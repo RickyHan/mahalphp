@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS `kakao_messages` (
   UNIQUE KEY `uq_kakao_messages_dedup` (`dedup_key`),
   KEY `idx_kakao_messages_room_time` (`room_name`, `posted_at`),
   KEY `idx_kakao_messages_sender_time` (`sender_name`, `posted_at`),
-  KEY `idx_kakao_messages_posted` (`posted_at`)
+  KEY `idx_kakao_messages_posted` (`posted_at`),
+  KEY `idx_kakao_messages_sender_key` (`sender_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='카카오톡 알림에서 수집한 대화';
 

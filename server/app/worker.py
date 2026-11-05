@@ -81,6 +81,15 @@ async def lifespan(_app):
                 log.info("FAQ 문항 등록: %s개", added)
         except Exception:
             log.exception("FAQ 자동 등록 실패")
+    try:  # 이미 쌓인 '(알 수 없음)' 보낸 사람 → 같은 사람(고유 키)의 실제 이름
+        from . import db as _db, store as _store
+
+        with _db.transaction(get_settings()) as conn, conn.cursor() as cur:
+            n = _store.fill_all_unknown(cur)
+        if n:
+            log.info("'(알 수 없음)' 보낸 사람 이름 채움: %s건", n)
+    except Exception:
+        log.exception("'(알 수 없음)' 이름 채우기 실패")
     thread = None
     if os.getenv("WORKER_ENABLED", "1") == "1":
         _stop.clear()

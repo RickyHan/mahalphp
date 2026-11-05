@@ -275,3 +275,33 @@ def test_existing_vendor_room_complaints_are_cleared(admin, settings):
         assert cur.fetchone()["verdict"] == 0
         cur.execute("SELECT status FROM reply_queue WHERE message_id = %s", (mid,))
         assert [r["status"] for r in cur.fetchall()] == ["expired"]
+
+
+def _post_key(c, room, sender, text, when, key):
+    return _post(c, room, sender, text, when, sender_key=key)
+
+
+def test_unknown_sender_uses_real_name_by_key(admin, settings):
+    """'(알 수 없음)' 으로 온 메시지: 같은 고유 키의 실제 이름으로 (앞뒤 어느 쪽에 이름이 와도), 키가 없으면 그대로"""
+    c = TestClient(app)
+    now = _now(settings)
+    room = "●알수없음테스트업체"
+    early = _post_key(c, room, "(알 수 없음)", "안녕하세요 11월 05일 청소마감현황입니다", now - timedelta(minutes=5), "key-cleaner")
+    nokey = _post(c, room, "(알 수 없음)", "키 없는 메시지입니다 확인", now - timedelta(minutes=4))
+    _post_key(c, room, "김청소", "사진 확인 부탁드립니다", now - timedelta(minutes=3), "key-cleaner")   # 이름이 제대로 옴 → 지난 것도 채움
+    late = _post_key(c, room, "(알 수 없음)", "추가로 보냅니다 확인 부탁", now - timedelta(minutes=2), "key-cleaner")  # 이후 것도
+    names = {m["id"]: m["sender_name"] for m in admin.get("/api/admin/messages", params={"room": room}).json()["items"]}
+    assert names[early] == "김청소" and names[late] == "김청소" and names[nokey] == "(알 수 없음)"
+    # 같은 메시지를 휴대폰이 다시 보내도 중복 저장되지 않음 (원래 이름으로 중복 판단)
+    again = _post_key(c, room, "(알 수 없음)", "추가로 보냅니다 확인 부탁", now - timedelta(minutes=2), "key-cleaner")
+    assert again == late
+    # 참여자 이력에 '(알 수 없음)' 이 이름으로 남지 않음
+    members = admin.get("/api/admin/members", params={"room": room}).json()["items"]
+    assert all(m["display_name"] != "(알 수 없음)" for m in members)
+
+    # 서버 시작 때 일괄 정리: 예전 데이터
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE kakao_messages SET sender_name = '(알 수 없음)' WHERE id = %s", (early,))
+        assert store.fill_all_unknown(cur) >= 1
+        cur.execute("SELECT sender_name FROM kakao_messages WHERE id = %s", (early,))
+        assert cur.fetchone()["sender_name"] == "김청소"

@@ -165,6 +165,18 @@ def _add_column_if_missing(conn, settings: Settings, table: str, column: str, dd
             conn.commit()
 
 
+def _add_index_if_missing(conn, settings: Settings, table: str, index: str, columns: str) -> None:
+    """이전 버전 MySQL DB 업그레이드용: 색인이 없으면 추가 (MySQL 8 은 CREATE INDEX IF NOT EXISTS 미지원)"""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM information_schema.statistics WHERE table_schema = %s AND table_name = %s AND index_name = %s",
+            (settings.db_name, table, index),
+        )
+        if cur.fetchone()["n"] == 0:
+            cur.execute(f"ALTER TABLE `{settings.db_name}`.`{table}` ADD INDEX `{index}` ({columns})")
+            conn.commit()
+
+
 def _sqlite_room_nullable(conn) -> None:
     """이전 버전 SQLite 의 apartments.room_name NOT NULL 을 풀기 위해 표를 다시 만든다."""
     with conn.cursor() as cur:
@@ -228,6 +240,7 @@ def install_schema(settings: Settings) -> list[str]:
                 ("match_score", "SMALLINT NULL"),
             ):
                 _add_column_if_missing(conn, settings, "apartments", col, ddl)
+            _add_index_if_missing(conn, settings, "kakao_messages", "idx_kakao_messages_sender_key", "`sender_key`")
             # 이전 버전은 apartments.room_name 이 NOT NULL → 채팅방 없는 건물을 위해 NULL 허용
             cur.execute(
                 "SELECT is_nullable AS nullable FROM information_schema.columns WHERE table_schema = %s AND table_name = 'apartments' AND column_name = 'room_name'",

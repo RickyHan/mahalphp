@@ -191,3 +191,5 @@ CREATE TABLE IF NOT EXISTS apartment_rooms (
   created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_apartment_rooms_apt ON apartment_rooms (apartment_id);
+
+CREATE INDEX IF NOT EXISTS idx_kakao_messages_sender_key ON kakao_messages (sender_key);

@@ -101,18 +101,22 @@ async def create_message(
 
     with db.transaction(settings) as conn, conn.cursor() as cur:
         duplicate = False
+        stored_sender = sender_name
+        if sender_key and store.is_unknown_sender(sender_name):
+            stored_sender = store.known_name(cur, sender_key) or sender_name  # '(알 수 없음)' → 같은 사람의 실제 이름
         try:
             cur.execute(
                 """INSERT INTO kakao_messages
                    (device_id, room_name, sender_name, message_text, message_type, is_group_chat,
                     has_media, posted_at, received_at, notification_key, sender_key, dedup_key)
                    VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, %s, %s, %s)""",
-                (device_id, room_name, sender_name, text, message_type, int(is_group_chat), posted,
+                (device_id, room_name, stored_sender, text, message_type, int(is_group_chat), posted,
                  datetime.now(settings.timezone).replace(tzinfo=None), notification_key, sender_key or None, key),
             )
             message_id = cur.lastrowid
+            store.fill_unknown(cur, sender_key or None, stored_sender)  # 지난 '(알 수 없음)' 메시지에도 이름 채움
             # 참여자 이력: 입장·퇴장 안내 메시지 또는 발언자(첫 발언·대화명 변경)
-            store.track_members(cur, room_name, sender_name, sender_key or None, text, is_group_chat, posted)
+            store.track_members(cur, room_name, stored_sender, sender_key or None, text, is_group_chat, posted)
         except db.IntegrityError as exc:
             if not db.is_duplicate(exc):
                 raise
