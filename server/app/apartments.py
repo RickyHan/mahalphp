@@ -566,15 +566,19 @@ def apartment_vendors(apartment_id: int, settings: SettingsDep) -> dict[str, Any
     with db.transaction(settings) as conn, conn.cursor() as cur:
         apt = _apartment(cur, apartment_id)
         cats = all_categories(cur)
-        cur.execute("SELECT id, name, room_name, category_id FROM vendors ORDER BY name, id")
+        cur.execute("SELECT id, name, room_name FROM vendors ORDER BY name, id")
         vendors = cur.fetchall()
+        cur.execute("SELECT vendor_id, category_id FROM vendor_categories")
+        vendor_cats: dict[int, set[int]] = {}
+        for r in cur.fetchall():
+            vendor_cats.setdefault(r["vendor_id"], set()).add(r["category_id"])
         cur.execute("SELECT category_id, vendor_id FROM apartment_vendors WHERE apartment_id = %s", (apartment_id,))
         current = {r["category_id"]: r["vendor_id"] for r in cur.fetchall()}
         cur.execute("SELECT DISTINCT room_name FROM kakao_messages")
         rooms = {r["room_name"] for r in cur.fetchall()}
     rows = []
     for c in cats:
-        defaults = [v for v in vendors if v["category_id"] == c["id"]]
+        defaults = [v for v in vendors if c["id"] in vendor_cats.get(v["id"], set())]
         if c["id"] in current:
             mode, vendor_id = ("vendor", current[c["id"]]) if current[c["id"]] is not None else ("none", None)
         else:

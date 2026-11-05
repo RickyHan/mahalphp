@@ -54,6 +54,7 @@ def replace_with_defaults(cur) -> None:
             continue
         cur.execute("UPDATE complaint_check SET category = %s WHERE category = %s", (cp.FALLBACK_CATEGORY, name))
         cur.execute("UPDATE vendors SET category_id = NULL WHERE category_id = %s", (cid,))
+        cur.execute("DELETE FROM vendor_categories WHERE category_id = %s", (cid,))
         cur.execute("DELETE FROM apartment_vendors WHERE category_id = %s", (cid,))
         cur.execute("DELETE FROM complaint_categories WHERE id = %s", (cid,))
         del existing[name]
@@ -152,7 +153,7 @@ def list_categories(settings: SettingsDep) -> dict[str, Any]:
         items = all_categories(cur)
         cur.execute("SELECT category, COUNT(*) AS n FROM complaint_check WHERE verdict = 1 GROUP BY category")
         complaints = {r["category"]: int(r["n"]) for r in cur.fetchall()}
-        cur.execute("SELECT category_id, COUNT(*) AS n FROM vendors WHERE category_id IS NOT NULL GROUP BY category_id")
+        cur.execute("SELECT category_id, COUNT(*) AS n FROM vendor_categories GROUP BY category_id")
         vendors = {r["category_id"]: int(r["n"]) for r in cur.fetchall()}
     for r in items:
         r["complaints"] = complaints.get(r["name"], 0)
@@ -209,6 +210,7 @@ def delete_category(category_id: int, settings: SettingsDep) -> dict[str, Any]:
         moved = int(cur.fetchone()["n"])
         cur.execute("UPDATE complaint_check SET category = %s WHERE category = %s", (cp.FALLBACK_CATEGORY, row["name"]))
         cur.execute("UPDATE vendors SET category_id = NULL WHERE category_id = %s", (category_id,))
+        cur.execute("DELETE FROM vendor_categories WHERE category_id = %s", (category_id,))
         cur.execute("DELETE FROM apartment_vendors WHERE category_id = %s", (category_id,))
         cur.execute("DELETE FROM complaint_categories WHERE id = %s", (category_id,))
     live.bump("category")

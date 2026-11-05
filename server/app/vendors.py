@@ -170,16 +170,42 @@ def _store_doc(settings: Settings, upload: UploadFile, data: bytes) -> tuple[str
     return relative, mime, original
 
 
-def _category(cur, raw: str) -> int | None:
-    """선택한 민원 카테고리 id (빈 값이면 지정 안 함)"""
-    if not raw.strip():
-        return None
-    if not raw.strip().isdigit():
-        raise HTTPException(422, "민원 카테고리가 올바르지 않습니다.")
-    cur.execute("SELECT id FROM complaint_categories WHERE id = %s", (int(raw),))
-    if cur.fetchone() is None:
-        raise HTTPException(422, "없는 민원 카테고리입니다. 화면을 새로 고친 뒤 다시 선택하십시오.")
-    return int(raw)
+def _categories(cur, raw: str) -> list[int]:
+    """선택한 민원 카테고리 id 목록 ('1,3,5' 형식, 빈 값이면 지정 안 함)"""
+    ids: list[int] = []
+    for part in (raw or "").replace(" ", "").split(","):
+        if not part:
+            continue
+        if not part.isdigit():
+            raise HTTPException(422, "민원 카테고리가 올바르지 않습니다.")
+        if int(part) not in ids:
+            ids.append(int(part))
+    if ids:
+        cur.execute(f"SELECT id FROM complaint_categories WHERE id IN ({', '.join(['%s'] * len(ids))})", ids)
+        if len(cur.fetchall()) != len(ids):
+            raise HTTPException(422, "없는 민원 카테고리입니다. 화면을 새로 고친 뒤 다시 선택하십시오.")
+    return ids
+
+
+def set_vendor_categories(cur, vendor_id: int, ids: list[int]) -> None:
+    """업체의 담당 분류를 바꾼다 (vendors.category_id 는 첫 번째 분류로 맞춰 둠 — 예전 화면·호환용)"""
+    cur.execute("DELETE FROM vendor_categories WHERE vendor_id = %s", (vendor_id,))
+    for cid in ids:
+        cur.execute("INSERT INTO vendor_categories (vendor_id, category_id) VALUES (%s, %s)", (vendor_id, cid))
+    cur.execute("UPDATE vendors SET category_id = %s WHERE id = %s", (ids[0] if ids else None, vendor_id))
+
+
+def backfill_vendor_categories(cur) -> int:
+    """예전 단일 담당 분류(vendors.category_id)를 vendor_categories 로 옮긴다 (없는 것만)"""
+    cur.execute(
+        """SELECT v.id, v.category_id FROM vendors v
+           WHERE v.category_id IS NOT NULL AND NOT EXISTS
+             (SELECT 1 FROM vendor_categories vc WHERE vc.vendor_id = v.id AND vc.category_id = v.category_id)"""
+    )
+    rows = cur.fetchall()
+    for r in rows:
+        cur.execute("INSERT INTO vendor_categories (vendor_id, category_id) VALUES (%s, %s)", (r["id"], r["category_id"]))
+    return len(rows)
 
 
 def _row(r: dict[str, Any]) -> dict[str, Any]:
@@ -195,14 +221,27 @@ def _now(settings: Settings) -> datetime:
 @router.get("/api/admin/vendors")
 def list_vendors(settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
+        backfill_vendor_categories(cur)
         cur.execute(f"SELECT {COLUMNS} FROM {FROM} ORDER BY v.name, v.id")
         items = [_row(r) for r in cur.fetchall()]
+        cur.execute(
+            """SELECT vc.vendor_id, c.id, c.name FROM vendor_categories vc JOIN complaint_categories c ON c.id = vc.category_id
+               ORDER BY c.sort_order, c.id"""
+        )
+        cats: dict[int, list[dict[str, Any]]] = {}
+        for r in cur.fetchall():
+            cats.setdefault(r["vendor_id"], []).append({"id": r["id"], "name": r["name"]})
         # 연결된 톡방의 메시지 수·최근 대화
         cur.execute("SELECT room_name, COUNT(*) AS n, MAX(posted_at) AS last_at FROM kakao_messages GROUP BY room_name")
         rooms = {r["room_name"]: r for r in cur.fetchall()}
         cur.execute("SELECT value FROM app_settings WHERE name = 'vendors_synced_at'")
         synced = cur.fetchone()
     for v in items:
+        vc = cats.get(v["id"], [])
+        v["category_ids"] = [c["id"] for c in vc]
+        v["category_names"] = [c["name"] for c in vc]
+        v["category_id"] = vc[0]["id"] if vc else None          # 예전 화면 호환
+        v["category_name"] = vc[0]["name"] if vc else None
         r = rooms.get(v["room_name"]) if v["room_name"] else None
         v["messages"] = int(r["n"]) if r else 0
         last = r["last_at"] if r else None
@@ -361,18 +400,21 @@ async def create_vendor(
     address: Annotated[str, Form(max_length=300)] = "",
     room_name: Annotated[str, Form(max_length=255)] = "",
     category_id: Annotated[str, Form(max_length=20)] = "",
+    category_ids: Annotated[str | None, Form(max_length=1000)] = None,
     doc: Annotated[UploadFile | None, File()] = None,
 ) -> dict[str, Any]:
     values = _clean(name, biz_no, phone, address, room_name)
     stored = _store_doc(settings, doc, await doc.read()) if doc is not None and doc.filename else (None, None, None)
     now = _now(settings)
     with db.transaction(settings) as conn, conn.cursor() as cur:
+        ids = _categories(cur, category_ids if category_ids is not None else category_id)
         cur.execute(
             """INSERT INTO vendors (name, biz_no, phone, address, room_name, category_id, doc_path, doc_mime, doc_name, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (*values.values(), _category(cur, category_id), *stored, now, now),
+               VALUES (%s, %s, %s, %s, %s, NULL, %s, %s, %s, %s, %s)""",
+            (*values.values(), *stored, now, now),
         )
         vendor_id = cur.lastrowid
+        set_vendor_categories(cur, vendor_id, ids)
     live.bump("vendor")
     return {"ok": True, "id": vendor_id}
 
@@ -387,6 +429,7 @@ async def update_vendor(
     address: Annotated[str, Form(max_length=300)] = "",
     room_name: Annotated[str, Form(max_length=255)] = "",
     category_id: Annotated[str, Form(max_length=20)] = "",
+    category_ids: Annotated[str | None, Form(max_length=1000)] = None,
     remove_doc: Annotated[bool, Form()] = False,
     doc: Annotated[UploadFile | None, File()] = None,
 ) -> dict[str, Any]:
@@ -396,10 +439,12 @@ async def update_vendor(
         cur.execute("SELECT id FROM vendors WHERE id = %s", (vendor_id,))
         if cur.fetchone() is None:
             raise HTTPException(404, "업체가 없습니다.")
+        ids = _categories(cur, category_ids if category_ids is not None else category_id)
         cur.execute(
-            "UPDATE vendors SET name = %s, biz_no = %s, phone = %s, address = %s, room_name = %s, category_id = %s, updated_at = %s WHERE id = %s",
-            (*values.values(), _category(cur, category_id), _now(settings), vendor_id),
+            "UPDATE vendors SET name = %s, biz_no = %s, phone = %s, address = %s, room_name = %s, updated_at = %s WHERE id = %s",
+            (*values.values(), _now(settings), vendor_id),
         )
+        set_vendor_categories(cur, vendor_id, ids)
         if stored is not None or remove_doc:
             cur.execute(
                 "UPDATE vendors SET doc_path = %s, doc_mime = %s, doc_name = %s WHERE id = %s",
@@ -413,6 +458,7 @@ async def update_vendor(
 def delete_vendor(vendor_id: int, settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM apartment_vendors WHERE vendor_id = %s", (vendor_id,))
+        cur.execute("DELETE FROM vendor_categories WHERE vendor_id = %s", (vendor_id,))
         cur.execute("DELETE FROM vendors WHERE id = %s", (vendor_id,))
     live.bump("vendor")
     return {"ok": True}

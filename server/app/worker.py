@@ -81,6 +81,15 @@ async def lifespan(_app):
                 log.info("FAQ 문항 등록: %s개", added)
         except Exception:
             log.exception("FAQ 자동 등록 실패")
+    try:  # 예전 단일 업체 담당 분류 → 여러 분류 표(vendor_categories)로 옮김
+        from . import db as _db, vendors as _vendors
+
+        with _db.transaction(get_settings()) as conn, conn.cursor() as cur:
+            moved = _vendors.backfill_vendor_categories(cur)
+        if moved:
+            log.info("업체 담당 분류 옮김: %s건", moved)
+    except Exception:
+        log.exception("업체 담당 분류 옮기기 실패")
     try:  # 이미 쌓인 '(알 수 없음)' 보낸 사람 → 같은 사람(고유 키)의 실제 이름
         from . import db as _db, store as _store
 

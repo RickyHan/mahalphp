@@ -193,3 +193,11 @@ CREATE TABLE IF NOT EXISTS apartment_rooms (
 CREATE INDEX IF NOT EXISTS idx_apartment_rooms_apt ON apartment_rooms (apartment_id);
 
 CREATE INDEX IF NOT EXISTS idx_kakao_messages_sender_key ON kakao_messages (sender_key);
+
+CREATE TABLE IF NOT EXISTS vendor_categories (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  vendor_id   INTEGER NOT NULL,
+  category_id INTEGER NOT NULL,
+  UNIQUE (vendor_id, category_id)
+);
+CREATE INDEX IF NOT EXISTS idx_vendor_categories_cat ON vendor_categories (category_id);

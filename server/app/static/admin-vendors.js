@@ -138,7 +138,7 @@
 
   function matches(v, q) {
     if (!q) return true;
-    return [v.name, v.phone, v.room_name, v.address, v.biz_no, v.category_name].some((x) => (x || "").toLowerCase().includes(q));
+    return [v.name, v.phone, v.room_name, v.address, v.biz_no, ...(v.category_names || [])].some((x) => (x || "").toLowerCase().includes(q));
   }
 
   function kpi(icon, tone, label, value, unit) {
@@ -153,7 +153,7 @@
   function renderKpis(syncedAt) {
     const total = state.items.length;
     const withRoom = state.items.filter((v) => v.room_name).length;
-    const withCat = state.items.filter((v) => v.category_id).length;
+    const withCat = state.items.filter((v) => (v.category_ids || []).length).length;
     $("vd-kpis").replaceChildren(
       kpi("domain", "blue", "등록 업체", total, "곳"),
       kpi("chat", "green", "처리 요청 톡방 연결", withRoom, `/ ${total}`),
@@ -217,7 +217,9 @@
     tr.append(
       el("td", { class: "apt-name-cell" }, el("div", { class: "name-with-doc" }, input, doc)),
       roomCell,
-      el("td", {}, v.category_name ? el("span", { class: "chip-cat", text: v.category_name }) : el("span", { class: "warn-text", text: "미지정" })),
+      el("td", {}, (v.category_names || []).length
+        ? el("div", { class: "cat-chips" }, ...v.category_names.map((n) => el("span", { class: "chip-cat", text: n })))
+        : el("span", { class: "warn-text", text: "미지정" })),
       el("td", {}, tel),
       el("td", { class: "num", text: (v.messages || 0).toLocaleString("ko-KR") }),
       el("td", { class: "muted small", text: v.last_at ? fmtDateTime(v.last_at).slice(0, 16) : "대화 없음" }),
@@ -336,13 +338,28 @@
     sel.value = current || "";
   }
 
+  /** 기본 담당 카테고리: 여러 개를 체크 (전체 선택·해제 포함) */
   function fillCategorySelect(current) {
-    const sel = $("vd-category");
-    sel.replaceChildren(el("option", { value: "", text: "(지정 안 함)" }));
-    for (const c of state.categories) {
-      sel.append(el("option", { value: String(c.id), text: c.enabled ? c.name : `${c.name} (사용 안 함)` }));
-    }
-    sel.value = current ? String(current) : "";
+    const box = $("vd-category");
+    const chosen = new Set((current || []).map(String));
+    const checks = state.categories.map((c) => {
+      const input = el("input", { type: "checkbox", value: String(c.id) });
+      input.checked = chosen.has(String(c.id));
+      return el("label", { class: `cat-check${c.enabled ? "" : " off"}` }, input, el("span", { text: c.enabled ? c.name : `${c.name} (사용 안 함)` }));
+    });
+    const all = el("button", {
+      class: "link-btn", type: "button", text: "전체 선택",
+      onclick: () => {
+        const inputs = [...box.querySelectorAll("input[type=checkbox]")];
+        const on = inputs.some((i) => !i.checked);
+        for (const i of inputs) i.checked = on;
+      },
+    });
+    box.replaceChildren(...checks, all);
+  }
+
+  function chosenCategories() {
+    return [...$("vd-category").querySelectorAll("input[type=checkbox]:checked")].map((i) => i.value);
   }
 
   function openForm(v = null) {
@@ -359,7 +376,7 @@
     $("vd-doc-remove-wrap").hidden = !v?.has_doc;
     $("vd-error").textContent = "";
     fillRoomSelect(v?.room_name || "");
-    fillCategorySelect(v?.category_id || null);
+    fillCategorySelect(v?.category_ids || []);
     $("vd-form").hidden = false;
     $("vd-form").scrollIntoView({ block: "nearest" });
     $("vd-name").focus();
@@ -396,7 +413,7 @@
     form.append("phone", $("vd-phone").value.trim());
     form.append("address", $("vd-address").value.trim());
     form.append("room_name", $("vd-room").value);
-    form.append("category_id", $("vd-category").value);
+    form.append("category_ids", chosenCategories().join(","));
     const file = $("vd-doc").files[0];
     if (file) form.append("doc", file);
     const editing = state.editing;

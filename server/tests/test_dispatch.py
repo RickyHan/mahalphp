@@ -218,3 +218,30 @@ def test_apartment_specific_vendors(admin, settings):
     assert admin.delete(f"/api/admin/vendors/{local['id']}").status_code == 200
     view = admin.get(f"/api/admin/apartments/{ga['id']}/vendors").json()
     assert next(x for x in view["categories"] if x["category_id"] == cat["id"])["mode"] == "default"
+
+
+def test_vendor_with_many_categories(admin, settings):
+    """업체 하나가 여러 민원 분류를 기본으로 담당 (예: 동대표 = 기타 + 청소 + 승강기 …)"""
+    cats = {c["name"]: c["id"] for c in admin.get("/api/admin/categories").json()["items"]}
+    ids = f"{cats['기타']},{cats['청소']},{cats['승강기']}"
+    r = admin.post("/api/admin/vendors", data={"name": "여러분류업체", "room_name": "", "category_ids": ids})
+    assert r.status_code == 201
+    vid = r.json()["id"]
+    v = next(x for x in admin.get("/api/admin/vendors").json()["items"] if x["id"] == vid)
+    assert set(v["category_names"]) == {"기타", "청소", "승강기"} and len(v["category_ids"]) == 3
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE vendors SET room_name = '●여러분류업체' WHERE id = %s", (vid,))
+        for cat in ("기타", "청소", "승강기"):
+            assert "여러분류업체" in [x["name"] for x in store.target_vendors(cur, "일반방", cat)]
+        assert "여러분류업체" not in [x["name"] for x in store.target_vendors(cur, "일반방", "누수")]
+    # 수정: 분류 바꾸기 · 모두 빼기
+    assert admin.put(f"/api/admin/vendors/{vid}", data={"name": "여러분류업체", "room_name": "●여러분류업체", "category_ids": str(cats["누수"])}).status_code == 200
+    v = next(x for x in admin.get("/api/admin/vendors").json()["items"] if x["id"] == vid)
+    assert v["category_names"] == ["누수"]
+    cnt = {c["name"]: c["vendors"] for c in admin.get("/api/admin/categories").json()["items"]}
+    assert cnt["누수"] >= 1
+    assert admin.put(f"/api/admin/vendors/{vid}", data={"name": "여러분류업체", "room_name": "●여러분류업체", "category_ids": ""}).status_code == 200
+    assert next(x for x in admin.get("/api/admin/vendors").json()["items"] if x["id"] == vid)["category_ids"] == []
+    assert admin.post("/api/admin/vendors", data={"name": "x", "category_ids": "1,abc"}).status_code == 422
+    assert admin.post("/api/admin/vendors", data={"name": "x", "category_ids": "999999"}).status_code == 422
+    admin.delete(f"/api/admin/vendors/{vid}")

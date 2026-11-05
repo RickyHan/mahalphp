@@ -1023,3 +1023,11 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .extra-room { display: inline-flex; align-items: center; gap: 2px; }
 .extra-x { width: 22px; height: 22px; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 14px; line-height: 1; cursor: pointer; }
 .extra-x:hover { background: var(--danger-soft); color: var(--danger); }
+
+/* 업체: 기본 담당 카테고리 여러 개 */
+.cat-checks { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.cat-check { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: 13px; cursor: pointer; user-select: none; }
+.cat-check input { margin: 0; accent-color: var(--primary); }
+.cat-check:has(input:checked) { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-ink); font-weight: 700; }
+.cat-check.off { opacity: .6; }
+.cat-chips { display: flex; flex-wrap: wrap; gap: 4px; }

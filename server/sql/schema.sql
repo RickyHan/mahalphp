@@ -241,3 +241,13 @@ CREATE TABLE IF NOT EXISTS `apartment_rooms` (
   UNIQUE KEY `uk_apartment_rooms_room` (`room_name`),
   KEY `idx_apartment_rooms_apt` (`apartment_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='건물 추가 채팅방';
+
+-- 업체의 기본 담당 민원 분류 (여러 개). 건물별로 따로 정하지 않은 분류의 처리 요청을 받는다
+CREATE TABLE IF NOT EXISTS `vendor_categories` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `vendor_id`   BIGINT UNSIGNED NOT NULL,
+  `category_id` BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_vendor_categories` (`vendor_id`, `category_id`),
+  KEY `idx_vendor_categories_cat` (`category_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='업체 담당 분류';

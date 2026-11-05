@@ -359,7 +359,9 @@ def target_vendors(cur, room: str, category: str) -> list[dict[str, Any]]:
         cur.execute("SELECT id, name, room_name FROM vendors WHERE id = %s AND room_name IS NOT NULL AND room_name <> ''", (row["vendor_id"],))
         return cur.fetchall()
     cur.execute(
-        """SELECT v.id, v.name, v.room_name FROM vendors v JOIN complaint_categories c ON c.id = v.category_id
+        """SELECT v.id, v.name, v.room_name FROM vendors v
+           JOIN vendor_categories vc ON vc.vendor_id = v.id
+           JOIN complaint_categories c ON c.id = vc.category_id
            WHERE c.name = %s AND v.room_name IS NOT NULL AND v.room_name <> ''""",
         (category,),
     )
