@@ -323,3 +323,37 @@ def test_unknown_sender_fixed_when_message_reappears(admin, settings):
     # 이름만 다른 진짜 다른 사람(둘 다 실제 이름)은 따로 저장
     other = _post(c, room, "다른사람", "안녕하세요 오늘 청소 마감했습니다", when)
     assert other != first
+
+
+def test_staff_nickname_not_classified(admin, settings):
+    """'동대표1'·'동대표 7'·'(주)동대표3' 같은 직원 닉네임의 메시지는 민원 분류 안 함 (옵션으로 켜고 끔)"""
+    assert store.is_staff_sender({"staff_exclude_enabled": "1", "staff_prefixes": "동대표"}, "동대표7")
+    conf = {"staff_exclude_enabled": "1", "staff_prefixes": "동대표, 관리소"}
+    for name in ("동대표1", "동대표 12", "(주)동대표3", "㈜동대표4", "관리소2"):
+        assert store.is_staff_sender(conf, name), name
+    for name in ("동대표", "동대표님", "302호 동대표", "홍길동", "동대표1호"):
+        assert not store.is_staff_sender(conf, name), name
+    assert not store.is_staff_sender({"staff_exclude_enabled": "0", "staff_prefixes": "동대표"}, "동대표1")
+
+    s = admin.get("/api/admin/settings").json()
+    assert s["staff_exclude_enabled"] is True and s["staff_prefixes"] == "동대표"
+    c = TestClient(app)
+    now = _now(settings)
+    staff = _post(c, "★직원제외빌라", "동대표7", "윗집 소음 민원 확인했습니다 조치하겠습니다", now)
+    resident = _post(c, "★직원제외빌라", "301호", "윗집 소음이 너무 심해요", now)
+    gem = FakeGemini()
+    store.classify_once(settings, client=gem)
+    sent = {i.id for batch in gem.calls for i in batch}
+    assert resident in sent and staff not in sent
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT verdict, reply_note FROM complaint_check WHERE message_id = %s", (staff,))
+        row = cur.fetchone()
+    assert row["verdict"] == 0 and "직원 닉네임" in row["reply_note"]
+
+    # 끄면 다시 분류 대상
+    assert admin.put("/api/admin/settings", json={"staff_exclude_enabled": False, "staff_prefixes": " 동대표 , 동대표,관리소 "}).json()["staff_prefixes"] == "동대표, 관리소"
+    staff2 = _post(c, "★직원제외빌라", "동대표8", "주차 소음 확인 부탁드립니다", now)
+    gem2 = FakeGemini()
+    store.classify_once(settings, client=gem2)
+    assert staff2 in {i.id for batch in gem2.calls for i in batch}
+    admin.put("/api/admin/settings", json={"staff_exclude_enabled": True, "staff_prefixes": "동대표"})

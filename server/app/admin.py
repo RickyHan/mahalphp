@@ -437,6 +437,8 @@ class SettingsBody(BaseModel):
     group_minutes: int | None = Field(default=None, ge=cp.GROUP_MINUTES_RANGE[0], le=cp.GROUP_MINUTES_RANGE[1])
     vendor_enabled: bool | None = None
     vendor_template: str | None = Field(default=None, max_length=1000)
+    staff_exclude_enabled: bool | None = None
+    staff_prefixes: str | None = Field(default=None, max_length=200)
 
 
 @router.get("/api/admin/settings", dependencies=[Admin])
@@ -454,6 +456,8 @@ def get_app_settings(settings: SettingsDep) -> dict[str, Any]:
         "vendor_template": conf["vendor_template"],
         "vendor_default_template": cp.DEFAULT_VENDOR_TEMPLATE,
         "vendor_placeholders": cp.VENDOR_PLACEHOLDERS,
+        "staff_exclude_enabled": conf["staff_exclude_enabled"] == "1",
+        "staff_prefixes": conf["staff_prefixes"],
         "gemini_configured": bool(settings.gemini_api_key),
         "worker": worker.status,
     }
@@ -476,6 +480,11 @@ def put_app_settings(body: SettingsBody, settings: SettingsDep) -> dict[str, Any
         values["vendor_enabled"] = "1" if body.vendor_enabled else "0"
     if body.vendor_template is not None:
         values["vendor_template"] = body.vendor_template.strip() or cp.DEFAULT_VENDOR_TEMPLATE
+    if body.staff_exclude_enabled is not None:
+        values["staff_exclude_enabled"] = "1" if body.staff_exclude_enabled else "0"
+    if body.staff_prefixes is not None:
+        names = [n.strip() for n in body.staff_prefixes.replace("\n", ",").split(",") if n.strip()]
+        values["staff_prefixes"] = ", ".join(dict.fromkeys(names))
     with db.transaction(settings) as conn, conn.cursor() as cur:
         store.put_settings(cur, values)
     worker.wake()

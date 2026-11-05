@@ -154,6 +154,8 @@
     $("set-group-minutes").value = s.group_minutes;
     $("set-vendor").checked = s.vendor_enabled;
     $("set-vendor-template").value = s.vendor_template;
+    $("set-staff").checked = s.staff_exclude_enabled;
+    $("set-staff-prefixes").value = s.staff_prefixes || "";
     const chips = $("set-vendor-chips");
     if (!chips.childElementCount) {
       for (const [key, desc] of Object.entries(s.vendor_placeholders)) {
@@ -185,6 +187,8 @@
       group_minutes: Math.min(240, Math.max(1, parseInt($("set-group-minutes").value, 10) || 15)),
       vendor_enabled: $("set-vendor").checked,
       vendor_template: $("set-vendor-template").value,
+      staff_exclude_enabled: $("set-staff").checked,
+      staff_prefixes: $("set-staff-prefixes").value,
     });
     $("set-saved").textContent = "저장했습니다.";
     setTimeout(() => ($("set-saved").textContent = ""), 3000);

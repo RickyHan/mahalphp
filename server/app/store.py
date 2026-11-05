@@ -18,6 +18,8 @@ SETTING_DEFAULTS = {
     "vendor_enabled": "1",
     "vendor_template": cp.DEFAULT_VENDOR_TEMPLATE,
     "faq_enabled": "1",
+    "staff_exclude_enabled": "1",
+    "staff_prefixes": "동대표",
 }
 
 
@@ -176,10 +178,13 @@ def unclassified(cur, limit: int, at: datetime) -> list[dict[str, Any]]:
     )
     rows = cur.fetchall()
     vendor_rooms = _vendor_rooms(cur)
+    staff = staff_pattern(get_settings_map(cur))
     out, skip = [], []
     for r in rows:
         if r["room_name"] in vendor_rooms or _is_vendor_room(r["room_name"]):
             skip.append((r, "업체 톡방 — 민원 분류 안 함"))
+        elif staff is not None and staff.match((r["sender_name"] or "").strip()):
+            skip.append((r, "직원 닉네임 — 민원 분류 안 함"))
         elif cp.is_eligible(r["message_type"], r["message_text"], r["sender_name"]):
             out.append(r)
         else:
@@ -214,6 +219,24 @@ def clear_vendor_room_complaints(cur, at: datetime) -> int:
             (at, "업체 톡방 메시지라 취소", mid),
         )
     return len(ids)
+
+
+def staff_pattern(conf: dict[str, str]):
+    """직원 닉네임(예: 동대표1, 동대표 7, (주)동대표3) — 설정의 이름 뒤에 숫자가 붙은 경우. 꺼져 있으면 None"""
+    import re
+
+    if conf.get("staff_exclude_enabled") != "1":
+        return None
+    names = [n.strip() for n in (conf.get("staff_prefixes") or "").replace("\n", ",").split(",") if n.strip()]
+    if not names:
+        return None
+    alt = "|".join(re.escape(n) for n in names)
+    return re.compile(rf"^(?:\(주\)|㈜)?\s*(?:{alt})\s*\d+$")
+
+
+def is_staff_sender(conf: dict[str, str], sender: str | None) -> bool:
+    pat = staff_pattern(conf)
+    return bool(pat and pat.match((sender or "").strip()))
 
 
 def _vendor_rooms(cur) -> set[str]:
