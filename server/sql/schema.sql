@@ -229,3 +229,14 @@ CREATE TABLE IF NOT EXISTS `faq_answers` (
   PRIMARY KEY (`id`),
   KEY `idx_faq_answers_room` (`room_name`, `faq_id`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='FAQ 자동 답변 이력';
+
+-- 건물의 추가 채팅방 (예: 세대방 외에 상가방). 기본 채팅방은 apartments.room_name
+CREATE TABLE IF NOT EXISTS `apartment_rooms` (
+  `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `apartment_id` BIGINT UNSIGNED NOT NULL,
+  `room_name`    VARCHAR(255)    NOT NULL,
+  `created_at`   DATETIME(3)     NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_apartment_rooms_room` (`room_name`),
+  KEY `idx_apartment_rooms_apt` (`apartment_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='건물 추가 채팅방';

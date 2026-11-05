@@ -342,20 +342,26 @@ def complaint_stats(
 ) -> dict[str, Any]:
     """apartment_id 를 주면 그 아파트 채팅방의 민원만, 없으면 전체 + 아파트별 묶음(group_detail)"""
     with db.transaction(settings) as conn, conn.cursor() as cur:
-        cur.execute("SELECT id, name, room_name FROM apartments WHERE room_name IS NOT NULL ORDER BY name, id")
-        apartments = cur.fetchall()
+        room_map = store.room_buildings(cur)  # 채팅방 → 건물 (상가방 같은 추가 채팅방 포함)
+        by_id: dict[int, dict[str, Any]] = {}
+        for b in room_map.values():
+            by_id.setdefault(b["id"], b)
+        apartments = sorted(by_id.values(), key=lambda a: (a["name"], a["id"]))
         apartment = None
+        rooms_of: set[str] = set()
         if apartment_id is not None:
-            apartment = next((a for a in apartments if a["id"] == apartment_id), None)
+            apartment = by_id.get(apartment_id)
             if apartment is None:
                 raise HTTPException(404, "건물이 없거나 연결된 채팅방이 없습니다.")
+            rooms_of = {room for room, b in room_map.items() if b["id"] == apartment_id}
+            apartment = {**apartment, "rooms": sorted(rooms_of)}
         rows = store.complaint_rows(cur)
         if apartment:
-            rows = [r for r in rows if r["room_name"] == apartment["room_name"]]
+            rows = [r for r in rows if r["room_name"] in rooms_of]
         order = [c["name"] for c in categories.all_categories(cur)]
         stats = cp.compute_stats(
             cp.group_complaints(rows, store.current_group_window(cur)), period, store.now_local(settings),
-            room_label=None if apartment else {a["room_name"]: a["name"] for a in apartments},
+            room_label=None if apartment else {room: b["name"] for room, b in room_map.items()},
         )
         # 업체 카톡방 전달 (아파트를 고르면 그 아파트 민원에서 나간 요청만)
         start = stats.pop("range_start")
@@ -366,8 +372,8 @@ def complaint_stats(
         join = ""
         if apartment:
             join = "JOIN kakao_messages m ON m.id = q.message_id"
-            where += " AND m.room_name = %s"
-            params.append(apartment["room_name"])
+            where += f" AND m.room_name IN ({', '.join(['%s'] * len(rooms_of))})"
+            params.extend(sorted(rooms_of))
         cur.execute(f"SELECT q.status, COUNT(*) AS n FROM reply_queue q {join} WHERE {where} GROUP BY q.status", params)
         vendor_counts = {r["status"]: int(r["n"]) for r in cur.fetchall()}
     return {

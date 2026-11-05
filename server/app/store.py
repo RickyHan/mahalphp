@@ -239,8 +239,8 @@ def target_vendors(cur, room: str, category: str) -> list[dict[str, Any]]:
         """SELECT av.vendor_id FROM apartment_vendors av
            JOIN apartments a ON a.id = av.apartment_id
            JOIN complaint_categories c ON c.id = av.category_id
-           WHERE a.room_name = %s AND c.name = %s""",
-        (room, category),
+           WHERE (a.room_name = %s OR a.id IN (SELECT apartment_id FROM apartment_rooms WHERE room_name = %s)) AND c.name = %s""",
+        (room, room, category),
     )
     row = cur.fetchone()
     if row is not None:
@@ -383,10 +383,19 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
 
 # ---- FAQ 자동 답변 --------------------------------------------------------------------------
 
+def room_buildings(cur) -> dict[str, dict[str, Any]]:
+    """채팅방 → 건물 {id, name}. 건물의 기본 채팅방과 추가 채팅방(예: 상가방) 모두."""
+    cur.execute("SELECT id, name, room_name FROM apartments WHERE room_name IS NOT NULL")
+    out = {r["room_name"]: {"id": r["id"], "name": r["name"]} for r in cur.fetchall()}
+    cur.execute("SELECT r.room_name, a.id, a.name FROM apartment_rooms r JOIN apartments a ON a.id = r.apartment_id")
+    for r in cur.fetchall():
+        out[r["room_name"]] = {"id": r["id"], "name": r["name"]}
+    return out
+
+
 def building_rooms(cur) -> set[str]:
-    """건물 관리에 등록된(연결된) 채팅방. 협력사(업체) 방은 들어가지 않는다."""
-    cur.execute("SELECT room_name FROM apartments WHERE room_name IS NOT NULL")
-    return {r["room_name"] for r in cur.fetchall()}
+    """건물 관리에 등록된(연결된) 채팅방(추가 채팅방 포함). 협력사(업체) 방은 들어가지 않는다."""
+    return set(room_buildings(cur))
 
 
 def faq_list(cur) -> list[dict[str, Any]]:

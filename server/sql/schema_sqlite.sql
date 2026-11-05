@@ -183,3 +183,11 @@ CREATE TABLE IF NOT EXISTS faq_answers (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_faq_answers_room ON faq_answers (room_name, faq_id, created_at);
+
+CREATE TABLE IF NOT EXISTS apartment_rooms (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  apartment_id INTEGER NOT NULL,
+  room_name    TEXT NOT NULL UNIQUE,
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_apartment_rooms_apt ON apartment_rooms (apartment_id);

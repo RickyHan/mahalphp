@@ -198,6 +198,7 @@ def _move_vendors(cur, src: int, dst: int) -> None:
 
 def _attach(cur, building_id: int, room: str, mode: str, score: float | None, now: datetime) -> None:
     """건물에 채팅방을 연결. 그 방을 가진 다른 행은 정리(목록 외 행은 합치고, 다른 건물은 연결 해제)."""
+    cur.execute("DELETE FROM apartment_rooms WHERE room_name = %s", (room,))
     cur.execute("SELECT id, listed FROM apartments WHERE room_name = %s AND id <> %s", (room, building_id))
     for other in cur.fetchall():
         if other["listed"]:
@@ -211,12 +212,17 @@ def _attach(cur, building_id: int, room: str, mode: str, score: float | None, no
     )
 
 
+def _extra_rooms(cur) -> set[str]:
+    cur.execute("SELECT room_name FROM apartment_rooms")
+    return {r["room_name"] for r in cur.fetchall()}
+
+
 def _automap(cur, now: datetime) -> dict[str, Any]:
     """미연결 건물(자동 대상)에 채팅방을 자동 연결하고, 남은 별(★) 방은 '목록 외 채팅방'으로 추가한다."""
     rooms = _chat_rooms(cur)
     cur.execute("SELECT id, name, room_name, listed, room_mode FROM apartments")
     rows = cur.fetchall()
-    taken = {r["room_name"] for r in rows if r["listed"] and r["room_name"]}
+    taken = {r["room_name"] for r in rows if r["listed"] and r["room_name"]} | _extra_rooms(cur)
     listed = [r for r in rows if r["listed"]]
     targets = [r for r in listed if not r["room_name"] and r["room_mode"] == "auto"]
     free = [room for room in rooms if room not in taken]
@@ -226,7 +232,7 @@ def _automap(cur, now: datetime) -> dict[str, Any]:
         name = next(t["name"] for t in targets if t["id"] == bid)
         mapped.append({"room_name": room, "name": name, "score": round(score * 100)})
     cur.execute("SELECT room_name FROM apartments WHERE room_name IS NOT NULL")
-    known = {r["room_name"] for r in cur.fetchall()}
+    known = {r["room_name"] for r in cur.fetchall()} | _extra_rooms(cur)
     added = []
     for room in rooms:
         if room in known or not is_apartment_room(room):
@@ -321,16 +327,22 @@ def seed_buildings(settings) -> dict[str, Any] | None:
 def list_apartments(settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute(
-            """SELECT a.id, a.name, a.room_name, a.address, a.listed, a.room_mode, a.match_score, a.created_at, a.updated_at,
-                      COUNT(m.id) AS messages, MAX(m.posted_at) AS last_at,
-                      COALESCE(SUM(CASE WHEN c.verdict = 1 THEN 1 ELSE 0 END), 0) AS complaints
-               FROM apartments a
-               LEFT JOIN kakao_messages m ON m.room_name = a.room_name
-               LEFT JOIN complaint_check c ON c.message_id = m.id
-               GROUP BY a.id, a.name, a.room_name, a.address, a.listed, a.room_mode, a.match_score, a.created_at, a.updated_at
-               ORDER BY a.listed DESC, a.name, a.id"""
+            """SELECT id, name, room_name, address, listed, room_mode, match_score, created_at, updated_at
+               FROM apartments ORDER BY listed DESC, name, id"""
         )
         items = [_ser(r) for r in cur.fetchall()]
+        cur.execute("SELECT apartment_id, room_name FROM apartment_rooms ORDER BY id")
+        extras: dict[int, list[str]] = {}
+        for r in cur.fetchall():
+            extras.setdefault(r["apartment_id"], []).append(r["room_name"])
+        # 방별 메시지·민원 수 · 최근 대화 (건물은 기본 + 추가 채팅방을 합산)
+        cur.execute(
+            """SELECT m.room_name, COUNT(m.id) AS messages, MAX(m.posted_at) AS last_at,
+                      COALESCE(SUM(CASE WHEN c.verdict = 1 THEN 1 ELSE 0 END), 0) AS complaints
+               FROM kakao_messages m LEFT JOIN complaint_check c ON c.message_id = m.id
+               GROUP BY m.room_name"""
+        )
+        per_room = {r["room_name"]: r for r in cur.fetchall()}
         cur.execute(
             """SELECT apartment_id, SUM(CASE WHEN vendor_id IS NOT NULL THEN 1 ELSE 0 END) AS assigned, COUNT(*) AS custom
                FROM apartment_vendors GROUP BY apartment_id"""
@@ -342,8 +354,14 @@ def list_apartments(settings: SettingsDep) -> dict[str, Any]:
         c = custom.get(i["id"])
         i["assigned"] = int(c["assigned"] or 0) if c else 0   # 이 건물에 따로 지정한 업체 수
         i["custom"] = int(c["custom"] or 0) if c else 0       # 따로 정한 분류 수('보내지 않음' 포함)
-        i["messages"] = int(i["messages"] or 0)
-        i["complaints"] = int(i["complaints"] or 0)
+        i["extra_rooms"] = extras.get(i["id"], [])
+        rooms = ([i["room_name"]] if i["room_name"] else []) + i["extra_rooms"]
+        stats = [per_room[r] for r in rooms if r in per_room]
+        i["messages"] = sum(int(x["messages"] or 0) for x in stats)
+        i["complaints"] = sum(int(x["complaints"] or 0) for x in stats)
+        lasts = [x["last_at"] for x in stats if x["last_at"]]
+        last = max(lasts) if lasts else None
+        i["last_at"] = last.isoformat() if isinstance(last, datetime) else last
         i["listed"] = bool(i["listed"])
     return {"ok": True, "items": items, "synced_at": row["value"] if row else None}
 
@@ -397,6 +415,7 @@ def rename_apartment(apartment_id: int, body: ApartmentBody, settings: SettingsD
 def delete_apartment(apartment_id: int, settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM apartment_vendors WHERE apartment_id = %s", (apartment_id,))
+        cur.execute("DELETE FROM apartment_rooms WHERE apartment_id = %s", (apartment_id,))
         cur.execute("DELETE FROM apartments WHERE id = %s", (apartment_id,))
     live.bump("apartment")
     return {"ok": True}
@@ -414,6 +433,9 @@ def link_candidates(apartment_id: int, settings: SettingsDep) -> dict[str, Any]:
         rows = cur.fetchall()
         if me["listed"]:
             holder = {r["room_name"]: r for r in rows if r["room_name"]}
+            cur.execute("SELECT r.room_name, a.id, a.name, a.listed FROM apartment_rooms r JOIN apartments a ON a.id = r.apartment_id")
+            for r in cur.fetchall():
+                holder[r["room_name"]] = {"id": r["id"], "name": r["name"], "listed": r["listed"], "room_name": r["room_name"]}
             cur.execute("SELECT room_name, COUNT(*) AS n FROM kakao_messages GROUP BY room_name")
             counts = {r["room_name"]: int(r["n"]) for r in cur.fetchall()}
             items = []
@@ -427,14 +449,71 @@ def link_candidates(apartment_id: int, settings: SettingsDep) -> dict[str, Any]:
                 })
             items.sort(key=lambda x: (-x["score"], -x["common"], x["room_name"]))
             return {"ok": True, "kind": "rooms", "items": items}
+    extra_count: dict[int, int] = {}
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT apartment_id, COUNT(*) AS n FROM apartment_rooms GROUP BY apartment_id")
+        extra_count = {r["apartment_id"]: int(r["n"]) for r in cur.fetchall()}
     items = [
-        {"id": r["id"], "name": r["name"], "linked_room": r["room_name"],
+        {"id": r["id"], "name": r["name"], "linked_room": r["room_name"], "extra_rooms": extra_count.get(r["id"], 0),
          "score": round(similarity(me["room_name"] or me["name"], r["name"]) * 100),
          "common": common_run(me["room_name"] or me["name"], r["name"])}
         for r in rows if r["listed"]
     ]
     items.sort(key=lambda x: (x["linked_room"] is not None, -x["score"], -x["common"], x["name"]))
     return {"ok": True, "kind": "buildings", "items": items}
+
+
+@router.post("/api/admin/apartments/{apartment_id}/rooms")
+def add_room(apartment_id: int, body: RoomBody, settings: SettingsDep) -> dict[str, Any]:
+    """건물에 채팅방을 '추가로' 연결 (예: 세대방에 더해 상가방). 기본 채팅방이 없으면 기본으로 연결.
+    목록 외 채팅방이면 그 행은 합치고(업체 설정 이어받음), 다른 건물에 연결된 방이면 거절."""
+    room = (body.room_name or "").strip()
+    if not room:
+        raise HTTPException(422, "채팅방을 고르십시오.")
+    now = _now(settings)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, listed, room_name FROM apartments WHERE id = %s", (apartment_id,))
+        me = cur.fetchone()
+        if me is None:
+            raise HTTPException(404, "건물이 없습니다.")
+        if not me["listed"]:
+            raise HTTPException(422, "목록의 건물에만 채팅방을 붙일 수 있습니다.")
+        if room not in set(_chat_rooms(cur)):
+            raise HTTPException(422, "수집된 채팅방이 아닙니다. 화면을 새로 고친 뒤 다시 고르십시오.")
+        if room == me["room_name"]:
+            return {"ok": True, "mode": "already"}
+        cur.execute(
+            """SELECT a.name FROM apartments a WHERE a.listed = 1 AND a.id <> %s AND
+                 (a.room_name = %s OR a.id IN (SELECT apartment_id FROM apartment_rooms WHERE room_name = %s))""",
+            (apartment_id, room, room),
+        )
+        other = cur.fetchone()
+        if other:
+            raise HTTPException(409, f"이 채팅방은 이미 '{other['name']}' 에 연결되어 있습니다.")
+        if not me["room_name"]:
+            _attach(cur, apartment_id, room, "manual", None, now)
+            mode = "primary"
+        else:
+            cur.execute("SELECT id FROM apartments WHERE room_name = %s AND listed = 0", (room,))
+            for holder in cur.fetchall():  # 목록 외 채팅방 행 → 합침
+                _move_vendors(cur, holder["id"], apartment_id)
+                cur.execute("DELETE FROM apartments WHERE id = %s", (holder["id"],))
+            cur.execute("DELETE FROM apartment_rooms WHERE room_name = %s", (room,))
+            cur.execute("INSERT INTO apartment_rooms (apartment_id, room_name, created_at) VALUES (%s, %s, %s)", (apartment_id, room, now))
+            mode = "extra"
+    live.bump("apartment")
+    return {"ok": True, "mode": mode}
+
+
+@router.delete("/api/admin/apartments/{apartment_id}/rooms")
+def remove_room(apartment_id: int, settings: SettingsDep, room_name: str) -> dict[str, Any]:
+    """추가 채팅방 연결 해제 (풀려난 별(★) 방은 다시 '연결 안 된 건물 톡방'에 보임)"""
+    now = _now(settings)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM apartment_rooms WHERE apartment_id = %s AND room_name = %s", (apartment_id, room_name))
+        _automap(cur, now)
+    live.bump("apartment")
+    return {"ok": True}
 
 
 @router.put("/api/admin/apartments/{apartment_id}/room")

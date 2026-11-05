@@ -167,3 +167,51 @@ def test_seed_building_vendors(admin, settings):
         cur.execute("DELETE FROM apartments WHERE listed = 1")
         cur.execute("DELETE FROM vendors WHERE room_name IS NULL")
         cur.execute("DELETE FROM app_settings WHERE name IN ('buildings_seed', 'building_vendors_seed')")
+
+
+def test_building_with_extra_room(admin, settings):
+    """세대방이 연결된 건물에 상가방 같은 채팅방을 '추가로' 연결: 기존 방은 그대로, 업체·FAQ·통계 모두 두 방"""
+    from app import store
+
+    assert admin.post("/api/admin/apartments", json={"name": "추가방골든팰리스"}).status_code == 201
+    _post("★추가방골든팰리스상가")
+    admin.post("/api/admin/apartments/sync")
+    _post("★추가방골든팰리스/19세대", "엘리베이터 고장났어요 확인 부탁")
+    admin.post("/api/admin/apartments/sync")
+    items = admin.get("/api/admin/apartments").json()["items"]
+    b = next(a for a in items if a["name"] == "추가방골든팰리스")
+    extra = next(a for a in items if a["room_name"] == "★추가방골든팰리스/19세대")
+    assert b["room_name"] == "★추가방골든팰리스상가" and not extra["listed"]
+
+    # 목록 외 방 '건물 지정' → 추가 연결 (기존 상가방 유지, 목록 외 행은 사라짐)
+    r = admin.post(f"/api/admin/apartments/{b['id']}/rooms", json={"room_name": "★추가방골든팰리스/19세대"})
+    assert r.status_code == 200 and r.json()["mode"] == "extra"
+    items = admin.get("/api/admin/apartments").json()["items"]
+    b = next(a for a in items if a["id"] == b["id"])
+    assert b["room_name"] == "★추가방골든팰리스상가" and b["extra_rooms"] == ["★추가방골든팰리스/19세대"]
+    assert b["messages"] == 2                                                             # 두 방 합산
+    assert not any(a["room_name"] == "★추가방골든팰리스/19세대" for a in items if a["id"] != b["id"])
+    admin.post("/api/admin/apartments/sync")                                              # 다시 수집해도 목록 외로 안 돌아감
+    assert not any(a["room_name"] == "★추가방골든팰리스/19세대" for a in admin.get("/api/admin/apartments").json()["items"])
+
+    # 업체 지정·FAQ 대상이 추가 채팅방에도 적용
+    cat = next(c for c in admin.get("/api/admin/categories").json()["items"] if c["name"] == "승강기")
+    v = admin.post("/api/admin/vendors", data={"name": "추가방승강기업체"}).json()["id"]
+    admin.put(f"/api/admin/apartments/{b['id']}/vendors", json={"assignments": [{"category_id": cat["id"], "mode": "vendor", "vendor_id": v}]})
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE vendors SET room_name = '●추가방승강기업체' WHERE id = %s", (v,))
+        assert [x["name"] for x in store.target_vendors(cur, "★추가방골든팰리스/19세대", "승강기")] == ["추가방승강기업체"]
+        assert {"★추가방골든팰리스상가", "★추가방골든팰리스/19세대"} <= store.building_rooms(cur)
+        cur.execute("UPDATE vendors SET room_name = NULL WHERE id = %s", (v,))
+
+    # 다른 건물에 연결된 방은 추가 불가, 추가 채팅방 해제 → 다시 목록 외 채팅방
+    assert admin.post("/api/admin/apartments", json={"name": "추가방다른건물"}).status_code == 201
+    other = next(a for a in admin.get("/api/admin/apartments").json()["items"] if a["name"] == "추가방다른건물")
+    assert admin.post(f"/api/admin/apartments/{other['id']}/rooms", json={"room_name": "★추가방골든팰리스/19세대"}).status_code == 409
+    assert admin.delete(f"/api/admin/apartments/{b['id']}/rooms", params={"room_name": "★추가방골든팰리스/19세대"}).status_code == 200
+    items = admin.get("/api/admin/apartments").json()["items"]
+    assert next(a for a in items if a["id"] == b["id"])["extra_rooms"] == []
+    assert any(a["room_name"] == "★추가방골든팰리스/19세대" and not a["listed"] for a in items)
+    with db.transaction(settings) as conn, conn.cursor() as cur:  # 정리
+        cur.execute("DELETE FROM apartments WHERE listed = 1")
+        cur.execute("DELETE FROM apartment_rooms")

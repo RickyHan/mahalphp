@@ -119,7 +119,7 @@
 
   function render() {
     const q = $("apt-search").value.trim().toLowerCase();
-    const hit = (a) => !q || [a.name, a.address, a.room_name].some((v) => (v || "").toLowerCase().includes(q));
+    const hit = (a) => !q || [a.name, a.address, a.room_name, ...(a.extra_rooms || [])].some((v) => (v || "").toLowerCase().includes(q));
     const shown = sortItems(items.filter((a) => FILTERS[filter](a) && hit(a)));
     $("apt-count").textContent = shown.length === items.length ? `${items.length}곳` : `${shown.length} / ${items.length}곳`;
     const list = $("apt-list");
@@ -146,15 +146,20 @@
    * 연결 편집: 목록 건물 → 채팅방 고르기, 목록 외 방 → 건물 고르기.
    * 검색 칸 + 목록. 이름이 비슷한 순으로 위에 오고, 이미 다른 곳에 연결된 항목은 아래에 둔다.
    */
-  async function openLinker(a, cell) {
+  /** add=true: 건물에 채팅방을 '추가로' 연결 (기존 채팅방은 그대로) */
+  async function openLinker(a, cell, add = false) {
     const data = await api(`/api/admin/apartments/${a.id}/candidates`);
     const rooms = data.kind === "rooms";
     // { value, label, note, linked }
     let options = rooms
       ? data.items.filter((r) => !r.current).map((r) => ({ value: r.room_name, label: r.room_name, note: r.linked_to ? `→ ${r.linked_to}` : "", linked: Boolean(r.linked_to), score: r.score }))
-      : data.items.map((b) => ({ value: String(b.id), label: b.name, note: b.linked_room ? `현재: ${b.linked_room}` : "", linked: Boolean(b.linked_room), score: b.score }));
+      : data.items.map((b) => ({
+          value: String(b.id), label: b.name, score: b.score, linked: false, // 건물 고르기: 이미 방이 있어도 '추가로' 붙임
+          note: b.linked_room ? `연결됨: ${b.linked_room}${b.extra_rooms ? ` 외 ${b.extra_rooms}` : ""} · 추가로 연결` : "",
+        }));
+    if (add) options = options.filter((o) => !o.linked); // 추가 연결: 다른 건물에 연결된 방은 제외
     options.sort((x, y) => x.linked - y.linked); // 서버가 비슷한 순으로 보냄. 이미 다른 곳에 연결된 것만 아래로
-    if (rooms && a.room_name) options = [{ value: "", label: "— 연결 해제 —", note: "", linked: false, score: 0, unlink: true }, ...options];
+    if (rooms && a.room_name && !add) options = [{ value: "", label: "— 연결 해제 —", note: "", linked: false, score: 0, unlink: true }, ...options];
 
     const search = el("input", { type: "search", class: "link-search", placeholder: rooms ? "채팅방 이름 검색" : "건물 이름 검색", "aria-label": "검색", autocomplete: "off" });
     const list = el("select", { class: "link-list", size: "8", "aria-label": rooms ? `${a.name} 에 연결할 채팅방` : `${a.room_name} 을 붙일 건물` });
@@ -169,18 +174,21 @@
     };
     fill();
 
-    const ok = el("button", { class: "btn btn-small btn-primary", type: "button", text: rooms ? "연결" : "지정" });
+    const ok = el("button", { class: "btn btn-small btn-primary", type: "button", text: add ? "추가" : rooms ? "연결" : "지정" });
     const reset = () => (render(), renderUnlinked());
     const cancel = el("button", { class: "btn btn-small", type: "button", text: "취소", onclick: reset });
     const confirmPick = async () => {
       if (list.selectedIndex < 0) return reportError(new Error(rooms ? "연결할 채팅방을 고르십시오." : "붙일 건물을 고르십시오."));
       const v = list.value;
       try {
-        if (rooms) {
+        if (rooms && add) {
+          await send("POST", `/api/admin/apartments/${a.id}/rooms`, { room_name: v });
+        } else if (rooms) {
           if (!v && !confirm(`'${a.name}' 의 채팅방 연결을 해제하시겠습니까?\n(직접 해제한 건물은 자동 매핑이 다시 연결하지 않습니다)`)) return;
           await send("PUT", `/api/admin/apartments/${a.id}/room`, { room_name: v || null });
         } else {
-          await send("PUT", `/api/admin/apartments/${v}/room`, { room_name: a.room_name });
+          // 목록 외 채팅방을 건물에 붙임: 건물에 이미 채팅방이 있으면 추가로(상가방 등), 없으면 기본 채팅방으로
+          await send("POST", `/api/admin/apartments/${v}/rooms`, { room_name: a.room_name });
         }
         await loadApartments();
       } catch (err) {
@@ -251,7 +259,25 @@
       text: a.listed ? (a.room_name ? "변경" : "채팅방 연결") : "건물 지정",
       onclick: () => openLinker(a, roomCell).catch(reportError),
     });
-    roomCell.append(el("div", { class: "apt-room" }, a.room_name ? KC.roomChip(a.room_name, a.messages > 0) : null, badge(a), linkBtn));
+    const extras = (a.extra_rooms || []).map((room) =>
+      el(
+        "span",
+        { class: "extra-room" },
+        KC.roomChip(room, true),
+        el("button", {
+          class: "extra-x", type: "button", title: "이 채팅방 연결 해제", "aria-label": `${room} 연결 해제`,
+          onclick: async () => {
+            if (!confirm(`'${a.name}' 에서 '${room}' 연결을 해제하시겠습니까?`)) return;
+            await send("DELETE", `/api/admin/apartments/${a.id}/rooms?room_name=${encodeURIComponent(room)}`).catch(reportError);
+            await loadApartments();
+          },
+        }, "×"),
+      ),
+    );
+    const addBtn = a.listed && a.room_name
+      ? el("button", { class: "link-btn", type: "button", text: "+ 방 추가", title: "세대방 외 상가방 등 채팅방을 더 연결", onclick: () => openLinker(a, roomCell, true).catch(reportError) })
+      : null;
+    roomCell.append(el("div", { class: "apt-room" }, a.room_name ? KC.roomChip(a.room_name, a.messages > 0) : null, ...extras, badge(a), linkBtn, addBtn));
     const hasRoom = Boolean(a.room_name);
     tr.append(
       el("td", { class: "apt-name-cell" }, input, a.address ? el("span", { class: "apt-addr", title: a.address, text: a.address }) : null),
