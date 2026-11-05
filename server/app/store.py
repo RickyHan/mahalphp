@@ -107,16 +107,58 @@ def unclassified(cur, limit: int, at: datetime) -> list[dict[str, Any]]:
         (cp.SELF_SENDER, limit * 3),
     )
     rows = cur.fetchall()
+    vendor_rooms = _vendor_rooms(cur)
     out, skip = [], []
     for r in rows:
-        (out if cp.is_eligible(r["message_type"], r["message_text"], r["sender_name"]) else skip).append(r)
-    # 짧은 메시지는 대상 아님으로 기록해 다시 조회되지 않게 한다
-    for r in skip:
+        if r["room_name"] in vendor_rooms or _is_vendor_room(r["room_name"]):
+            skip.append((r, "업체 톡방 — 민원 분류 안 함"))
+        elif cp.is_eligible(r["message_type"], r["message_text"], r["sender_name"]):
+            out.append(r)
+        else:
+            skip.append((r, "대상 아님(5자 미만)"))
+    # 대상이 아닌 메시지는 기록해 다시 조회되지 않게 한다
+    for r, note in skip:
         cur.execute(
             "INSERT INTO complaint_check (message_id, verdict, checked_at, reply_note) VALUES (%s, 0, %s, %s)",
-            (r["id"], at, "대상 아님(5자 미만)"),
+            (r["id"], at, note),
         )
     return out[:limit]
+
+
+def clear_vendor_room_complaints(cur, at: datetime) -> int:
+    """이미 업체 톡방에서 민원으로 잡힌 것을 민원에서 빼고, 아직 안 나간 접수 안내·FAQ 답변은 취소한다."""
+    linked = _vendor_rooms(cur)
+    cur.execute("SELECT DISTINCT room_name FROM kakao_messages")
+    rooms = sorted(r["room_name"] for r in cur.fetchall() if r["room_name"] in linked or _is_vendor_room(r["room_name"]))
+    if not rooms:
+        return 0
+    marks = ", ".join(["%s"] * len(rooms))
+    cur.execute(
+        f"""SELECT c.message_id FROM complaint_check c JOIN kakao_messages m ON m.id = c.message_id
+            WHERE c.verdict = 1 AND m.room_name IN ({marks})""",
+        rooms,
+    )
+    ids = [r["message_id"] for r in cur.fetchall()]
+    for mid in ids:
+        cur.execute("UPDATE complaint_check SET verdict = 0, reply_note = %s WHERE message_id = %s", ("업체 톡방 — 민원 아님", mid))
+        cur.execute(
+            "UPDATE reply_queue SET status = 'expired', done_at = %s, note = %s WHERE message_id = %s AND status = 'pending' AND kind IN ('ack', 'faq', 'vendor')",
+            (at, "업체 톡방 메시지라 취소", mid),
+        )
+    return len(ids)
+
+
+def _vendor_rooms(cur) -> set[str]:
+    """민원처리업체(협력사)의 카톡방: 업체에 연결된 방"""
+    cur.execute("SELECT room_name FROM vendors WHERE room_name IS NOT NULL AND room_name <> ''")
+    return {r["room_name"] for r in cur.fetchall()}
+
+
+def _is_vendor_room(room: str) -> bool:
+    """● 로 시작하는 방 = 업체 톡방 (업체에 아직 연결 전이어도). 업체 톡방에서는 민원을 접수하지 않는다."""
+    from .vendors import is_vendor_room
+
+    return is_vendor_room(room)
 
 
 def save_verdicts(cur, verdicts: list[cp.Verdict], model: str, at: datetime) -> None:
@@ -326,6 +368,7 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
         conf = get_settings_map(cur)
         if conf["complaint_enabled"] != "1" or not settings.gemini_api_key:
             return {"done": 0, "reason": "disabled"}
+        clear_vendor_room_complaints(cur, now_local(settings))  # 업체 톡방에서 잘못 잡힌 민원 정리
         batch = unclassified(cur, cp.BATCH, now_local(settings))
         categories = enabled_for_prompt(cur) if batch else []
     if not batch:

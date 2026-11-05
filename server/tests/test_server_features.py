@@ -237,3 +237,41 @@ def test_rooms_sorted_by_latest_message_time(admin, settings):
     _post(c, "정렬테스트-최근방", "가", "더 예전 메시지가 늦게 도착", now - timedelta(days=5))
     top = admin.get("/api/admin/rooms", params={"q": "정렬테스트"}).json()["items"][0]
     assert top["room_name"] == "정렬테스트-최근방" and top["last_message"] == "지금 막 보낸 메시지입니다"  # 미리보기도 최신 시각 메시지
+
+
+def test_vendor_rooms_are_not_classified(admin, settings):
+    """업체 톡방(● 로 시작 · 업체에 연결된 방)의 메시지는 민원 분류·접수 안내 대상이 아님"""
+    c = TestClient(app)
+    now = _now(settings)
+    vendor_msg = _post(c, "●분류제외누수업체", "업체", "누수 소음 현장 확인 부탁드립니다", now)
+    linked = admin.post("/api/admin/vendors", data={"name": "분류제외연결업체"}).json()["id"]
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE vendors SET room_name = '분류제외연결방' WHERE id = %s", (linked,))
+    linked_msg = _post(c, "분류제외연결방", "업체", "주차 소음 처리 완료했습니다", now)
+    resident = _post(c, "★분류제외빌라", "301호", "윗집 소음이 너무 심해요", now)
+    gem = FakeGemini()
+    store.classify_once(settings, client=gem)
+    sent = {i.id for batch in gem.calls for i in batch}
+    assert resident in sent and vendor_msg not in sent and linked_msg not in sent
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT message_id, verdict, reply_note FROM complaint_check WHERE message_id IN (%s, %s)", (vendor_msg, linked_msg))
+        rows = cur.fetchall()
+        cur.execute("SELECT COUNT(*) AS n FROM reply_queue WHERE message_id IN (%s, %s)", (vendor_msg, linked_msg))
+        assert cur.fetchone()["n"] == 0
+    assert len(rows) == 2 and all(r["verdict"] == 0 and "업체 톡방" in r["reply_note"] for r in rows)
+
+
+def test_existing_vendor_room_complaints_are_cleared(admin, settings):
+    """예전에 업체 톡방에서 민원으로 잡힌 것: 민원에서 빼고 안 나간 접수 안내는 취소"""
+    c = TestClient(app)
+    mid = _post(c, "●정리대상업체", "업체", "누수 현장 확인했습니다", _now(settings))
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        now = store.now_local(settings)
+        cur.execute("INSERT INTO complaint_check (message_id, verdict, category, checked_at) VALUES (%s, 1, '누수', %s)", (mid, now))
+        store.enqueue_reply(cur, mid, "phone-1", "●정리대상업체", "[누수] 민원이 접수되었습니다.", now)
+    store.classify_once(settings, client=FakeGemini())
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT verdict FROM complaint_check WHERE message_id = %s", (mid,))
+        assert cur.fetchone()["verdict"] == 0
+        cur.execute("SELECT status FROM reply_queue WHERE message_id = %s", (mid,))
+        assert [r["status"] for r in cur.fetchall()] == ["expired"]
