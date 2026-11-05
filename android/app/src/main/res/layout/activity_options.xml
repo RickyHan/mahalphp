@@ -24,6 +24,8 @@
                 <TextView style="@style/Hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:text="@string/capture_images_hint" />
                 <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/limitNotifications" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/limit_notifications" />
                 <TextView style="@style/Hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/limit_notifications_hint" />
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/removeOthers" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/remove_others" />
+                <TextView style="@style/Hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/remove_others_hint" />
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:gravity="center_vertical" android:minHeight="52dp" android:orientation="horizontal">
                     <TextView android:id="@+id/trimStatus" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:textColor="@color/text_primary" android:textSize="13sp" />
                     <com.google.android.material.button.MaterialButton android:id="@+id/trimNow" style="@style/Widget.Material3.Button.TonalButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/trim_now" />

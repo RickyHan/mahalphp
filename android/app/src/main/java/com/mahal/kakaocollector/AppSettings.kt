@@ -31,7 +31,17 @@ class AppSettings(context: Context) {
         get() = prefs.getStringSet(KEY_ROOMS, emptySet())?.toSet() ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_ROOMS, value).apply()
 
-    /** 알림창의 카톡 알림을 최대 20개로 유지 (넘치면 오래된 것부터 지움) */
+    /** 카카오톡이 아닌 앱의 알림은 오는 즉시 지움 (지울 수 없는 알림·이 앱 알림 제외) */
+    var removeOtherNotifications: Boolean
+        get() = prefs.getBoolean(KEY_REMOVE_OTHER, true)
+        set(value) = prefs.edit().putBoolean(KEY_REMOVE_OTHER, value).apply()
+
+    /** 지금까지 지운 다른 앱 알림 수 */
+    var otherRemoved: Int
+        get() = prefs.getInt(KEY_OTHER_REMOVED, 0)
+        set(value) = prefs.edit().putInt(KEY_OTHER_REMOVED, value).apply()
+
+    /** 알림창의 카톡 알림을 최대 30개로 유지 (넘치면 오래된 것부터 지움) */
     var limitKakaoNotifications: Boolean
         get() = prefs.getBoolean(KEY_LIMIT_NOTI, true)
         set(value) = prefs.edit().putBoolean(KEY_LIMIT_NOTI, value).apply()
@@ -101,6 +111,8 @@ class AppSettings(context: Context) {
         const val KEY_ROOMS = "selected_rooms"
         const val KEY_STATUS_NOTI = "status_notification"
         const val KEY_LIMIT_NOTI = "limit_kakao_notifications"
+        const val KEY_REMOVE_OTHER = "remove_other_notifications"
+        const val KEY_OTHER_REMOVED = "other_removed_count"
         const val KEY_NOTI_COUNT = "kakao_notification_count"
         const val KEY_TRIM_AT = "last_trim_at"
         const val KEY_TRIM_COUNT = "last_trim_count"

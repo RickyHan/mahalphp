@@ -42,7 +42,9 @@
     <string name="status_notification_hint">알림줄에 🟢/🟡/🔴 상태와 수집 시작·중지 버튼을 항상 표시합니다.</string>
     <string name="section_permission">권한</string>
     <string name="section_options">수집 옵션 · 권한</string>
-    <string name="limit_notifications">카톡 알림 최대 20개 유지</string>
-    <string name="limit_notifications_hint">알림창의 카톡 알림이 20개를 넘으면 가장 오래된 것부터 지웁니다(이미 저장한 뒤라 수집에는 영향 없음). 업체 톡방(●) 알림은 처리 요청 답장에 필요해 남깁니다.</string>
+    <string name="limit_notifications">카톡 알림 최대 30개 유지</string>
+    <string name="limit_notifications_hint">알림창의 카톡 알림이 30개를 넘으면 오래된 것부터 지웁니다(이미 저장한 뒤라 수집에는 영향 없음). 업체 톡방(●) 알림은 처리 요청 답장에 쓰므로 일반 방 알림을 먼저 지웁니다.</string>
     <string name="trim_now">지금 정리</string>
+    <string name="remove_others">카카오톡 외 알림 모두 지우기</string>
+    <string name="remove_others_hint">카카오톡이 아닌 앱의 알림은 오는 즉시 지웁니다. 통화 중·충전처럼 지울 수 없는 알림과 이 앱의 상태 알림은 남습니다.</string>
 </resources>

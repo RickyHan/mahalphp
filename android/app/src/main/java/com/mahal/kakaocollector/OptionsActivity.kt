@@ -34,6 +34,13 @@ class OptionsActivity : AppCompatActivity() {
             isChecked = settings.limitKakaoNotifications
             setOnCheckedChangeListener { _, on -> settings.limitKakaoNotifications = on }
         }
+        findViewById<MaterialSwitch>(R.id.removeOthers).apply {
+            isChecked = settings.removeOtherNotifications
+            setOnCheckedChangeListener { _, on ->
+                settings.removeOtherNotifications = on
+                if (on) KakaoNotificationListener.trimNow()
+            }
+        }
         findViewById<View>(R.id.trimNow).setOnClickListener {
             if (!KakaoNotificationListener.trimNow()) {
                 Toast.makeText(this, "알림 접근 권한이 꺼져 있거나 수집 서비스가 실행 중이 아닙니다.", Toast.LENGTH_LONG).show()
@@ -81,6 +88,7 @@ class OptionsActivity : AppCompatActivity() {
             append("마지막 정리 ").append(time)
             if (last > 0) append(" · ${settings.lastTrimCount}개 지움")
             settings.lastTrimError?.let { append("\n⚠️ ").append(it) }
+            if (settings.removeOtherNotifications) append("\n다른 앱 알림 지금까지 ${settings.otherRemoved}개 지움")
         }
     }
 

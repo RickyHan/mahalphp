@@ -26,12 +26,12 @@ class KakaoNotificationListener : NotificationListenerService() {
                 .onFailure { Log.w(TAG, "relay", it) }
             // 쌓아 둔 메시지: 30초마다 모아서 서버로 보낸다
             runCatching { UploadWorker.kick(this) }.onFailure { Log.w(TAG, "upload kick", it) }
-            // 새 알림이 없어도 20개 넘게 남은 오래된 카톡 알림을 정리
+            // 새 알림이 없어도 30개 넘게 남은 오래된 카톡 알림·다른 앱 알림을 정리
             worker.execute { trimKakaoNotifications() }
         }, 5, RELAY_SECONDS, TimeUnit.SECONDS)
         // 권한을 막 켰거나 서비스가 재시작된 경우, 이미 떠 있는 알림도 수집한다(중복은 큐에서 걸러짐)
         runCatching { activeNotifications }.getOrNull()?.forEach(::onNotificationPosted)
-        worker.execute { trimKakaoNotifications() } // 수집이 끝난 뒤 20개 넘는 오래된 알림 정리
+        worker.execute { trimKakaoNotifications() } // 수집이 끝난 뒤 30개 넘는 오래된 알림·다른 앱 알림 정리
     }
 
     override fun onCreate() {
@@ -40,8 +40,18 @@ class KakaoNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (sbn.packageName != KakaoParser.KAKAO_PACKAGE) return
+        if (sbn.packageName != KakaoParser.KAKAO_PACKAGE) {
+            removeOther(sbn) // 카카오톡이 아닌 알림은 바로 지움 (옵션)
+            return
+        }
         worker.execute { handle(sbn) }
+    }
+
+    /** 카카오톡·이 앱이 아닌 알림 중 지울 수 있는 것 → 지움 (통화 중·충전 등 지울 수 없는 알림은 그대로) */
+    private fun removeOther(sbn: StatusBarNotification): Boolean {
+        if (!AppSettings(this).removeOtherNotifications) return false
+        if (sbn.packageName == KakaoParser.KAKAO_PACKAGE || sbn.packageName == packageName || !sbn.isClearable) return false
+        return runCatching { cancelNotification(sbn.key) }.onFailure { Log.w(TAG, "다른 앱 알림 지우기 실패", it) }.isSuccess
     }
 
     override fun onListenerDisconnected() {
@@ -94,16 +104,20 @@ class KakaoNotificationListener : NotificationListenerService() {
     }
 
     /**
-     * 알림창의 카톡 알림을 최대 20개로 유지: 넘치면 가장 오래된 것부터 지운다(이미 저장한 뒤라 수집에서 빠지지 않음).
-     * 업체 톡방(●) 알림은 업체 처리 요청 '답장'에 필요하므로 남긴다.
+     * 알림창의 카톡 알림을 최대 30개로 유지: 넘치면 오래된 것부터 지운다(이미 저장한 뒤라 수집에서 빠지지 않음).
+     * 업체 톡방(●) 알림은 업체 처리 요청 '답장'에 쓰므로 일반 방 알림을 먼저 지운다.
      */
     internal fun trimKakaoNotifications(force: Boolean = false) {
         val settings = AppSettings(this)
-        if (!settings.limitKakaoNotifications || (!force && !settings.captureEnabled)) return
+        if (!settings.limitKakaoNotifications && !settings.removeOtherNotifications) return
         val active = runCatching { activeNotifications }.getOrElse {
             settings.recordTrim(0, 0, "알림 목록 읽기 실패: ${it.javaClass.simpleName}")
             return
         } ?: return
+        // 이미 떠 있는 다른 앱 알림 정리 (카톡 30개 유지와 별개로 켜고 끔)
+        val others = active.count { removeOther(it) }
+        if (others > 0) settings.otherRemoved += others
+        if (!settings.limitKakaoNotifications || (!force && !settings.captureEnabled)) return
         val kakao = active.filter { it.packageName == KakaoParser.KAKAO_PACKAGE }
         val counted = kakao.count { it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 && it.isClearable }
         settings.kakaoNotificationCount = counted
