@@ -9,6 +9,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.view.View
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
@@ -32,6 +33,14 @@ class OptionsActivity : AppCompatActivity() {
         findViewById<MaterialSwitch>(R.id.limitNotifications).apply {
             isChecked = settings.limitKakaoNotifications
             setOnCheckedChangeListener { _, on -> settings.limitKakaoNotifications = on }
+        }
+        findViewById<View>(R.id.trimNow).setOnClickListener {
+            if (!KakaoNotificationListener.trimNow()) {
+                Toast.makeText(this, "알림 접근 권한이 꺼져 있거나 수집 서비스가 실행 중이 아닙니다.", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "카톡 알림을 정리합니다…", Toast.LENGTH_SHORT).show()
+                it.postDelayed({ renderTrim() }, 1500)
+            }
         }
         findViewById<MaterialSwitch>(R.id.statusNotification).apply {
             isChecked = settings.statusNotification
@@ -59,6 +68,20 @@ class OptionsActivity : AppCompatActivity() {
         val batteryOk = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
         findViewById<TextView>(R.id.checkPermission).text = if (granted) "✅  알림 접근 권한 켜짐" else "⚠️  알림 접근 권한 필요"
         findViewById<TextView>(R.id.checkBattery).text = if (batteryOk) "✅  배터리 최적화 예외" else "⚠️  배터리 최적화 예외 필요"
+        renderTrim()
+    }
+
+    /** 알림 정리 결과: 지금 떠 있는 카톡 알림 수 · 마지막 정리 시각·지운 수·실패 사유 */
+    private fun renderTrim() {
+        val count = settings.kakaoNotificationCount
+        val last = settings.lastTrimAt
+        val time = if (last > 0) java.text.SimpleDateFormat("M/d HH:mm:ss", java.util.Locale.KOREA).format(java.util.Date(last)) else "없음"
+        findViewById<TextView>(R.id.trimStatus).text = buildString {
+            append("카톡 알림 ").append(if (count >= 0) "${count}개" else "확인 전").append(" (최대 ${NotificationTrim.MAX}개)\n")
+            append("마지막 정리 ").append(time)
+            if (last > 0) append(" · ${settings.lastTrimCount}개 지움")
+            settings.lastTrimError?.let { append("\n⚠️ ").append(it) }
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {

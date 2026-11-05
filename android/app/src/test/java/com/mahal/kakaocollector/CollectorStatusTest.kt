@@ -24,7 +24,7 @@ class CollectorStatusTest {
     fun uploadingBacklogIsStillGood() {
         val s = CollectorStatus.evaluate(input(pending = 120))
         assertEquals(Level.GOOD, s.level)
-        assertTrue(s.title.contains("5분마다 전송"))  // 휴대폰에 쌓였다가 5분마다 보내는 것은 정상
+        assertTrue(s.title.contains("30초마다 전송"))  // 휴대폰에 쌓였다가 30초마다 보내는 것은 정상
     }
 
     @Test

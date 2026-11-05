@@ -15,7 +15,7 @@ object ReplyRelay {
         if (!settings.isConfigured) return 0
         val api = ApiClient(settings)
         val pending = api.pendingReplies() ?: return -1
-        // 관리자 웹에서 '지금 동기화'를 눌렀으면 5분을 기다리지 않고 바로 전송
+        // 관리자 웹에서 '지금 동기화'를 눌렀으면 다음 주기를 기다리지 않고 바로 전송
         if (pending.syncRequestedAt > settings.lastSyncHandled) {
             settings.lastSyncHandled = pending.syncRequestedAt
             UploadWorker.enqueue(context)

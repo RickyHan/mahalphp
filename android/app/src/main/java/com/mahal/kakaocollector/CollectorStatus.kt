@@ -35,7 +35,7 @@ object CollectorStatus {
             !i.serverConfigured -> Status(Level.BAD, "서버 설정이 필요합니다", "'서버 연결'에서 서버 주소와 API 키를 입력하십시오")
             !i.captureEnabled -> Status(Level.WARN, "수집 일시 중지됨", "수집 시작을 누르면 다시 수집합니다 · 대기 ${i.pending}건")
             i.pending > 0 && i.lastUploadError != null -> Status(Level.WARN, "서버 전송 지연 — 자동 재시도 중", "${i.lastUploadError.take(60)}\n$detail")
-            i.pending > 0 -> Status(Level.GOOD, "정상 · 휴대폰에 저장, 5분마다 전송", detail)
+            i.pending > 0 -> Status(Level.GOOD, "정상 · 휴대폰에 저장, 30초마다 전송", detail)
             else -> Status(Level.GOOD, "정상 수집 중", detail)
         }
     }

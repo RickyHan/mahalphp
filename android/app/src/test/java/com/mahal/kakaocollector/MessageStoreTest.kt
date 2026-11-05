@@ -72,11 +72,12 @@ class MessageStoreTest {
     }
 
     @Test
-    fun uploadsEveryFiveMinutes() {
+    fun uploadsEveryThirtySeconds() {
         val t = 10_000_000L
         assertTrue(UploadWorker.isDue(0, t))                                   // 처음
-        assertFalse(UploadWorker.isDue(t - 60_000, t))                          // 1분 전에 보냄
-        assertTrue(UploadWorker.isDue(t - UploadWorker.INTERVAL_MS, t))         // 5분 지남
+        assertFalse(UploadWorker.isDue(t - 10_000, t))                          // 10초 전에 보냄
+        assertTrue(UploadWorker.isDue(t - 30_000, t))                           // 30초 지남
+        assertTrue(UploadWorker.isDue(t - 29_000, t))                           // 30초 확인 주기와 1초 어긋나도 이번에 보냄
         assertTrue(UploadWorker.isDue(t + 60_000, t))                           // 시계가 뒤로 감
     }
 

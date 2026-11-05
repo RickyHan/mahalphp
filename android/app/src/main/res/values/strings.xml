@@ -44,4 +44,5 @@
     <string name="section_options">수집 옵션 · 권한</string>
     <string name="limit_notifications">카톡 알림 최대 20개 유지</string>
     <string name="limit_notifications_hint">알림창의 카톡 알림이 20개를 넘으면 가장 오래된 것부터 지웁니다(이미 저장한 뒤라 수집에는 영향 없음). 업체 톡방(●) 알림은 처리 요청 답장에 필요해 남깁니다.</string>
+    <string name="trim_now">지금 정리</string>
 </resources>

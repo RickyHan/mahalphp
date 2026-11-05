@@ -15,7 +15,7 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** 휴대폰에 저장해 둔 메시지를 서버로 보낸다. 5분마다(알림 서비스가 확인), 관리자 웹 '지금 동기화', 앱의 '지금 전송' 때 실행. */
+/** 휴대폰에 저장해 둔 메시지를 서버로 보낸다. 30초마다(알림 서비스가 확인), 관리자 웹 '지금 동기화', 앱의 '지금 전송' 때 실행. */
 class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -88,11 +88,13 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
         private val scheduler = Executors.newSingleThreadExecutor()
 
-        /** 휴대폰에 쌓아 두었다가 이 간격마다 서버로 보낸다 */
-        const val INTERVAL_MS = 5 * 60 * 1000L
+        /** 휴대폰에 쌓아 두었다가 이 간격마다 서버로 보낸다 (알림 서비스가 30초마다 확인) */
+        const val INTERVAL_MS = 30 * 1000L
+        /** 30초 확인 주기와 어긋나 한 번 건너뛰지 않도록 둔 여유 */
+        private const val SLACK_MS = 5 * 1000L
 
         /**
-         * 알림 수신 서비스가 30초마다 호출: 보낼 메시지가 있고 마지막 전송 후 5분이 지났으면 전송한다.
+         * 알림 수신 서비스가 30초마다 호출: 보낼 메시지가 있고 마지막 전송 후 30초가 지났으면 전송한다.
          * (새 메시지가 올 때마다 바로 보내지 않고 휴대폰에 먼저 저장 → 서버가 잠시 멈춰도 빠지지 않음)
          */
         fun kick(context: Context, now: Long = System.currentTimeMillis()) {
@@ -101,6 +103,6 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             if (isDue(settings.lastUploadAttemptAt, now)) enqueue(context)
         }
 
-        fun isDue(lastAttempt: Long, now: Long): Boolean = now - lastAttempt >= INTERVAL_MS || now < lastAttempt
+        fun isDue(lastAttempt: Long, now: Long): Boolean = now - lastAttempt >= INTERVAL_MS - SLACK_MS || now < lastAttempt
     }
 }

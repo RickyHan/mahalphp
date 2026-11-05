@@ -10,7 +10,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
-/** 카카오톡 알림을 받아 휴대폰(전송 대기열)에 먼저 저장하고, 5분마다 서버로 보낸다. 조회·분류·이력은 서버가 처리. */
+/** 카카오톡 알림을 받아 휴대폰(전송 대기열)에 먼저 저장하고, 30초마다 모아서 서버로 보낸다. 조회·분류·이력은 서버가 처리. */
 class KakaoNotificationListener : NotificationListenerService() {
 
     private val worker = Executors.newSingleThreadExecutor()
@@ -24,12 +24,19 @@ class KakaoNotificationListener : NotificationListenerService() {
         relayTask = relayTimer.scheduleWithFixedDelay({
             runCatching { if (AppSettings(this).captureEnabled) ReplyRelay.relayOnce(this) }
                 .onFailure { Log.w(TAG, "relay", it) }
-            // 쌓아 둔 메시지: 마지막 전송 후 5분이 지났으면 서버로 보낸다
+            // 쌓아 둔 메시지: 30초마다 모아서 서버로 보낸다
             runCatching { UploadWorker.kick(this) }.onFailure { Log.w(TAG, "upload kick", it) }
+            // 새 알림이 없어도 20개 넘게 남은 오래된 카톡 알림을 정리
+            worker.execute { trimKakaoNotifications() }
         }, 5, RELAY_SECONDS, TimeUnit.SECONDS)
         // 권한을 막 켰거나 서비스가 재시작된 경우, 이미 떠 있는 알림도 수집한다(중복은 큐에서 걸러짐)
         runCatching { activeNotifications }.getOrNull()?.forEach(::onNotificationPosted)
         worker.execute { trimKakaoNotifications() } // 수집이 끝난 뒤 20개 넘는 오래된 알림 정리
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        running = this
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -43,6 +50,7 @@ class KakaoNotificationListener : NotificationListenerService() {
     }
 
     override fun onDestroy() {
+        if (running === this) running = null
         relayTask?.cancel(false)
         relayTimer.shutdownNow()
         worker.shutdown()
@@ -76,7 +84,7 @@ class KakaoNotificationListener : NotificationListenerService() {
             }
             if (queued > 0) {
                 settings.lastCapturedAt = System.currentTimeMillis()
-                // 바로 보내지 않고 휴대폰에 저장만 한다. 5분마다(또는 '지금 동기화' 요청 때) 묶어서 서버로 보낸다.
+                // 바로 보내지 않고 휴대폰에 저장만 한다. 30초마다(또는 '지금 동기화' 요청 때) 묶어서 서버로 보낸다.
                 StatusNotifier.update(this)
             }
         } catch (e: Exception) {
@@ -89,11 +97,20 @@ class KakaoNotificationListener : NotificationListenerService() {
      * 알림창의 카톡 알림을 최대 20개로 유지: 넘치면 가장 오래된 것부터 지운다(이미 저장한 뒤라 수집에서 빠지지 않음).
      * 업체 톡방(●) 알림은 업체 처리 요청 '답장'에 필요하므로 남긴다.
      */
-    private fun trimKakaoNotifications() {
-        if (!AppSettings(this).limitKakaoNotifications) return
-        val active = runCatching { activeNotifications }.getOrNull() ?: return
+    internal fun trimKakaoNotifications(force: Boolean = false) {
+        val settings = AppSettings(this)
+        if (!settings.limitKakaoNotifications || (!force && !settings.captureEnabled)) return
+        val active = runCatching { activeNotifications }.getOrElse {
+            settings.recordTrim(0, 0, "알림 목록 읽기 실패: ${it.javaClass.simpleName}")
+            return
+        } ?: return
         val kakao = active.filter { it.packageName == KakaoParser.KAKAO_PACKAGE }
-        if (kakao.count { it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 } <= NotificationTrim.MAX) return
+        val counted = kakao.count { it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 && it.isClearable }
+        settings.kakaoNotificationCount = counted
+        if (counted <= NotificationTrim.MAX) {
+            if (force) settings.recordTrim(counted, 0, null)
+            return
+        }
         val items = kakao.map { sbn ->
             val summary = sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0
             val room = if (summary) null else runCatching {
@@ -101,8 +118,29 @@ class KakaoNotificationListener : NotificationListenerService() {
             }.getOrNull()
             NotificationTrim.Item(sbn.key, sbn.postTime, room, summary, sbn.isClearable)
         }
+        val rooms = items.associate { it.key to (it.room ?: "?") }
+        var cancelled = 0
+        var error: String? = null
+        val names = mutableListOf<String>()
         for (key in NotificationTrim.toCancel(items)) {
-            runCatching { cancelNotification(key) }.onFailure { Log.w(TAG, "알림 정리 실패", it) }
+            runCatching { cancelNotification(key) }
+                .onSuccess { cancelled++; names += rooms[key].orEmpty() }
+                .onFailure { error = "${it.javaClass.simpleName}: ${it.message.orEmpty().take(80)}"; Log.w(TAG, "알림 정리 실패", it) }
+        }
+        // 실제로 지워졌는지 다시 세어 기록 (Android 버전·제조사에 따라 막히는 경우 확인용)
+        val after = runCatching { activeNotifications }.getOrNull()
+            ?.count { it.packageName == KakaoParser.KAKAO_PACKAGE && it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 && it.isClearable }
+            ?: -1
+        settings.kakaoNotificationCount = after.coerceAtLeast(0)
+        if (cancelled > 0 && after >= counted) error = error ?: "지우기 요청은 했지만 알림이 줄지 않음 (휴대폰이 막고 있을 수 있음)"
+        settings.recordTrim(after, cancelled, error)
+        runCatching {
+            MessageStore.get(this).addNotificationLog(
+                System.currentTimeMillis(),
+                "[알림 정리] 카톡 알림 $counted 개 → $after 개, ${cancelled}개 지움" +
+                    (if (names.isNotEmpty()) " (오래된 순: ${names.joinToString(", ").take(300)})" else "") +
+                    (error?.let { "\n  실패: $it" } ?: "") + "\n",
+            )
         }
     }
 
@@ -122,8 +160,18 @@ class KakaoNotificationListener : NotificationListenerService() {
         }.getOrNull()
     }
 
-    private companion object {
-        const val TAG = "KakaoListener"
+    companion object {
+        private const val TAG = "KakaoListener"
         const val RELAY_SECONDS = 30L
+
+        /** 실행 중인 알림 수신 서비스 (수집 옵션의 '지금 정리' 버튼용) */
+        @Volatile private var running: KakaoNotificationListener? = null
+
+        /** 지금 바로 알림 정리 (서비스가 꺼져 있으면 false) */
+        fun trimNow(): Boolean {
+            val service = running ?: return false
+            service.worker.execute { service.trimKakaoNotifications(force = true) }
+            return true
+        }
     }
 }

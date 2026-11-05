@@ -36,6 +36,21 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_LIMIT_NOTI, true)
         set(value) = prefs.edit().putBoolean(KEY_LIMIT_NOTI, value).apply()
 
+    /** 알림창에 떠 있는 카톡 알림 수 (마지막 확인) */
+    var kakaoNotificationCount: Int
+        get() = prefs.getInt(KEY_NOTI_COUNT, -1)
+        set(value) = prefs.edit().putInt(KEY_NOTI_COUNT, value).apply()
+
+    val lastTrimAt: Long get() = prefs.getLong(KEY_TRIM_AT, 0)
+    val lastTrimCount: Int get() = prefs.getInt(KEY_TRIM_COUNT, 0)
+    val lastTrimError: String? get() = prefs.getString(KEY_TRIM_ERROR, null)
+
+    /** 알림 정리 결과 기록 (수집 옵션·알림 진단에서 확인) */
+    fun recordTrim(remaining: Int, cancelled: Int, error: String?) {
+        prefs.edit().putLong(KEY_TRIM_AT, System.currentTimeMillis()).putInt(KEY_TRIM_COUNT, cancelled)
+            .putString(KEY_TRIM_ERROR, error).putInt(KEY_NOTI_COUNT, remaining).apply()
+    }
+
     /** 알림줄 상태 알림 표시 */
     var statusNotification: Boolean
         get() = prefs.getBoolean(KEY_STATUS_NOTI, true)
@@ -50,7 +65,7 @@ class AppSettings(context: Context) {
         get() = prefs.getLong(KEY_LAST_UPLOAD, 0)
         set(value) = prefs.edit().putLong(KEY_LAST_UPLOAD, value).apply()
 
-    /** 마지막으로 전송을 시작한 시각 (5분마다 전송 판단용) */
+    /** 마지막으로 전송을 시작한 시각 (30초마다 전송 판단용) */
     var lastUploadAttemptAt: Long
         get() = prefs.getLong(KEY_LAST_ATTEMPT, 0)
         set(value) = prefs.edit().putLong(KEY_LAST_ATTEMPT, value).apply()
@@ -86,6 +101,10 @@ class AppSettings(context: Context) {
         const val KEY_ROOMS = "selected_rooms"
         const val KEY_STATUS_NOTI = "status_notification"
         const val KEY_LIMIT_NOTI = "limit_kakao_notifications"
+        const val KEY_NOTI_COUNT = "kakao_notification_count"
+        const val KEY_TRIM_AT = "last_trim_at"
+        const val KEY_TRIM_COUNT = "last_trim_count"
+        const val KEY_TRIM_ERROR = "last_trim_error"
         const val KEY_LAST_CAPTURED = "last_captured_at"
         const val KEY_LAST_UPLOAD = "last_upload_at"
         const val KEY_LAST_UPLOAD_ERROR = "last_upload_error"
