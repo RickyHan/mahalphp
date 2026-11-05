@@ -81,9 +81,23 @@ def build_prompt(categories: list[tuple[str, str]] | None = None) -> str:
     return f"""너는 아파트·오피스텔 등 공동주택 관리사무소의 민원 분류 담당자다.
 카카오톡 대화방에서 수집한 메시지 각각이 "건물에 사는 입주민이 제기하는 민원"인지 판정하라.
 
-민원으로 본다: 입주민이 건물·시설·관리·생활 불편에 대해 해결·조치·개선을 요청하거나 불만·문제를 알리는 메시지.
-민원이 아니다: 인사·잡담·감사, 불편 제기가 아닌 단순 대화, 관리사무소·관리자의 공지나 답변,
-  광고·홍보, 개인 간 거래, 건물과 무관한 내용. 애매하면 민원이 아닌 것으로 판정한다.
+민원으로 본다 — 아래를 모두 만족할 때만:
+  1) 입주민이 2) 지금 겪고 있는 구체적인 건물·시설·생활 문제(고장·누수·청소·소음·주차 등)에 대해
+  3) 관리 측에 확인·수리·조치·처리를 요청하거나, 그 문제를 새로 알리는 메시지.
+  예) "3층 복도 전등이 나갔어요", "주차장 천장에서 물이 새요 확인 부탁드립니다", "엘리베이터가 멈췄어요"
+민원이 아니다:
+  - 시공사·건물·관리회사·관리비·공사비에 대한 비판·항의·하소연·의견 (예: "날림공사라 돈만 낸다", "소송은 왜 안 하냐")
+  - 공사·수리 비용, 투표, 업체 선정, 관리 방식에 대한 논의나 질문
+  - 지난 일·과거 수리 사례를 꺼내거나, 여러 문제를 나열하며 불만을 토로하는 글
+    (단, 그 안에 "지금 이것을 조치해 달라"는 구체적 요청이 분명히 있으면 민원)
+  - 다른 사람 말에 대한 맞장구·반박, 법적 문제 제기, 정보 공유
+  - 인사·잡담·감사, 관리사무소·관리자(동대표 등)의 공지나 답변, 광고·홍보, 개인 간 거래, 건물과 무관한 내용
+애매하면 민원이 아닌 것으로 판정한다.
+
+대화 맥락: 메시지마다 "context" 에 같은 방의 직전 대화(오래된 → 최근 순, "보낸사람: 내용")가 들어 있을 수 있다.
+  대화 흐름을 보고 판단하라. 예) 관리비·공사비 논쟁 중의 발언은 민원이 아니다.
+  앞 사람이 알린 고장에 대해 "저희 집도 그래요"처럼 같은 문제를 새로 알리면 민원이다.
+  context 의 메시지는 판정 대상이 아니다. 입력 id 의 text 만 판정한다.
 
 분류는 아래 중 하나만 고른다 (해당 없는 민원은 "{FALLBACK_CATEGORY}"):
 {guide}
@@ -113,6 +127,8 @@ class Item:
     room: str
     sender: str
     text: str
+    # 같은 방의 직전 대화 ("보낸사람: 내용", 오래된 → 최근). 맥락 판단용, 판정 대상 아님
+    context: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -133,7 +149,13 @@ class GeminiError(Exception):
 
 
 def request_body(items: list[Item], categories: list[tuple[str, str]] | None = None) -> dict[str, Any]:
-    user = json.dumps([{"id": i.id, "room": i.room, "sender": i.sender, "text": i.text[:1000]} for i in items], ensure_ascii=False)
+    rows = []
+    for i in items:
+        row: dict[str, Any] = {"id": i.id, "room": i.room, "sender": i.sender, "text": i.text[:1000]}
+        if i.context:
+            row["context"] = [c[:300] for c in i.context]
+        rows.append(row)
+    user = json.dumps(rows, ensure_ascii=False)
     return {
         "systemInstruction": {"parts": [{"text": build_prompt(categories)}]},
         "contents": [{"role": "user", "parts": [{"text": user}]}],

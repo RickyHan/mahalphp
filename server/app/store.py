@@ -468,7 +468,8 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
         return {"done": 0}
 
     client = client or cp.GeminiClient(settings.gemini_api_key, conf["gemini_model"], categories=categories)
-    items = [cp.Item(r["id"], r["room_name"], r["sender_name"], r["message_text"]) for r in batch]
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        items = [cp.Item(r["id"], r["room_name"], r["sender_name"], r["message_text"], room_context(cur, r)) for r in batch]
     now = now_local(settings)
     try:
         verdicts = client.classify(items)
@@ -515,6 +516,32 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
     if faq_error:
         result["faq_error"] = faq_error
     return result
+
+
+# ---- 대화 맥락 (민원 판정 때 함께 보내는 직전 대화) -------------------------------------------------
+
+CONTEXT_MESSAGES = 4                     # 직전 몇 개
+CONTEXT_WINDOW = timedelta(minutes=60)   # 얼마나 이전까지
+
+
+def room_context(cur, msg: dict[str, Any]) -> tuple[str, ...]:
+    """같은 방에서 이 메시지 바로 앞의 대화 몇 줄 ("보낸사람: 내용", 오래된 → 최근)"""
+    posted = to_dt(msg["posted_at"])
+    cur.execute(
+        """SELECT sender_name, message_text, message_type FROM kakao_messages
+           WHERE room_name = %s AND id <> %s AND posted_at <= %s AND posted_at >= %s
+           ORDER BY posted_at DESC, id DESC LIMIT %s""",
+        (msg["room_name"], msg["id"], posted, posted - CONTEXT_WINDOW, CONTEXT_MESSAGES),
+    )
+    rows = cur.fetchall()
+    out = []
+    for r in reversed(rows):
+        text = (r["message_text"] or "").replace("\n", " ").strip()
+        if r["message_type"] != "text":
+            text = f"[{r['message_type']}] {text}".strip()
+        if text:
+            out.append(f"{r['sender_name']}: {text[:300]}")
+    return tuple(out)
 
 
 # ---- FAQ 자동 답변 --------------------------------------------------------------------------

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import time
 from datetime import datetime, timedelta
 
@@ -357,3 +359,25 @@ def test_staff_nickname_not_classified(admin, settings):
     store.classify_once(settings, client=gem2)
     assert staff2 in {i.id for batch in gem2.calls for i in batch}
     admin.put("/api/admin/settings", json={"staff_exclude_enabled": True, "staff_prefixes": "동대표"})
+
+
+def test_classification_gets_room_context(admin, settings):
+    """민원 판정에 같은 방의 직전 대화(맥락)를 함께 보냄 + 비판·하소연은 민원 아님 기준이 지시문에 있음"""
+    c = TestClient(app)
+    now = _now(settings)
+    room = "★맥락테스트빌라"
+    _post(c, room, "동대표4", "이번 달 공사비 분담 안내드립니다", now - timedelta(minutes=10))
+    _post(c, room, "302호", "공사비가 너무 비싼 것 같아요", now - timedelta(minutes=5))
+    target = _post(c, room, "401호", "날림공사라 돈만 내고 소송은 왜 안 하나요 주차장도 새는데", now - timedelta(minutes=1))
+    _post(c, "★다른방맥락", "101호", "다른 방 메시지는 맥락에 안 들어감", now - timedelta(minutes=2))
+    gem = FakeGemini()
+    store.classify_once(settings, client=gem)
+    item = next(i for batch in gem.calls for i in batch if i.id == target)
+    assert item.context == ("동대표4: 이번 달 공사비 분담 안내드립니다", "302호: 공사비가 너무 비싼 것 같아요")
+    body = cp.request_body([item])
+    sent = json.loads(body["contents"][0]["parts"][0]["text"])[0]
+    assert sent["context"][-1] == "302호: 공사비가 너무 비싼 것 같아요" and sent["text"].startswith("날림공사")
+    prompt = body["systemInstruction"]["parts"][0]["text"]
+    assert "비판·항의·하소연" in prompt and "context" in prompt and "지금 겪고 있는" in prompt
+    # 맥락이 없으면 context 칸을 넣지 않음
+    assert "context" not in json.loads(cp.request_body([cp.Item(1, "r", "s", "t")])["contents"][0]["parts"][0]["text"])[0]
