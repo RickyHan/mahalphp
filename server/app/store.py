@@ -526,10 +526,14 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
         clear_vendor_room_complaints(cur, now_local(settings))  # 업체 톡방에서 잘못 잡힌 민원 정리
         batch = unclassified(cur, cp.BATCH, now_local(settings))
         categories = enabled_for_prompt(cur) if batch else []
+        if batch:
+            from . import examples as _examples
+
+            taught = _examples.recent(cur)  # 관리자가 바로잡은 판정 사례
     if not batch:
         return {"done": 0}
 
-    client = client or cp.GeminiClient(settings.gemini_api_key, conf["gemini_model"], categories=categories)
+    client = client or cp.GeminiClient(settings.gemini_api_key, conf["gemini_model"], categories=categories, examples=taught)
     with db.transaction(settings) as conn, conn.cursor() as cur:
         items = [cp.Item(r["id"], r["room_name"], r["sender_name"], r["message_text"], room_context(cur, r)) for r in batch]
     now = now_local(settings)

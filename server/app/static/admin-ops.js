@@ -67,10 +67,60 @@
         ...(g.vendor_dispatch || []).map((m) =>
           el("p", { class: "cp-reply", text: `🏢 ${m.vendor} 톡방(${m.room}) 처리 요청: ${DISPATCH_LABEL[m.status] || m.status}${m.status !== "sent" && m.status !== "pending" && m.note ? ` — ${m.note}` : ""}` }),
         ),
+        el(
+          "div",
+          { class: "cp-actions" },
+          el("button", { class: "btn btn-small", type: "button", text: "민원 아님", title: "민원이 아니라고 가르치기", onclick: () => notComplaint(g).catch(reportError) }),
+        ),
         detail,
       );
       list.append(card);
     }
+  }
+
+  // 민원 아님으로 바로잡기 → 판정 학습 사례로 저장 (이후 비슷한 메시지는 민원으로 잡지 않음)
+  async function notComplaint(g) {
+    const note = prompt(`'${(g.latest_text || g.summary || "").slice(0, 60)}'\n\n민원이 아닌 것으로 바로잡고, 앞으로 비슷한 메시지는 민원으로 잡지 않도록 가르칩니다.\n아직 보내지 않은 접수 안내·업체 처리 요청도 취소됩니다.\n\n이유(선택, 예: 입주민끼리 하는 요청):`, "");
+    if (note === null) return;
+    await send("POST", "/api/admin/complaints/not-complaint", { ids: g.ids, note: note.trim() });
+    await Promise.all([loadComplaints(), loadExamples()]);
+  }
+
+  async function loadExamples() {
+    const data = await api("/api/admin/examples");
+    $("ex-count").textContent = `${data.items.length}개`;
+    $("ex-limit").textContent = data.limit;
+    const list = $("ex-list");
+    list.replaceChildren();
+    if (!data.items.length) list.append(el("li", { class: "empty-row", text: "아직 가르친 사례가 없습니다." }));
+    for (const x of data.items) {
+      list.append(
+        el(
+          "li",
+          { class: "ex-item" },
+          el("span", { class: x.is_complaint ? "chip-cat" : "chip-count", text: x.is_complaint ? "민원" : "민원 아님" }),
+          el("div", { class: "ex-body" }, el("p", { text: x.text }), x.note ? el("p", { class: "muted", text: x.note }) : null),
+          el("button", {
+            class: "btn btn-small",
+            type: "button",
+            text: "삭제",
+            onclick: async () => {
+              if (!confirm("이 사례를 지우시겠습니까?")) return;
+              await send("DELETE", `/api/admin/examples/${x.id}`).catch(reportError);
+              loadExamples().catch(reportError);
+            },
+          }),
+        ),
+      );
+    }
+  }
+
+  async function addExample(e) {
+    e.preventDefault();
+    await send("POST", "/api/admin/examples", { text: $("ex-text").value.trim(), is_complaint: $("ex-kind").value === "1", note: $("ex-note").value.trim() });
+    $("ex-text").value = "";
+    $("ex-note").value = "";
+    await loadExamples();
   }
 
   async function toggleGroup(button, detail, g) {
@@ -199,7 +249,7 @@
 
   // 탭별 화면 읽기. admin-vendors.js 가 여기에 'vendors' 를 추가한다.
   const LOADERS = (KC.loaders = Object.assign(KC.loaders || {}, {
-    complaints: loadComplaints,
+    complaints: () => Promise.all([loadComplaints(), loadExamples()]),
     members: loadMembers,
     settings: loadSettings,
   }));
@@ -235,6 +285,7 @@
   $("cp-retry").addEventListener("click", () =>
     send("POST", "/api/admin/classify?retry_failed=true").then(() => setTimeout(() => loadComplaints().catch(reportError), 3000)).catch(reportError),
   );
+  $("ex-form").addEventListener("submit", (e) => addExample(e).catch(reportError));
   $("mb-mode").addEventListener("change", () => loadMembers().catch(reportError));
   $("mb-type").addEventListener("change", () => loadMembers().catch(reportError));
   $("mb-room-only").addEventListener("change", () => loadMembers().catch(reportError));

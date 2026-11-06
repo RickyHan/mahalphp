@@ -419,3 +419,66 @@ def test_room_key_fixes_wrong_room_and_follows_rename(admin, settings):
     assert b["room_name"] == "★번호테스트빌라/13세대"
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM apartments WHERE id = %s", (b["id"],))
+
+
+def test_teach_not_complaint_examples(admin, settings, monkeypatch):
+    """민원 아님 학습: 기본 사례 등록·기존 오분류 바로잡기, 대시보드 '민원 아님' 버튼, 지시문에 사례 포함"""
+    from app import examples
+
+    c = TestClient(app)
+    now = _now(settings)
+    room = "★학습테스트빌라"
+    parking = _post(c, room, "301호", "203호님 차량 2대 주차하셨는데 1대만 해주시기 바랍니다. 1대 주차 원칙입니다", now - timedelta(minutes=3))
+    noise = _post(c, room, "402호", "윗집 소음 때문에 못 살겠어요 그냥 넋두리입니다", now - timedelta(minutes=2))
+    store.classify_once(settings, client=FakeGemini())
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT verdict FROM complaint_check WHERE message_id = %s", (parking,))
+        assert cur.fetchone()["verdict"] == 1  # 학습 전: 잘못 민원으로 잡힘
+        cur.execute("DELETE FROM app_settings WHERE name = 'examples_seed'")
+
+    # 1) 기본 사례 등록 + 이미 잘못 잡힌 같은 내용 바로잡기 (한 번만)
+    assert examples.seed_examples(settings) == 1
+    assert examples.seed_examples(settings) is None
+    items = admin.get("/api/admin/examples").json()["items"]
+    assert any("역류 원인" in x["text"] for x in items) and any("1대 주차 원칙" in x["text"] for x in items)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT verdict, reply_note FROM complaint_check WHERE message_id = %s", (parking,))
+        row = cur.fetchone()
+        assert row["verdict"] == 0 and "민원 아님" in row["reply_note"]
+        cur.execute("SELECT status FROM reply_queue WHERE message_id = %s", (parking,))
+        assert all(r["status"] != "pending" for r in cur.fetchall())
+
+    # 2) 대시보드 '민원 아님' 버튼
+    assert any(noise in g["ids"] for g in admin.get("/api/admin/complaints").json()["items"])
+    r = admin.post("/api/admin/complaints/not-complaint", json={"ids": [noise], "note": "하소연"})
+    assert r.status_code == 200 and r.json()["fixed"] == 1
+    assert not any(noise in g["ids"] for g in admin.get("/api/admin/complaints").json()["items"])
+    assert admin.post("/api/admin/complaints/not-complaint", json={"ids": [noise]}).status_code == 404  # 이미 바로잡음
+    top = admin.get("/api/admin/examples").json()["items"][0]
+    assert top["text"].startswith("윗집 소음") and top["note"] == "하소연" and top["is_complaint"] is False
+
+    # 3) 직접 추가 · 같은 문장은 한 번만 · 삭제
+    assert admin.post("/api/admin/examples", json={"text": "  엘리베이터  멈췄어요 ", "is_complaint": True}).status_code == 201
+    admin.post("/api/admin/examples", json={"text": "엘리베이터 멈췄어요", "is_complaint": True, "note": "고장 신고"})
+    added = [x for x in admin.get("/api/admin/examples").json()["items"] if x["text"] == "엘리베이터 멈췄어요"]
+    assert len(added) == 1 and added[0]["note"] == "고장 신고"
+    assert admin.delete(f"/api/admin/examples/{added[0]['id']}").status_code == 200
+    assert admin.delete(f"/api/admin/examples/{added[0]['id']}").status_code == 404
+
+    # 4) 분류할 때 사례가 Gemini 지시문에 들어감
+    captured = {}
+
+    class Capture(FakeGemini):
+        def __init__(self, *a, **kw):
+            super().__init__()
+            captured.update(kw)
+
+    monkeypatch.setattr(cp, "GeminiClient", Capture)
+    _post(c, room, "502호", "현관 자동문이 안 열려요", now)
+    store.classify_once(settings)
+    taught = captured["examples"]
+    assert taught[0][0].startswith("윗집 소음") and any("1대 주차 원칙" in t for t, _, _ in taught)
+    prompt = cp.build_prompt(None, taught)
+    assert "관리자가 직접 바로잡은 판정 사례" in prompt and '[민원 아님] "203호님 차량 2대' in prompt
+    assert "입주민끼리 서로에게 하는 요청" in prompt and "미팅" in prompt
+    assert "관리자가 직접 바로잡은" not in cp.build_prompt()

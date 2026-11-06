@@ -81,6 +81,14 @@ async def lifespan(_app):
                 log.info("FAQ 문항 등록: %s개", added)
         except Exception:
             log.exception("FAQ 자동 등록 실패")
+    try:  # 민원 판정 기본 사례 등록 + 이미 잘못 잡힌 같은 내용 바로잡기 (한 번)
+        from . import examples
+
+        fixed = examples.seed_examples(get_settings())
+        if fixed is not None:
+            log.info("민원 판정 기본 사례 등록 · 바로잡은 민원 %s건", fixed)
+    except Exception:
+        log.exception("민원 판정 기본 사례 등록 실패")
     try:  # 예전 단일 업체 담당 분류 → 여러 분류 표(vendor_categories)로 옮김
         from . import db as _db, vendors as _vendors
 

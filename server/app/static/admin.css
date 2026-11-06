@@ -1031,3 +1031,17 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .cat-check:has(input:checked) { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-ink); font-weight: 700; }
 .cat-check.off { opacity: .6; }
 .cat-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* 민원 판정 학습 */
+.cp-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.ex-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin: 0 0 12px; }
+.ex-panel summary { cursor: pointer; font-weight: 600; }
+.ex-help { font-size: 12px; margin: 8px 0; }
+.ex-form { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ex-form #ex-text { flex: 1 1 260px; min-width: 0; }
+.ex-form #ex-note { flex: 0 1 200px; min-width: 0; }
+.ex-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 360px; overflow: auto; }
+.ex-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
+.ex-body { flex: 1; min-width: 0; }
+.ex-body p { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.ex-body p.muted { font-size: 12px; margin-top: 2px; }

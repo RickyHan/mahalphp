@@ -262,3 +262,13 @@ CREATE TABLE IF NOT EXISTS `chat_rooms` (
   `updated_at` DATETIME(3)  NOT NULL,
   PRIMARY KEY (`room_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='채팅방 번호';
+
+CREATE TABLE IF NOT EXISTS `classification_examples` (
+  `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `message_id`   BIGINT UNSIGNED NULL COMMENT '바로잡은 메시지 (직접 넣은 사례면 NULL)',
+  `text`         VARCHAR(1000)   NOT NULL,
+  `is_complaint` TINYINT(1)      NOT NULL DEFAULT 0,
+  `note`         VARCHAR(255)    NOT NULL DEFAULT '' COMMENT '판정 이유',
+  `created_at`   DATETIME(3)     NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='관리자가 바로잡은 민원 판정 사례 (Gemini 지시문에 함께 보냄)';

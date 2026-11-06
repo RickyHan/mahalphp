@@ -71,8 +71,27 @@ CATEGORY_SET_VERSION = "2"
 CATEGORY_RENAMES = {"누수·하자": "누수", "청소·쓰레기": "청소"}
 
 
-def build_prompt(categories: list[tuple[str, str]] | None = None) -> str:
-    """분류 목록(이름, 설명)으로 Gemini 지시문을 만든다. '기타'는 항상 포함된다."""
+EXAMPLE_LIMIT = 40        # 지시문에 넣는 관리자 판정 사례 수 (최근 순)
+EXAMPLE_TEXT_MAX = 300
+
+
+def examples_block(examples: list[tuple[str, bool, str]] | None) -> str:
+    """관리자가 바로잡은 판정 사례 → 지시문 문단. examples: (메시지, 민원 여부, 이유)"""
+    if not examples:
+        return ""
+    lines = []
+    for text, is_complaint, note in examples[:EXAMPLE_LIMIT]:
+        t = " ".join(text.split())[:EXAMPLE_TEXT_MAX]
+        lines.append(f'  - [{"민원" if is_complaint else "민원 아님"}] "{t}"' + (f" — {note}" if note else ""))
+    return (
+        "\n관리자가 직접 바로잡은 판정 사례 — 내용·상황이 비슷한 메시지는 반드시 같은 판정을 따른다:\n"
+        + "\n".join(lines)
+        + "\n"
+    )
+
+
+def build_prompt(categories: list[tuple[str, str]] | None = None, examples: list[tuple[str, bool, str]] | None = None) -> str:
+    """분류 목록(이름, 설명)과 관리자 판정 사례로 Gemini 지시문을 만든다. '기타'는 항상 포함된다."""
     cats = list(categories or DEFAULT_CATEGORIES)
     if FALLBACK_CATEGORY not in {n for n, _ in cats}:
         cats.append((FALLBACK_CATEGORY, "위 분류에 해당하지 않는 민원"))
@@ -90,6 +109,10 @@ def build_prompt(categories: list[tuple[str, str]] | None = None) -> str:
   - 공사·수리 비용, 투표, 업체 선정, 관리 방식에 대한 논의나 질문
   - 지난 일·과거 수리 사례를 꺼내거나, 여러 문제를 나열하며 불만을 토로하는 글
     (단, 그 안에 "지금 이것을 조치해 달라"는 구체적 요청이 분명히 있으면 민원)
+  - 이미 알려진 사고·피해·공사에 대해 원인·대책 설명, 미팅·회의·면담, 보상 논의를 요청하거나 참석 의사를 밝히는 글
+    (예: "배관 구조와 역류 원인, 향후 대책을 직접 설명 듣고 싶다. 미팅 시간 알려주면 참석하겠다")
+  - 입주민끼리 서로에게 하는 요청·지적·부탁·다툼 — 특정 세대·호수·사람을 불러 규칙을 지켜 달라는 말 등
+    (예: "203호님 차량 2대 주차하셨는데 1대만 해 주세요, 1대 주차 원칙입니다", "윗집 소리 좀 줄여 주세요")
   - 다른 사람 말에 대한 맞장구·반박, 법적 문제 제기, 정보 공유
   - 인사·잡담·감사, 관리사무소·관리자(동대표 등)의 공지나 답변, 광고·홍보, 개인 간 거래, 건물과 무관한 내용
 애매하면 민원이 아닌 것으로 판정한다.
@@ -98,7 +121,7 @@ def build_prompt(categories: list[tuple[str, str]] | None = None) -> str:
   대화 흐름을 보고 판단하라. 예) 관리비·공사비 논쟁 중의 발언은 민원이 아니다.
   앞 사람이 알린 고장에 대해 "저희 집도 그래요"처럼 같은 문제를 새로 알리면 민원이다.
   context 의 메시지는 판정 대상이 아니다. 입력 id 의 text 만 판정한다.
-
+{examples_block(examples)}
 분류는 아래 중 하나만 고른다 (해당 없는 민원은 "{FALLBACK_CATEGORY}"):
 {guide}
 
@@ -148,7 +171,9 @@ class GeminiError(Exception):
         self.retry = retry
 
 
-def request_body(items: list[Item], categories: list[tuple[str, str]] | None = None) -> dict[str, Any]:
+def request_body(
+    items: list[Item], categories: list[tuple[str, str]] | None = None, examples: list[tuple[str, bool, str]] | None = None
+) -> dict[str, Any]:
     rows = []
     for i in items:
         row: dict[str, Any] = {"id": i.id, "room": i.room, "sender": i.sender, "text": i.text[:1000]}
@@ -157,7 +182,7 @@ def request_body(items: list[Item], categories: list[tuple[str, str]] | None = N
         rows.append(row)
     user = json.dumps(rows, ensure_ascii=False)
     return {
-        "systemInstruction": {"parts": [{"text": build_prompt(categories)}]},
+        "systemInstruction": {"parts": [{"text": build_prompt(categories, examples)}]},
         "contents": [{"role": "user", "parts": [{"text": user}]}],
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
     }
@@ -192,9 +217,13 @@ def parse_response(body: dict[str, Any], requested: set[int], allowed: set[str] 
 class GeminiClient:
     BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-    def __init__(self, api_key: str, model: str, timeout: float = 90.0, categories: list[tuple[str, str]] | None = None):
+    def __init__(
+        self, api_key: str, model: str, timeout: float = 90.0,
+        categories: list[tuple[str, str]] | None = None, examples: list[tuple[str, bool, str]] | None = None,
+    ):
         self.api_key, self.model, self.timeout = api_key, model, timeout
         self.categories = categories
+        self.examples = examples
 
     def _post(self, body: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -220,7 +249,7 @@ class GeminiClient:
         raise GeminiError(f"HTTP {res.status_code}: {text}", retry=False)
 
     def classify(self, items: list[Item]) -> list[Verdict]:
-        body = self._post(request_body(items, self.categories))
+        body = self._post(request_body(items, self.categories, self.examples))
         allowed = {n for n, _ in self.categories} if self.categories else None
         return parse_response(body, {i.id for i in items}, allowed)
 

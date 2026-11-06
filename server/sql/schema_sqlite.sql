@@ -209,3 +209,12 @@ CREATE TABLE IF NOT EXISTS chat_rooms (
   room_name  TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS classification_examples (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id   INTEGER,
+  text         TEXT    NOT NULL,
+  is_complaint INTEGER NOT NULL DEFAULT 0,
+  note         TEXT    NOT NULL DEFAULT '',
+  created_at   TEXT    NOT NULL
+);
