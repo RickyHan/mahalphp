@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS kakao_messages (
   received_at      TEXT    NOT NULL,
   notification_key TEXT,
   sender_key       TEXT,
+  room_key         TEXT,
+  room_trusted     INTEGER,
   dedup_key        TEXT    NOT NULL UNIQUE
 );
 CREATE INDEX IF NOT EXISTS idx_kakao_messages_room_time ON kakao_messages (room_name, posted_at);
@@ -201,3 +203,9 @@ CREATE TABLE IF NOT EXISTS vendor_categories (
   UNIQUE (vendor_id, category_id)
 );
 CREATE INDEX IF NOT EXISTS idx_vendor_categories_cat ON vendor_categories (category_id);
+
+CREATE TABLE IF NOT EXISTS chat_rooms (
+  room_key   TEXT PRIMARY KEY,
+  room_name  TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);

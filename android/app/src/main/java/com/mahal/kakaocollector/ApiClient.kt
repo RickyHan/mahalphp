@@ -35,6 +35,12 @@ class ApiClient(private val settings: AppSettings) {
             .addFormDataPart("notification_key", row.notificationKey.take(255))
             .apply { row.senderKey?.let { addFormDataPart("sender_key", it.take(255)) } }
             .apply {
+                row.roomKey?.let {
+                    addFormDataPart("room_key", it.take(64))
+                    addFormDataPart("room_trusted", row.roomTrusted.toString())
+                }
+            }
+            .apply {
                 row.imagePath?.let(::File)?.takeIf { it.exists() }?.let { file ->
                     addFormDataPart("image", file.name, file.asRequestBody("application/octet-stream".toMediaType()))
                 }

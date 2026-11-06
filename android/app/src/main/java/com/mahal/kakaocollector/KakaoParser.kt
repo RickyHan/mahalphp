@@ -20,6 +20,8 @@ data class RawNotification(
      * 이 바로가기에만 방 이름(오픈채팅 포함)을 등록하는 경우가 있다. 1:1 대화면 상대방 이름.
      */
     val shortcutLabel: String? = null,
+    /** 카톡 채팅방 고유 번호(알림의 shortcutId·tag). 방 이름이 바뀌어도 그대로 → 서버가 같은 방으로 묶음 */
+    val chatKey: String? = null,
 )
 
 /** MessagingStyle 의 메시지 1개. sender 가 null 이면 내가 보낸 메시지다. */
@@ -46,6 +48,10 @@ data class KakaoMessage(
     /** MessagingStyle 메시지에 첨부된 이미지 URI (있을 때만) */
     val imageUri: String? = null,
     val senderKey: String? = null,
+    /** 채팅방 고유 번호 (있을 때만) */
+    val roomKey: String? = null,
+    /** 방 이름을 확실히 알았는지 (false: 단톡인데 방 이름을 못 읽어 보낸 사람 이름 등으로 대신함) */
+    val roomTrusted: Boolean = true,
 )
 
 object KakaoParser {
@@ -78,6 +84,8 @@ object KakaoParser {
         // 1:1 대화는 방 이름 = 상대방 이름(알림 제목)
         val room = groupRoom ?: raw.title.clean()
         val isGroup = raw.isGroupConversation || groupRoom != null
+        // 단톡인데 방 이름을 못 읽었으면(제목 = 보낸 사람) 확실하지 않음 → 서버가 방 번호로 바로잡음
+        val trusted = groupRoom != null || !raw.isGroupConversation
         val lastIndex = raw.messages.lastIndex
         return raw.messages.mapIndexedNotNull { index, m ->
             val text = m.text.clean() ?: ""
@@ -96,6 +104,8 @@ object KakaoParser {
                 notificationKey = raw.key,
                 imageUri = if (hasImageData) m.dataUri else null,
                 senderKey = m.senderKey?.takeIf { it.isNotBlank() },
+                roomKey = raw.chatKey?.takeIf { it.isNotBlank() },
+                roomTrusted = trusted,
             )
         }
     }
@@ -113,6 +123,7 @@ object KakaoParser {
             isGroupChat = room != null,
             postedAt = raw.fallbackTime(),
             notificationKey = raw.key,
+            roomKey = raw.chatKey?.takeIf { it.isNotBlank() },
         )
     }
 

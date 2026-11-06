@@ -107,6 +107,19 @@ class MessageStoreTest {
     }
 
     @Test
+    fun roomKeyIsRememberedAndQueued() {
+        assertEquals(null, store.roomForKey("900"))
+        store.rememberRoomKey("900", "★A빌라")
+        store.rememberRoomKey("900", "★A빌라(세대방)")             // 방 이름이 바뀌면 새 이름
+        store.rememberRoomKey(null, "무시")
+        assertEquals("★A빌라(세대방)", store.roomForKey("900"))
+        store.insert(KakaoMessage("홍길동", "홍길동", "물이 새요", MessageType.TEXT, true, 1, "k", roomKey = "900", roomTrusted = false), null)
+        val row = store.pending(1).single()
+        assertEquals("900", row.roomKey)
+        assertFalse(row.roomTrusted)
+    }
+
+    @Test
     fun seenRoomsKeepExactName() {
         store.recordSeenRoom("우리  회사 개발팀 🚀", true, 1)
         store.recordSeenRoom("우리  회사 개발팀 🚀", true, 5)
@@ -136,6 +149,9 @@ class MessageStoreTest {
         }
         store = MessageStore.get(context)
         assertEquals(listOf("휴대폰에만 있던 메시지"), store.pending(10).map { it.text })
+        assertTrue(store.pending(10).single().roomTrusted)                 // v9 새 칸: 예전 메시지는 확실한 것으로
+        store.rememberRoomKey("1", "방")
+        assertEquals("방", store.roomForKey("1"))
         store.readableDatabase.rawQuery("SELECT name FROM sqlite_master WHERE type='table'", null).use { c ->
             val tables = buildList { while (c.moveToNext()) add(c.getString(0)) }
             assertFalse(tables.contains("complaint_check"))

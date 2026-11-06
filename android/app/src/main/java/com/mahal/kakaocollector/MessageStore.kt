@@ -13,7 +13,7 @@ import java.security.MessageDigest
  * 조회·민원 분류·통계 등은 모두 웹 서버에서 처리한다.
  */
 class MessageStore private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 8) {
+    SQLiteOpenHelper(context.applicationContext, "queue.db", null, 9) {
 
     data class Row(
         val id: Long,
@@ -28,6 +28,8 @@ class MessageStore private constructor(context: Context) :
         val status: String,
         val lastError: String?,
         val senderKey: String? = null,
+        val roomKey: String? = null,
+        val roomTrusted: Boolean = true,
     )
 
     data class Counts(val total: Int, val pending: Int, val sent: Int, val failed: Int)
@@ -51,9 +53,12 @@ class MessageStore private constructor(context: Context) :
                 attempts INTEGER NOT NULL DEFAULT 0,
                 last_error TEXT,
                 created_at INTEGER NOT NULL,
-                sender_key TEXT
+                sender_key TEXT,
+                room_key TEXT,
+                room_trusted INTEGER NOT NULL DEFAULT 1
             )"""
         )
+        createRoomKeys(db)
         db.execSQL("CREATE INDEX idx_queue_status ON queue(status, id)")
         createSeenRooms(db)
         createNotificationLog(db)
@@ -76,6 +81,32 @@ class MessageStore private constructor(context: Context) :
             db.execSQL("ALTER TABLE queue ADD COLUMN sender_key TEXT")
             // 휴대폰에만 저장돼 있던(local) 메시지와 예전에 전송 실패한 메시지도 서버로 올린다
             db.execSQL("UPDATE queue SET status = '$PENDING', last_error = NULL WHERE status IN ('local', '$FAILED')")
+        }
+        if (oldVersion < 9) {
+            // v2.3.5: 채팅방 고유 번호 → 방 이름 (방 이름을 못 읽은 알림·방 이름 변경 대비)
+            db.execSQL("ALTER TABLE queue ADD COLUMN room_key TEXT")
+            db.execSQL("ALTER TABLE queue ADD COLUMN room_trusted INTEGER NOT NULL DEFAULT 1")
+            createRoomKeys(db)
+        }
+    }
+
+    private fun createRoomKeys(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS room_keys (chat_key TEXT PRIMARY KEY, room TEXT NOT NULL, updated INTEGER NOT NULL)")
+    }
+
+    /** 채팅방 고유 번호 → 방 이름 기억 (대화 바로가기에서 방 이름을 읽었을 때) */
+    fun rememberRoomKey(chatKey: String?, room: String?) {
+        if (chatKey.isNullOrBlank() || room.isNullOrBlank()) return
+        writableDatabase.execSQL(
+            "INSERT OR REPLACE INTO room_keys (chat_key, room, updated) VALUES (?, ?, ?)",
+            arrayOf(chatKey, room, System.currentTimeMillis()),
+        )
+    }
+
+    fun roomForKey(chatKey: String?): String? {
+        if (chatKey.isNullOrBlank()) return null
+        return readableDatabase.rawQuery("SELECT room FROM room_keys WHERE chat_key = ?", arrayOf(chatKey)).use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
         }
     }
 
@@ -139,6 +170,8 @@ class MessageStore private constructor(context: Context) :
             put("notification_key", message.notificationKey)
             put("image_path", imagePath)
             put("sender_key", message.senderKey)
+            put("room_key", message.roomKey)
+            put("room_trusted", if (message.roomTrusted) 1 else 0)
             put("created_at", System.currentTimeMillis())
         }
         return writableDatabase.insertWithOnConflict("queue", null, values, SQLiteDatabase.CONFLICT_IGNORE) != -1L
@@ -212,6 +245,8 @@ class MessageStore private constructor(context: Context) :
         status = c.getString(c.getColumnIndexOrThrow("status")),
         lastError = c.getString(c.getColumnIndexOrThrow("last_error")),
         senderKey = c.getString(c.getColumnIndexOrThrow("sender_key")),
+        roomKey = c.getString(c.getColumnIndexOrThrow("room_key")),
+        roomTrusted = c.getInt(c.getColumnIndexOrThrow("room_trusted")) == 1,
     )
 
     companion object {

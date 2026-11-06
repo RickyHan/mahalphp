@@ -73,7 +73,11 @@ class KakaoNotificationListener : NotificationListenerService() {
         try {
             val store = MessageStore.get(this)
             val shortcut = conversationShortcut(sbn)
-            val messages = KakaoParser.parse(NotificationExtractor.extract(sbn, shortcut?.first))
+            // 방 이름: 대화 바로가기에서 읽고, 못 읽으면 같은 채팅방 번호로 전에 읽어 둔 이름
+            val chatKey = NotificationExtractor.chatKeyOf(sbn)
+            if (shortcut?.first != null) store.rememberRoomKey(chatKey, shortcut.first)
+            val label = shortcut?.first ?: store.roomForKey(chatKey)
+            val messages = KakaoParser.parse(NotificationExtractor.extract(sbn, label))
             val parsed = messages.joinToString("\n") { "  → 방=[${it.room}] 보낸사람=[${it.sender}] 단톡=${it.isGroupChat} 종류=${it.type.wire} 내용=[${it.text.take(40)}]" }
             // 진단 기록: 수집 제외 방·카톡의 빈 묶음 알림(내용 없는 요약)은 남기지 않는다 (해석 실패 알림은 원인 확인을 위해 기록)
             val emptySummary = messages.isEmpty() && (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0 ||

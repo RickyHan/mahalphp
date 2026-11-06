@@ -230,7 +230,7 @@ def messages(
     )
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute(sql, (*params, limit + 1))
-        rows = cur.fetchall()
+        rows = list(cur.fetchall())  # MySQL 은 결과가 없으면 tuple 을 준다
         has_more = len(rows) > limit
         rows = rows[:limit]
         if not newer:

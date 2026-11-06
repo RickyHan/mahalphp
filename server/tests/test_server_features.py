@@ -381,3 +381,41 @@ def test_classification_gets_room_context(admin, settings):
     assert "비판·항의·하소연" in prompt and "context" in prompt and "지금 겪고 있는" in prompt
     # 맥락이 없으면 context 칸을 넣지 않음
     assert "context" not in json.loads(cp.request_body([cp.Item(1, "r", "s", "t")])["contents"][0]["parts"][0]["text"])[0]
+
+
+def _post_room(c, room, sender, text, when, key, trusted=True):
+    data = {"device_id": "phone-1", "room_name": room, "sender_name": sender, "message_text": text, "message_type": "text",
+            "is_group_chat": "true", "posted_at": str(int(when.timestamp() * 1000)), "room_key": key, "room_trusted": str(trusted).lower()}
+    res = c.post("/api/messages", data=data, headers=KEY)
+    assert res.status_code == 201, res.text
+    return res.json()["id"]
+
+
+def test_room_key_fixes_wrong_room_and_follows_rename(admin, settings):
+    """채팅방 번호: 방 이름을 못 읽어 보낸 사람 이름으로 들어간 메시지를 바로잡고, 방 이름이 바뀌면 연결까지 따라감"""
+    c = TestClient(app)
+    now = _now(settings)
+    # 1) 처음부터 방 이름을 못 읽음(보낸 사람 이름) → 나중에 같은 번호로 진짜 이름이 오면 바로잡음
+    wrong = _post_room(c, "702호 박용덕", "702호 박용덕", "걍 자체적으로 해볼께요", now - timedelta(minutes=9), "chat-777", trusted=False)
+    ok = _post_room(c, "★번호테스트빌라/12세대", "702호 박용덕", "출장은 안 오셔도 될듯", now - timedelta(minutes=8), "chat-777")
+    rooms = {m["id"]: m["room_name"] for m in admin.get("/api/admin/messages", params={"room": "★번호테스트빌라/12세대"}).json()["items"]}
+    assert rooms == {wrong: "★번호테스트빌라/12세대", ok: "★번호테스트빌라/12세대"}
+    # 같은 메시지가 진짜 방 이름으로 다시 와도 중복 저장 안 함
+    again = _post_room(c, "★번호테스트빌라/12세대", "702호 박용덕", "걍 자체적으로 해볼께요", now - timedelta(minutes=9), "chat-777")
+    assert again == wrong
+    # 2) 이후 방 이름을 못 읽은 알림은 알고 있는 이름으로
+    later = _post_room(c, "702호 박용덕", "702호 박용덕", "사진 확인 부탁", now - timedelta(minutes=7), "chat-777", trusted=False)
+    assert next(m for m in admin.get("/api/admin/messages", params={"room": "★번호테스트빌라/12세대"}).json()["items"] if m["id"] == later)
+
+    # 3) 방 이름 변경(12세대 → 13세대): 지난 메시지·건물 연결·업체·예약이 새 이름으로
+    assert admin.post("/api/admin/apartments", json={"name": "번호테스트빌라"}).status_code == 201
+    b = next(a for a in admin.get("/api/admin/apartments").json()["items"] if a["name"] == "번호테스트빌라")
+    assert admin.put(f"/api/admin/apartments/{b['id']}/room", json={"room_name": "★번호테스트빌라/12세대"}).status_code == 200
+    renamed = _post_room(c, "★번호테스트빌라/13세대", "302호", "엘리베이터 소리가 커요", now - timedelta(minutes=1), "chat-777")
+    items = admin.get("/api/admin/messages", params={"room": "★번호테스트빌라/13세대"}).json()["items"]
+    assert {m["id"] for m in items} >= {wrong, ok, later, renamed}
+    assert admin.get("/api/admin/messages", params={"room": "★번호테스트빌라/12세대"}).json()["items"] == []
+    b = next(a for a in admin.get("/api/admin/apartments").json()["items"] if a["id"] == b["id"])
+    assert b["room_name"] == "★번호테스트빌라/13세대"
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM apartments WHERE id = %s", (b["id"],))

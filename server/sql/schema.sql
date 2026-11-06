@@ -24,13 +24,16 @@ CREATE TABLE IF NOT EXISTS `kakao_messages` (
   `received_at`      DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '서버 저장 시각',
   `notification_key` VARCHAR(255)    NULL     COMMENT 'Android StatusBarNotification key',
   `sender_key`       VARCHAR(255)    NULL     COMMENT '카톡 알림의 보낸 사람 고유 키(있을 때만, 대화명 변경 추적용)',
+  `room_key`         VARCHAR(64)     NULL     COMMENT '카톡 채팅방 고유 번호(방 이름이 바뀌어도 그대로)',
+  `room_trusted`     TINYINT(1)      NULL     COMMENT '0 = 방 이름을 못 읽어 대신한 이름(나중에 바로잡음)',
   `dedup_key`        CHAR(64)        NOT NULL COMMENT '중복 방지 SHA-256(device|room|sender|text|posted_at)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_kakao_messages_dedup` (`dedup_key`),
   KEY `idx_kakao_messages_room_time` (`room_name`, `posted_at`),
   KEY `idx_kakao_messages_sender_time` (`sender_name`, `posted_at`),
   KEY `idx_kakao_messages_posted` (`posted_at`),
-  KEY `idx_kakao_messages_sender_key` (`sender_key`)
+  KEY `idx_kakao_messages_sender_key` (`sender_key`),
+  KEY `idx_kakao_messages_room_key` (`room_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='카카오톡 알림에서 수집한 대화';
 
@@ -251,3 +254,11 @@ CREATE TABLE IF NOT EXISTS `vendor_categories` (
   UNIQUE KEY `uk_vendor_categories` (`vendor_id`, `category_id`),
   KEY `idx_vendor_categories_cat` (`category_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='업체 담당 분류';
+
+-- 카톡 채팅방 고유 번호 → 최근 방 이름 (방 이름 변경 따라가기)
+CREATE TABLE IF NOT EXISTS `chat_rooms` (
+  `room_key`   VARCHAR(64)  NOT NULL,
+  `room_name`  VARCHAR(255) NOT NULL,
+  `updated_at` DATETIME(3)  NOT NULL,
+  PRIMARY KEY (`room_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='채팅방 번호';

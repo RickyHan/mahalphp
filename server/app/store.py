@@ -86,6 +86,68 @@ def record_sender(cur, room: str, sender_key: str | None, name: str, at: datetim
     )
 
 
+# ---- 채팅방 고유 번호: 방 이름을 못 읽은 메시지 바로잡기 · 방 이름 변경 따라가기 ----------------------------
+
+def resolve_room(cur, room_key: str | None, room_name: str, trusted: bool, at: datetime) -> str:
+    """이 메시지를 저장할 방 이름.
+    - 방 이름이 확실하면(trusted): 번호 → 이름을 기록. 같은 번호의 이름이 바뀌었으면 방 이름 변경으로 보고 따라간다.
+      같은 번호로 엉뚱한 이름(보낸 사람 이름 등)에 들어간 지난 메시지도 바로잡는다.
+    - 확실하지 않으면: 같은 번호로 알고 있는 방 이름을 쓴다."""
+    if not room_key:
+        return room_name
+    cur.execute("SELECT room_name FROM chat_rooms WHERE room_key = %s", (room_key,))
+    row = cur.fetchone()
+    known = row["room_name"] if row else None
+    if not trusted:
+        return known or room_name
+    if known and known != room_name:
+        rename_room(cur, room_key, known, room_name)
+    cur.execute("DELETE FROM chat_rooms WHERE room_key = %s", (room_key,))
+    cur.execute("INSERT INTO chat_rooms (room_key, room_name, updated_at) VALUES (%s, %s, %s)", (room_key, room_name, at))
+    cur.execute(
+        "UPDATE kakao_messages SET room_name = %s, room_trusted = 1 WHERE room_key = %s AND room_name <> %s",
+        (room_name, room_key, room_name),
+    )
+    return room_name
+
+
+def rename_room(cur, room_key: str, old: str, new: str) -> None:
+    """카톡에서 방 이름이 바뀜(예: ★중앙주택/9세대 → /10세대): 지난 메시지·건물·업체·예약·대기 메시지를 새 이름으로"""
+    cur.execute(
+        "UPDATE kakao_messages SET room_name = %s WHERE room_name = %s AND (room_key = %s OR room_key IS NULL)",
+        (new, old, room_key),
+    )
+    # 건물 기본 채팅방: 새 이름으로 이미 '목록 외 채팅방'이 생겼으면 그 행은 정리
+    cur.execute("SELECT id, listed FROM apartments WHERE room_name = %s", (new,))
+    taken = cur.fetchone()
+    cur.execute("SELECT id FROM apartments WHERE room_name = %s", (old,))
+    holder = cur.fetchone()
+    if holder:
+        if taken and not taken["listed"]:
+            cur.execute("SELECT category_id FROM apartment_vendors WHERE apartment_id = %s", (holder["id"],))
+            have = {r["category_id"] for r in cur.fetchall()}
+            cur.execute("SELECT id, category_id FROM apartment_vendors WHERE apartment_id = %s", (taken["id"],))
+            for r in cur.fetchall():
+                if r["category_id"] in have:
+                    cur.execute("DELETE FROM apartment_vendors WHERE id = %s", (r["id"],))
+                else:
+                    cur.execute("UPDATE apartment_vendors SET apartment_id = %s WHERE id = %s", (holder["id"], r["id"]))
+            cur.execute("DELETE FROM apartments WHERE id = %s", (taken["id"],))
+            taken = None
+        if not taken:
+            cur.execute("UPDATE apartments SET room_name = %s WHERE id = %s", (new, holder["id"]))
+    cur.execute("SELECT id FROM apartment_rooms WHERE room_name = %s", (new,))
+    if cur.fetchone() is None:
+        cur.execute("UPDATE apartment_rooms SET room_name = %s WHERE room_name = %s", (new, old))
+    cur.execute("UPDATE vendors SET room_name = %s WHERE room_name = %s", (new, old))
+    cur.execute("UPDATE scheduled_messages SET room_name = %s WHERE room_name = %s", (new, old))
+    cur.execute("UPDATE reply_queue SET room_name = %s WHERE room_name = %s AND status = 'pending'", (new, old))
+    from . import live
+
+    live.bump("apartment")
+    live.bump("vendor")
+
+
 # ---- '(알 수 없음)' 보낸 사람 → 같은 사람(고유 키)의 실제 이름 ---------------------------------------------
 
 # 카카오톡이 보낸 사람 프로필을 모를 때(나감·탈퇴·프로필 미수신) 알림에 넣는 이름

@@ -87,6 +87,8 @@ async def create_message(
     is_group_chat: Annotated[bool, Form()] = False,
     notification_key: Annotated[str | None, Form(max_length=255)] = None,
     sender_key: Annotated[str | None, Form(max_length=255)] = None,
+    room_key: Annotated[str | None, Form(max_length=64)] = None,
+    room_trusted: Annotated[bool, Form()] = True,
     image: Annotated[UploadFile | None, File()] = None,
 ) -> dict[str, Any]:
     if message_type not in MESSAGE_TYPES:
@@ -102,12 +104,22 @@ async def create_message(
     with db.transaction(settings) as conn, conn.cursor() as cur:
         duplicate = False
         renamed = False
+        # 채팅방 번호로 방 이름 확정 (방 이름을 못 읽은 알림 · 방 이름 변경)
+        room_name = store.resolve_room(cur, room_key or None, room_name, room_trusted, datetime.now(settings.timezone).replace(tzinfo=None))
         stored_sender = sender_name
         if sender_key and store.is_unknown_sender(sender_name):
             stored_sender = store.known_name(cur, sender_key) or sender_name  # '(알 수 없음)' → 같은 사람의 실제 이름
         # 카톡이 다음 알림에 지난 메시지를 다시 보여 줄 때 이름이 바뀌어 올 수 있다('(알 수 없음)' ↔ 실제 이름).
         # 같은 방·같은 시각·같은 내용이면 같은 메시지: 새로 저장하지 않고, 이름을 알게 됐으면 기존 기록을 고친다.
         same = store.same_message_other_name(cur, device_id, room_name, posted, text, stored_sender)
+        if same is None:
+            # 방 이름이 바로잡힌 뒤 같은 메시지가 다시 오면(중복 키는 예전 방 이름 기준이라 다름) 같은 메시지
+            cur.execute(
+                """SELECT id, sender_name FROM kakao_messages
+                   WHERE device_id = %s AND room_name = %s AND posted_at = %s AND message_text = %s AND sender_name = %s AND dedup_key <> %s""",
+                (device_id, room_name, posted, text, stored_sender, key),
+            )
+            same = cur.fetchone()
         if same is not None:
             duplicate = True
             message_id = same["id"]
@@ -123,10 +135,11 @@ async def create_message(
                 cur.execute(
                     """INSERT INTO kakao_messages
                        (device_id, room_name, sender_name, message_text, message_type, is_group_chat,
-                        has_media, posted_at, received_at, notification_key, sender_key, dedup_key)
-                       VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, %s, %s, %s)""",
+                        has_media, posted_at, received_at, notification_key, sender_key, dedup_key, room_key, room_trusted)
+                       VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, %s, %s, %s, %s, %s)""",
                     (device_id, room_name, stored_sender, text, message_type, int(is_group_chat), posted,
-                     datetime.now(settings.timezone).replace(tzinfo=None), notification_key, sender_key or None, key),
+                     datetime.now(settings.timezone).replace(tzinfo=None), notification_key, sender_key or None, key,
+                     room_key or None, None if not room_key else int(bool(room_trusted))),
                 )
                 message_id = cur.lastrowid
                 store.fill_unknown(cur, sender_key or None, stored_sender)  # 지난 '(알 수 없음)' 메시지에도 이름 채움

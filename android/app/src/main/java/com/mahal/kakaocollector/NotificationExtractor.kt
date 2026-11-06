@@ -49,7 +49,14 @@ object NotificationExtractor {
             isGroupSummary = n.flags and Notification.FLAG_GROUP_SUMMARY != 0,
             summaryText = extras.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)?.toString(),
             shortcutLabel = shortcutLabel,
+            chatKey = chatKeyOf(sbn),
         )
+    }
+
+    /** 카톡 채팅방 고유 번호: 대화 바로가기 id(API 26+), 없으면 알림 태그 */
+    fun chatKeyOf(sbn: StatusBarNotification): String? {
+        val id = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) sbn.notification.shortcutId else null
+        return (id ?: sbn.tag)?.takeIf { it.isNotBlank() && it != "null" }?.take(64)
     }
 
     /**

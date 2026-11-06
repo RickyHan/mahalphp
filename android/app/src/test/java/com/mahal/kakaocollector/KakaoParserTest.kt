@@ -1,6 +1,7 @@
 package com.mahal.kakaocollector
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -18,6 +19,7 @@ class KakaoParserTest {
         isGroupSummary: Boolean = false,
         summaryText: String? = null,
         shortcutLabel: String? = null,
+        chatKey: String? = null,
     ) = RawNotification(
         key = "0|com.kakao.talk|2|null|10001",
         postTime = 2_000L,
@@ -32,7 +34,30 @@ class KakaoParserTest {
         isGroupSummary = isGroupSummary,
         summaryText = summaryText,
         shortcutLabel = shortcutLabel,
+        chatKey = chatKey,
     )
+
+    @Test
+    fun chatKeyTravelsWithMessageAndUnknownGroupRoomIsUntrusted() {
+        // 방 이름을 읽은 단톡: 확실
+        val ok = KakaoParser.parse(
+            raw(title = "홍길동", shortcutLabel = "★A빌라", isGroup = true, chatKey = "1234",
+                messages = listOf(RawMessage("물이 새요", "홍길동", 1_000L)))
+        ).single()
+        assertEquals("★A빌라", ok.room)
+        assertEquals("1234", ok.roomKey)
+        assertTrue(ok.roomTrusted)
+        // 단톡인데 방 이름을 못 읽음 → 제목(보낸 사람)으로 대신, 확실하지 않음
+        val guess = KakaoParser.parse(
+            raw(title = "홍길동", isGroup = true, chatKey = "1234", messages = listOf(RawMessage("물이 새요", "홍길동", 1_000L)))
+        ).single()
+        assertEquals("1234", guess.roomKey)
+        assertFalse(guess.roomTrusted)
+        // 1:1 은 상대 이름이 곧 방 이름
+        val dm = KakaoParser.parse(raw(title = "이영희", chatKey = "77", messages = listOf(RawMessage("안녕", "이영희", 1_000L)))).single()
+        assertTrue(dm.roomTrusted)
+        assertNull(KakaoParser.parse(raw(title = "이영희", chatKey = " ", messages = listOf(RawMessage("안녕", "이영희", 1_000L)))).single().roomKey)
+    }
 
     @Test
     fun messagingStyleGroupChat() {
