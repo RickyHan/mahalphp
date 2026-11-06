@@ -237,9 +237,16 @@ def test_seed_marks_how_to_faqs_answer_only(settings):
     assert kinds["CCTV 불량 시,"] is True and kinds["승강기 고장 / 점검중 표기 / 운행정지 / 큰소음발생 / 승강기버튼고장"] is True
 
 
+def _fresh_seed(settings):
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM faq_items")
+        cur.execute("DELETE FROM app_settings WHERE name = 'faq_seed'")
+    faq.seed_faq(settings)
+
+
 def test_seed_v2_updates_existing_rows(settings):
     """v1 로 이미 들어간 문항도 v2 로 올라갈 때 한 번 신고형/문의형을 맞춤"""
-    faq.seed_faq(settings)
+    _fresh_seed(settings)
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute("UPDATE faq_items SET report = 1 WHERE question = 'CCTV 열람방법'")
         cur.execute("DELETE FROM app_settings WHERE name = 'faq_seed'")
@@ -251,3 +258,31 @@ def test_seed_v2_updates_existing_rows(settings):
         cur.execute("SELECT report FROM faq_items WHERE question = 'CCTV 불량 시,'")
         assert all(r["report"] == 1 for r in cur.fetchall())
     assert faq.seed_faq(settings) is None
+
+
+def test_seed_v3_adds_only_new_qa_items_and_keeps_existing_settings(settings):
+    """QA 문서 추가분(v3)만 새로 넣고 켬. 기존 문항의 사용/안함·지운 문항은 그대로"""
+    _fresh_seed(settings)
+    new_qs = ("음식물 쓰레기봉투 안쓰고 버렸어요", "CCTV비밀번호 문의")
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE faq_items SET enabled = 0 WHERE question = '승강기 검사증 교체'")
+        cur.execute("UPDATE faq_items SET enabled = 1 WHERE question = '관리비 얼마에요?'")
+        cur.execute("DELETE FROM faq_items WHERE question = '카드 납부 되나요?'")
+        cur.execute("UPDATE faq_items SET question = '열람 방법 (고침)' WHERE question = 'CCTV 열람방법'")
+        cur.execute(f"DELETE FROM faq_items WHERE question IN ({', '.join(['%s'] * len(new_qs))})", new_qs)
+        cur.execute("SELECT COUNT(*) AS n FROM faq_items")
+        before = cur.fetchone()["n"]
+        cur.execute("DELETE FROM app_settings WHERE name = 'faq_seed'")
+        cur.execute("INSERT INTO app_settings (name, value) VALUES ('faq_seed', '2')")
+    assert faq.seed_faq(settings) == 2
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT question, enabled, report FROM faq_items")
+        rows = {r["question"]: r for r in cur.fetchall()}
+    assert len(rows) == before + 2
+    assert rows["음식물 쓰레기봉투 안쓰고 버렸어요"]["enabled"] == 1 and rows["CCTV비밀번호 문의"]["enabled"] == 1
+    assert rows["CCTV비밀번호 문의"]["report"] == 0
+    assert rows["승강기 검사증 교체"]["enabled"] == 0 and rows["관리비 얼마에요?"]["enabled"] == 1
+    assert "카드 납부 되나요?" not in rows and "CCTV 열람방법" not in rows  # 지우거나 고친 문항은 다시 넣지 않음
+    assert faq.seed_faq(settings) is None
+    with db.transaction(settings) as conn, conn.cursor() as cur:  # 뒤 테스트에 끼어들지 않도록 정리
+        cur.execute("DELETE FROM faq_items")

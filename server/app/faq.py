@@ -28,7 +28,7 @@ router = APIRouter(dependencies=[Depends(require_admin)])
 
 # 처음 받은 FAQ(엑셀). 서버 시작 때 한 번만 넣는다(이후 웹에서 고친 내용은 덮어쓰지 않음).
 SEED_FILE = Path(__file__).parent / "data" / "faq.json"
-SEED_VERSION = "2"  # 2: 문항별 신고형/문의형(report) 구분
+SEED_VERSION = "3"  # 2: 신고형/문의형(report) 구분 · 3: QA 문서 추가 문항(음식물 봉투 미사용, CCTV 비밀번호)
 
 
 def _now(settings) -> datetime:
@@ -47,6 +47,10 @@ def _ser(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def seed_faq(settings) -> int | None:
+    """FAQ 기본 문항 등록 (서버 시작 때, 버전이 오를 때 한 번).
+    - 처음: 파일의 문항을 모두 넣는다.
+    - 업그레이드: 새 버전에서 추가된 문항(since > 이전 버전)만 넣는다. 웹에서 고친 문항·사용 여부는 건드리지 않는다.
+      (v1 → v2 에서만 기존 문항의 신고형/문의형 구분을 한 번 맞춘다)"""
     if not SEED_FILE.exists():
         return None
     now = _now(settings)
@@ -55,19 +59,26 @@ def seed_faq(settings) -> int | None:
         row = cur.fetchone()
         if row and row["value"] == SEED_VERSION:
             return None
+        try:
+            prev = int(row["value"]) if row else 0
+        except (TypeError, ValueError):
+            prev = 0
         cur.execute("SELECT question FROM faq_items")
-        have = {r["question"] for r in cur.fetchall()}
+        have = {" ".join(r["question"].split()) for r in cur.fetchall()}
         added = 0
         for order, item in enumerate(json.loads(SEED_FILE.read_text(encoding="utf-8"))):
             report = int(bool(item.get("report", True)))
-            if item["question"] in have:
-                # v1 에서 이미 넣은 문항: 신고형/문의형만 처음 한 번 맞춘다 (이후 웹에서 바꾼 값은 유지)
-                cur.execute("UPDATE faq_items SET report = %s WHERE question = %s", (report, item["question"][:500]))
+            question = item["question"][:500]
+            if " ".join(question.split()) in have:
+                if prev and prev < 2:  # v1 로 넣은 문항: 신고형/문의형만 처음 한 번 맞춤 (사용 여부는 그대로)
+                    cur.execute("UPDATE faq_items SET report = %s WHERE question = %s", (report, question))
                 continue
+            if prev and int(item.get("since", 1)) <= prev:
+                continue  # 예전 버전에 있던 문항인데 없으면 관리자가 지우거나 고친 것 → 다시 넣지 않음
             cur.execute(
                 """INSERT INTO faq_items (category, question, answer, enabled, report, sort_order, created_at, updated_at)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-                (item.get("category") or "", item["question"][:500], item["answer"], int(bool(item.get("enabled", True))), report, order, now, now),
+                (item.get("category") or "", question, item["answer"], int(bool(item.get("enabled", True))), report, order, now, now),
             )
             added += 1
         cur.execute("DELETE FROM app_settings WHERE name = 'faq_seed'")
