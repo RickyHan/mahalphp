@@ -482,3 +482,42 @@ def test_teach_not_complaint_examples(admin, settings, monkeypatch):
     assert "관리자가 직접 바로잡은 판정 사례" in prompt and '[민원 아님] "203호님 차량 2대' in prompt
     assert "입주민끼리 서로에게 하는 요청" in prompt and "미팅" in prompt
     assert "관리자가 직접 바로잡은" not in cp.build_prompt()
+
+
+def test_room_key_guards_against_sender_name_as_room(admin, settings):
+    """방 번호 안전장치: 보낸 사람 이름이 방 이름으로 잘못 와도 방 이름 변경으로 보지 않음,
+    잘못 기록된 이름에서 진짜 이름으로 바뀔 때는 같은 이름의 1:1 대화(번호 없는 옛 메시지)를 끌고 오지 않음"""
+    c = TestClient(app)
+    now = _now(settings)
+
+    def post(room, sender, text, minutes, key, *, group=True, trusted=True):
+        data = {"device_id": "phone-1", "room_name": room, "sender_name": sender, "message_text": text, "message_type": "text",
+                "is_group_chat": str(group).lower(), "posted_at": str(int((now - timedelta(minutes=minutes)).timestamp() * 1000)),
+                "room_key": key, "room_trusted": str(trusted).lower()}
+        res = c.post("/api/messages", data=data, headers=KEY)
+        assert res.status_code == 201, res.text
+        return res.json()["id"]
+
+    def room_of(mid):
+        with db.transaction(settings) as conn, conn.cursor() as cur:
+            cur.execute("SELECT room_name FROM kakao_messages WHERE id = %s", (mid,))
+            return cur.fetchone()["room_name"]
+
+    # 1) 아는 단톡방에 보낸 사람 이름이 방 이름으로(확실하다고 잘못 표시돼) 와도 그대로 그 방
+    post("★가드빌라", "101호", "안녕하세요", 20, "g-1")
+    post("★가드빌라", "202호", "반갑습니다", 19, "g-1")
+    a = post("홍길동", "홍길동", "단톡 표시가 빠진 알림", 18, "g-1", group=True)
+    b = post("홍길동", "홍길동", "1:1 처럼 온 알림", 17, "g-1", group=False)
+    assert room_of(a) == room_of(b) == "★가드빌라"
+    assert admin.get("/api/admin/messages", params={"room": "홍길동"}).json()["items"] == []
+
+    # 2) 번호 없는 옛 1:1 대화 '김철수' + 처음에 보낸 사람 이름으로 잘못 기록된 단톡방 → 진짜 이름이 오면 이 번호 것만 옮김
+    old_dm = _post(c, "김철수", "김철수", "예전 1:1 대화", now - timedelta(minutes=30), group=False)
+    first = post("김철수", "김철수", "단톡인데 이름을 못 읽음", 10, "g-2", group=False)
+    fixed = post("★가드2빌라", "301호", "이제 방 이름이 보임", 9, "g-2")
+    assert room_of(first) == room_of(fixed) == "★가드2빌라"
+    assert room_of(old_dm) == "김철수"
+
+    # 3) 진짜 방 이름 변경은 그대로 따라감
+    renamed = post("★가드2빌라(세대방)", "302호", "방 이름 바뀜", 8, "g-2")
+    assert room_of(fixed) == room_of(renamed) == "★가드2빌라(세대방)"

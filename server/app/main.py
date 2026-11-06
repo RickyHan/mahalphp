@@ -106,7 +106,10 @@ async def create_message(
         duplicate = False
         renamed = False
         # 채팅방 번호로 방 이름 확정 (방 이름을 못 읽은 알림 · 방 이름 변경)
-        room_name = store.resolve_room(cur, room_key or None, room_name, room_trusted, datetime.now(settings.timezone).replace(tzinfo=None))
+        room_name = store.resolve_room(
+            cur, room_key or None, room_name, room_trusted, datetime.now(settings.timezone).replace(tzinfo=None),
+            sender=sender_name, is_group=is_group_chat,
+        )
         stored_sender = sender_name
         if sender_key and store.is_unknown_sender(sender_name):
             stored_sender = store.known_name(cur, sender_key) or sender_name  # '(알 수 없음)' → 같은 사람의 실제 이름

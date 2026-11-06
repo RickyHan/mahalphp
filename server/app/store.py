@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any
 
 from . import complaints as cp
 from . import db
 from .config import Settings
+
+log = logging.getLogger("kakao.store")
 
 SETTING_DEFAULTS = {
     "complaint_enabled": "1",
@@ -88,17 +91,24 @@ def record_sender(cur, room: str, sender_key: str | None, name: str, at: datetim
 
 # ---- 채팅방 고유 번호: 방 이름을 못 읽은 메시지 바로잡기 · 방 이름 변경 따라가기 ----------------------------
 
-def resolve_room(cur, room_key: str | None, room_name: str, trusted: bool, at: datetime) -> str:
+def resolve_room(
+    cur, room_key: str | None, room_name: str, trusted: bool, at: datetime, *, sender: str | None = None, is_group: bool = False
+) -> str:
     """이 메시지를 저장할 방 이름.
     - 방 이름이 확실하면(trusted): 번호 → 이름을 기록. 같은 번호의 이름이 바뀌었으면 방 이름 변경으로 보고 따라간다.
       같은 번호로 엉뚱한 이름(보낸 사람 이름 등)에 들어간 지난 메시지도 바로잡는다.
-    - 확실하지 않으면: 같은 번호로 알고 있는 방 이름을 쓴다."""
+    - 확실하지 않으면: 같은 번호로 알고 있는 방 이름을 쓴다.
+    안전장치: 방 이름이 보낸 사람 이름과 같으면(방 이름을 못 읽고 알림 제목을 쓴 경우의 전형)
+      단톡에서는 확실하지 않은 것으로 보고, 1:1 이라도 이미 아는 다른 방 이름을 덮어쓰지 않는다."""
     if not room_key:
         return room_name
+    looks_like_sender = bool(sender) and room_name.strip() == sender.strip()
+    if looks_like_sender and is_group:
+        trusted = False
     cur.execute("SELECT room_name FROM chat_rooms WHERE room_key = %s", (room_key,))
     row = cur.fetchone()
     known = row["room_name"] if row else None
-    if not trusted:
+    if not trusted or (looks_like_sender and known and known != room_name):
         return known or room_name
     if known and known != room_name:
         rename_room(cur, room_key, known, room_name)
@@ -112,7 +122,17 @@ def resolve_room(cur, room_key: str | None, room_name: str, trusted: bool, at: d
 
 
 def rename_room(cur, room_key: str, old: str, new: str) -> None:
-    """카톡에서 방 이름이 바뀜(예: ★중앙주택/9세대 → /10세대): 지난 메시지·건물·업체·예약·대기 메시지를 새 이름으로"""
+    """카톡에서 방 이름이 바뀜(예: ★중앙주택/9세대 → /10세대): 지난 메시지·건물·업체·예약·대기 메시지를 새 이름으로.
+    예전 이름이 진짜 방 이름이었을 때만(다른 사람들이 그 이름으로 대화) 번호 없는 옛 메시지와 연결까지 옮긴다.
+    예전 이름이 보낸 사람 이름으로 잘못 기록된 것이면 이 번호의 메시지만 옮긴다(같은 이름의 1:1 방 등은 건드리지 않음)."""
+    cur.execute(
+        "SELECT 1 AS x FROM kakao_messages WHERE room_key = %s AND room_name = %s AND sender_name <> %s LIMIT 1",
+        (room_key, old, old),
+    )
+    if cur.fetchone() is None:
+        cur.execute("UPDATE kakao_messages SET room_name = %s WHERE room_key = %s AND room_name = %s", (new, room_key, old))
+        return
+    log.info("채팅방 이름 변경: %s → %s (번호 %s)", old, new, room_key)
     cur.execute(
         "UPDATE kakao_messages SET room_name = %s WHERE room_name = %s AND (room_key = %s OR room_key IS NULL)",
         (new, old, room_key),
