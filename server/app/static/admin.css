@@ -1063,3 +1063,10 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .dispatch-actions { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .dispatch-ready, .cp-dispatch { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .cp-dispatch .cp-reply { margin: 0; }
+
+/* '(알 수 없음)' 보낸 사람 이름 지정 */
+.unknown-sender .unknown-name { font-size: 12px; color: var(--warn); padding: 0; }
+.unknown-edit { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 2px 0 4px; }
+.unknown-edit input[type="text"] { height: 30px; min-width: 0; width: 200px; max-width: 100%; }
+.unknown-zone { margin: 24px 0 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.unknown-zone h3 { margin: 0 0 6px; font-size: 15px; }

@@ -44,9 +44,11 @@
     return res.json();
   }
 
-  async function postJson(path, body) {
+  const postJson = (path, body) => sendJson("POST", path, body);
+
+  async function sendJson(method, path, body) {
     const res = await fetch(path, {
-      method: "POST",
+      method,
       credentials: "same-origin",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(body),
@@ -261,6 +263,62 @@
     });
   }
 
+  // '(알 수 없음)' 보낸 사람: 눌러서 이름 지정 (같은 사람 = 같은 방·같은 고유 키 메시지도 함께)
+  const UNKNOWN = new Set(["(알 수 없음)", "알 수 없음", "(Unknown)", "Unknown"]);
+  function unknownSender(m) {
+    const box = el("div", { class: "msg-sender unknown-sender" });
+    const open = async () => {
+      if (state.selecting) return;
+      let info;
+      try {
+        info = await api(`/api/admin/messages/${m.id}/sender`);
+      } catch (err) {
+        return reportError(err);
+      }
+      const listId = `uk-names-${m.id}`;
+      const input = el("input", { type: "text", maxlength: "100", list: listId, placeholder: "보낸 사람 이름", "aria-label": "보낸 사람 이름" });
+      const same = el("input", { type: "checkbox" });
+      same.checked = info.has_key;
+      same.disabled = !info.has_key;
+      const save = el("button", { class: "btn btn-small btn-primary", type: "button", text: "저장" });
+      const cancel = el("button", { class: "btn btn-small", type: "button", text: "취소", onclick: () => box.replaceChildren(label) });
+      const doSave = async () => {
+        const name = input.value.trim();
+        if (!name) return input.focus();
+        save.disabled = true;
+        try {
+          await sendJson("PUT", `/api/admin/messages/${m.id}/sender`, { name, same_person: same.checked });
+          await openRoom(state.room, m.id); // 바뀐 이름으로 다시 읽고 그 메시지 위치로
+        } catch (err) {
+          reportError(err);
+          save.disabled = false;
+        }
+      };
+      save.addEventListener("click", doSave);
+      input.addEventListener("keydown", (e) => (e.key === "Enter" ? doSave() : e.key === "Escape" && cancel.click()));
+      box.replaceChildren(
+        el("datalist", { id: listId }, ...info.names.map((n) => el("option", { value: n }))),
+        el(
+          "div",
+          { class: "unknown-edit" },
+          input,
+          el(
+            "label",
+            { class: "check", title: info.has_key ? "카톡이 준 같은 사람 고유 키로 묶습니다. 수가 지나치게 많으면 여러 사람이 섞였을 수 있으니 끄십시오." : "고유 키가 없는 메시지라 이 메시지만 바꿉니다." },
+            same,
+            info.has_key ? ` 같은 사람 ${info.same_person}건 모두` : " 이 메시지만",
+          ),
+          save,
+          cancel,
+        ),
+      );
+      input.focus();
+    };
+    const label = el("button", { class: "link-btn unknown-name", type: "button", title: "눌러서 이름 지정", text: `${m.sender_name} ✎`, onclick: open });
+    box.append(label);
+    return box;
+  }
+
   function renderMessage(m, continued, showTime) {
     const self = m.sender_name === SELF;
     const classes = ["msg", self && "self", continued && "cont", m.id === state.focusId && "highlight"].filter(Boolean).join(" ");
@@ -277,7 +335,8 @@
       node.addEventListener("click", toggle, true);
       node.addEventListener("keydown", (e) => (e.key === " " || e.key === "Enter") && toggle(e));
     }
-    if (!self && !continued && m.is_group_chat) node.append(el("div", { class: "msg-sender", text: m.sender_name }));
+    if (!self && m.is_group_chat && UNKNOWN.has(m.sender_name)) node.append(unknownSender(m));
+    else if (!self && !continued && m.is_group_chat) node.append(el("div", { class: "msg-sender", text: m.sender_name }));
 
     const content = el("div", {});
     const text = m.message_text || "";

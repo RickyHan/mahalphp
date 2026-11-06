@@ -527,3 +527,44 @@ def test_room_key_guards_against_sender_name_as_room(admin, settings):
     # 3) 진짜 방 이름 변경은 그대로 따라감
     renamed = post("★가드2빌라(세대방)", "302호", "방 이름 바뀜", 8, "g-2")
     assert room_of(fixed) == room_of(renamed) == "★가드2빌라(세대방)"
+
+
+def test_unknown_sender_refill_and_manual_name(admin, settings):
+    """'(알 수 없음)': 지금 다시 채우기 · 관리자가 이름 지정(같은 방·같은 고유 키 함께, 앞으로 올 것도)"""
+    c = TestClient(app)
+    now = _now(settings)
+    room = "★이름지정빌라"
+    a1 = _post(c, room, "(알 수 없음)", "준비는 다된듯합니다", now - timedelta(minutes=9), sender_key="pk-a")
+    a2 = _post(c, room, "(알 수 없음)", "저희만 되면 되네요", now - timedelta(minutes=8), sender_key="pk-a")
+    b1 = _post(c, room, "(알 수 없음)", "확인 감사합니다", now - timedelta(minutes=7), sender_key="pk-b")
+    nokey = _post(c, room, "(알 수 없음)", "203호 이체 완료 했습니다", now - timedelta(minutes=6))
+    _post(c, room, "스페이스빌가동404호", "납부완료요", now - timedelta(minutes=5))
+    before = admin.get("/api/admin/unknown-senders").json()
+    assert before["messages"] >= 4 and before["with_key"] >= 3
+
+    info = admin.get(f"/api/admin/messages/{a1}/sender").json()
+    assert info["has_key"] is True and info["same_person"] == 2 and "스페이스빌가동404호" in info["names"]
+    assert "(알 수 없음)" not in info["names"]
+    r = admin.put(f"/api/admin/messages/{a1}/sender", json={"name": "스페이스빌가동301호", "same_person": True})
+    assert r.status_code == 200 and r.json()["updated"] == 2
+    names = {m["id"]: m["sender_name"] for m in admin.get("/api/admin/messages", params={"room": room}).json()["items"]}
+    assert names[a1] == names[a2] == "스페이스빌가동301호" and names[b1] == "(알 수 없음)"
+    # 같은 사람이 다음에 또 '(알 수 없음)'으로 와도 접수 때 이름으로
+    a3 = _post(c, room, "(알 수 없음)", "오늘 공사 시작하나요", now - timedelta(minutes=1), sender_key="pk-a")
+    assert {m["id"]: m["sender_name"] for m in admin.get("/api/admin/messages", params={"room": room}).json()["items"]}[a3] == "스페이스빌가동301호"
+
+    # 키 없는 메시지는 그 메시지만
+    assert admin.get(f"/api/admin/messages/{nokey}/sender").json()["has_key"] is False
+    assert admin.put(f"/api/admin/messages/{nokey}/sender", json={"name": "203호", "same_person": True}).json()["updated"] == 1
+    # 이미 이름이 있는 메시지·없는 메시지·빈 이름
+    assert admin.get(f"/api/admin/messages/{a1}/sender").status_code == 422
+    assert admin.put(f"/api/admin/messages/{b1}/sender", json={"name": "(알 수 없음)"}).status_code == 422
+    assert admin.get("/api/admin/messages/99999999/sender").status_code == 404
+
+    # 지금 다시 채우기: 같은 키로 실제 이름이 기록된 것만 채움
+    _post(c, "★이름지정빌라2", "홍길동", "안녕하세요 반갑습니다", now, sender_key="pk-b")
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE kakao_messages SET sender_name = '(알 수 없음)' WHERE id = %s", (b1,))  # 접수 때 채워진 것을 되돌려 시험
+    r = admin.post("/api/admin/unknown-senders/fill").json()
+    assert r["filled"] >= 1 and "messages" in r["left"]
+    assert {m["id"]: m["sender_name"] for m in admin.get("/api/admin/messages", params={"room": room}).json()["items"]}[b1] == "홍길동"

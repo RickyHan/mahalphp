@@ -167,7 +167,25 @@
   const picked = new Set();
   let rooms = [];
 
+  // '(알 수 없음)' 보낸 사람: 현황 · 지금 다시 채우기
+  const ukText = (u) => (u.messages ? `${u.messages.toLocaleString()}건 · ${u.rooms}개 방 (고유 키 있음 ${u.with_key.toLocaleString()}건)` : "없음");
+  async function loadUnknown() {
+    $("uk-status").textContent = ukText(await api("/api/admin/unknown-senders"));
+  }
+  $("uk-fill").addEventListener("click", async () => {
+    $("uk-fill").disabled = true;
+    try {
+      const r = await send("POST", "/api/admin/unknown-senders/fill");
+      $("uk-status").textContent = `${r.filled.toLocaleString()}건 채움 · 남은 것 ${ukText(r.left)}`;
+    } catch (err) {
+      reportError(err);
+    } finally {
+      $("uk-fill").disabled = false;
+    }
+  });
+
   async function loadData() {
+    loadUnknown().catch(reportError);
     const data = await api("/api/admin/data/rooms");
     rooms = data.items;
     for (const r of [...picked]) if (!rooms.some((x) => x.room_name === r)) picked.delete(r);

@@ -518,3 +518,94 @@ def classify_now(settings: SettingsDep, retry_failed: bool = False) -> dict[str,
             reset = store.reset_failed(cur)
     worker.wake()
     return {"ok": True, "reset": reset}
+
+
+# ---- '(알 수 없음)' 보낸 사람 정리 ---------------------------------------------------------------
+
+def _unknown_summary(cur) -> dict[str, Any]:
+    marks = ", ".join(["%s"] * len(store.UNKNOWN_SENDERS))
+    cur.execute(
+        f"""SELECT COUNT(*) AS n, COUNT(DISTINCT room_name) AS rooms,
+                   COALESCE(SUM(CASE WHEN sender_key IS NOT NULL THEN 1 ELSE 0 END), 0) AS with_key
+            FROM kakao_messages WHERE sender_name IN ({marks})""",
+        store.UNKNOWN_SENDERS,
+    )
+    r = cur.fetchone()
+    return {"messages": int(r["n"] or 0), "rooms": int(r["rooms"] or 0), "with_key": int(r["with_key"] or 0)}
+
+
+@router.get("/api/admin/unknown-senders", dependencies=[Admin])
+def unknown_senders(settings: SettingsDep) -> dict[str, Any]:
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        return {"ok": True, **_unknown_summary(cur)}
+
+
+@router.post("/api/admin/unknown-senders/fill", dependencies=[Admin])
+def unknown_senders_fill(settings: SettingsDep) -> dict[str, Any]:
+    """같은 사람(고유 키)의 실제 이름이 기록된 '(알 수 없음)' 메시지를 지금 다시 채운다"""
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        filled = store.fill_all_unknown(cur)
+        left = _unknown_summary(cur)
+    if filled:
+        live.bump("message")
+    return {"ok": True, "filled": filled, "left": left}
+
+
+class SenderNameBody(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    same_person: bool = True
+
+
+def _same_person_ids(cur, row: dict[str, Any]) -> list[int]:
+    """같은 방 · 같은 고유 키의 '(알 수 없음)' 메시지 (키가 없으면 그 메시지만)"""
+    if not row["sender_key"]:
+        return [row["id"]]
+    marks = ", ".join(["%s"] * len(store.UNKNOWN_SENDERS))
+    cur.execute(
+        f"SELECT id FROM kakao_messages WHERE room_name = %s AND sender_key = %s AND sender_name IN ({marks}) ORDER BY id",
+        (row["room_name"], row["sender_key"], *store.UNKNOWN_SENDERS),
+    )
+    return [r["id"] for r in cur.fetchall()]
+
+
+def _unknown_row(cur, message_id: int) -> dict[str, Any]:
+    cur.execute("SELECT id, room_name, sender_name, sender_key FROM kakao_messages WHERE id = %s", (message_id,))
+    row = cur.fetchone()
+    if row is None:
+        raise HTTPException(404, "메시지가 없습니다.")
+    if not store.is_unknown_sender(row["sender_name"]):
+        raise HTTPException(422, "'(알 수 없음)' 메시지가 아닙니다.")
+    return row
+
+
+@router.get("/api/admin/messages/{message_id}/sender", dependencies=[Admin])
+def sender_info(message_id: int, settings: SettingsDep) -> dict[str, Any]:
+    """이름 지정 전 확인: 같은 사람으로 함께 바뀔 메시지 수와 다른 이름 후보(같은 방 최근 발언자)"""
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        row = _unknown_row(cur, message_id)
+        same = _same_person_ids(cur, row)
+        marks = ", ".join(["%s"] * len(store.UNKNOWN_SENDERS))
+        cur.execute(
+            f"""SELECT sender_name, MAX(posted_at) AS last_at FROM kakao_messages
+                WHERE room_name = %s AND sender_name NOT IN ({marks}) AND sender_name <> %s
+                GROUP BY sender_name ORDER BY last_at DESC LIMIT 30""",
+            (row["room_name"], *store.UNKNOWN_SENDERS, cp.SELF_SENDER),
+        )
+        names = [r["sender_name"] for r in cur.fetchall()]
+    return {"ok": True, "room_name": row["room_name"], "has_key": bool(row["sender_key"]), "same_person": len(same), "names": names}
+
+
+@router.put("/api/admin/messages/{message_id}/sender", dependencies=[Admin])
+def set_sender_name(message_id: int, body: SenderNameBody, settings: SettingsDep) -> dict[str, Any]:
+    """'(알 수 없음)' 에 관리자가 확인한 이름을 넣는다. 같은 사람(고유 키)이면 같은 방의 다른 것과 앞으로 올 것도 이 이름으로."""
+    name = body.name.strip()
+    if not name or store.is_unknown_sender(name):
+        raise HTTPException(422, "이름을 입력하십시오.")
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        row = _unknown_row(cur, message_id)
+        ids = _same_person_ids(cur, row) if body.same_person else [row["id"]]
+        marks = ", ".join(["%s"] * len(ids))
+        # 같은 고유 키로 이름이 기록되므로 앞으로 오는 '(알 수 없음)'도 접수 때 이 이름으로 바뀐다(store.known_name)
+        cur.execute(f"UPDATE kakao_messages SET sender_name = %s WHERE id IN ({marks})", (name, *ids))
+    live.bump("message")
+    return {"ok": True, "updated": len(ids)}
