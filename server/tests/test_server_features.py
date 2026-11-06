@@ -432,14 +432,17 @@ def test_teach_not_complaint_examples(admin, settings, monkeypatch):
     room = "★학습테스트빌라"
     parking = _post(c, room, "301호", "203호님 차량 2대 주차하셨는데 1대만 해주시기 바랍니다. 1대 주차 원칙입니다", now - timedelta(minutes=3))
     noise = _post(c, room, "402호", "윗집 소음 때문에 못 살겠어요 그냥 넋두리입니다", now - timedelta(minutes=2))
+    rust = _post(c, "★녹물테스트빌라", "403호", "A동 녹물나오는데 다른세대 괜찮으신가요?", now - timedelta(minutes=4))
+    anyone = _post(c, "★녹물테스트빌라", "403호", "확인가능한세대가 아무도 없나요?", now - timedelta(minutes=3))
     store.classify_once(settings, client=FakeGemini())
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute("SELECT verdict FROM complaint_check WHERE message_id = %s", (parking,))
         assert cur.fetchone()["verdict"] == 1  # 학습 전: 잘못 민원으로 잡힘
+        cur.execute("UPDATE complaint_check SET verdict = 1, category = '배관' WHERE message_id IN (%s, %s)", (rust, anyone))
         cur.execute("DELETE FROM app_settings WHERE name = 'examples_seed'")
 
     # 1) 기본 사례 등록 + 이미 잘못 잡힌 같은 내용 바로잡기 (한 번만)
-    assert examples.seed_examples(settings) == 1
+    assert examples.seed_examples(settings) == 3
     assert examples.seed_examples(settings) is None
     items = admin.get("/api/admin/examples").json()["items"]
     assert any("역류 원인" in x["text"] for x in items) and any("1대 주차 원칙" in x["text"] for x in items)
@@ -483,6 +486,7 @@ def test_teach_not_complaint_examples(admin, settings, monkeypatch):
     prompt = cp.build_prompt(None, taught)
     assert "관리자가 직접 바로잡은 판정 사례" in prompt and '[민원 아님] "203호님 차량 2대' in prompt
     assert "입주민끼리 서로에게 하는 요청" in prompt and "미팅" in prompt
+    assert "다른 입주민에게 묻거나 확인을 구하는 대화" in prompt and any("녹물" in t for t, _, _ in taught)
     assert "관리자가 직접 바로잡은" not in cp.build_prompt()
 
 
