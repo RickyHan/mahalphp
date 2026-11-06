@@ -27,7 +27,8 @@
   /** 분류 → 색 슬롯 (1~8, 0 = 회색 '기타·그 외') */
   function colorMap(order) {
     const map = new Map();
-    order.filter((c) => c !== "기타").forEach((c, i) => map.set(c, i < 8 ? i + 1 : 0));
+    // 분류마다 다른 색 11개, '기타'와 12번째부터는 회색
+    order.filter((c) => c !== "기타").forEach((c, i) => map.set(c, i < 11 ? i + 1 : 0));
     return (cat) => map.get(cat) ?? 0;
   }
   const swatch = (slot) => el("span", { class: `sw c${slot}`, "aria-hidden": "true" });
@@ -141,18 +142,18 @@
     if (!total) return empty();
     const max = niceMax(Math.max(...days.map((d) => d[1])));
     const ticks = [max, max / 2, 0];
-    const grid = el("div", { class: "sc-grid" }, ...ticks.map((t) => el("div", { class: "sc-line" }, el("span", { text: Number.isInteger(t) ? fmt(t) : t.toFixed(1) }))));
-    const plot = el("div", { class: "sc-plot" });
+    const grid = el("div", { class: "dc-grid" }, ...ticks.map((t) => el("div", { class: "dc-line" }, el("span", { text: Number.isInteger(t) ? fmt(t) : t.toFixed(1) }))));
+    const plot = el("div", { class: "dc-plot" });
     const every = Math.max(1, Math.ceil(days.length / 10));
-    const axis = el("div", { class: "sc-axis" });
+    const axis = el("div", { class: "dc-axis" });
     days.forEach(([label, n, byCat, wd], i) => {
-      const col = el("div", { class: "sc-col", tabindex: "0" });
-      const stack = el("div", { class: "sc-stack" });
+      const col = el("div", { class: "dc-col", tabindex: "0" });
+      const stack = el("div", { class: "dc-stack" });
       stack.style.height = `${(n / max) * 100}%`;
       for (const c of cats) {
         const v = byCat[c] || 0;
         if (!v) continue;
-        const seg = el("span", { class: `sc-seg c${slotOf(c)}` });
+        const seg = el("span", { class: `dc-seg c${slotOf(c)}` });
         seg.style.flexGrow = String(v);
         stack.append(seg);
       }
@@ -161,7 +162,7 @@
       plot.append(col);
       axis.append(el("span", { class: wd >= 5 ? "weekend" : "", text: i % every === 0 || i === days.length - 1 ? label : "" }));
     });
-    return el("div", { class: "sc" }, legend(cats, slotOf), el("div", { class: "sc-body" }, grid, plot), axis);
+    return el("div", { class: "dc" }, legend(cats, slotOf), el("div", { class: "dc-body" }, grid, plot), axis);
   }
 
   // ---- 요일 × 시간 히트맵 ---------------------------------------------------------------------------------
