@@ -93,7 +93,9 @@ def test_parse_response_and_grouping_and_stats():
     assert stats["by_category"] == [["소음", 3]] and stats["hourly"][9] == 3
     # 2025-10-30 은 목요일(3): 요일×시간, 일별·방별 분류 세부, 직전 기간 비교
     assert stats["weekday_hour"][3][9] == 3 and sum(map(sum, stats["weekday_hour"])) == 3
-    assert stats["daily_detail"] == [["10/30", 3, {"소음": 3}, 3]]
+    assert len(stats["daily_detail"]) == cp.DAILY_CHART_DAYS                     # 일별 그래프는 최근 30일
+    assert stats["daily_detail"][-1] == ["10/30", 3, {"소음": 3}, 3] and stats["daily_detail"][0][0] == "10/01"
+    assert sum(d[1] for d in stats["daily_detail"]) == 3
     assert stats["room_detail"] == [["A", 3, {"소음": 3}]] and stats["prev_issues"] == 0
     assert cp.compute_stats(groups, "all", t0 + timedelta(hours=5))["prev_issues"] is None
 

@@ -144,7 +144,7 @@
     const ticks = [max, max / 2, 0];
     const grid = el("div", { class: "dc-grid" }, ...ticks.map((t) => el("div", { class: "dc-line" }, el("span", { text: Number.isInteger(t) ? fmt(t) : t.toFixed(1) }))));
     const plot = el("div", { class: "dc-plot" });
-    const every = Math.max(1, Math.ceil(days.length / 10));
+    const every = Math.max(1, Math.ceil(days.length / 15)); // 30일이면 이틀마다 날짜
     const axis = el("div", { class: "dc-axis" });
     days.forEach(([label, n, byCat, wd], i) => {
       const col = el("div", { class: "dc-col", tabindex: "0" });
@@ -160,7 +160,7 @@
       col.append(stack);
       bindTip(col, () => [`${label} (${WEEK[wd]})  총 ${fmt(n)}건`, ...cats.filter((c) => byCat[c]).map((c) => `● ${c} ${fmt(byCat[c])}건`)]);
       plot.append(col);
-      axis.append(el("span", { class: wd >= 5 ? "weekend" : "", text: i % every === 0 || i === days.length - 1 ? label : "" }));
+      axis.append(el("span", { class: wd >= 5 ? "weekend" : "", text: (days.length - 1 - i) % every === 0 ? label : "" }));
     });
     return el("div", { class: "dc" }, legend(cats, slotOf), el("div", { class: "dc-body" }, grid, plot), axis);
   }
@@ -321,7 +321,7 @@
         "div",
         { class: "sv-grid" },
         card("분류별 문제", donut(byCatOrdered, s.issues, slotOf), "span-5", `${byCatOrdered.length}개 분류`),
-        card(period === "all" ? "일별 추이 (최근 30일)" : "일별 추이", stackedColumns(s.daily_detail, cats, slotOf), "span-7", "막대에 마우스를 올리면 분류별 건수"),
+        card(`일별 추이 (최근 ${s.daily_detail.length}일)`, stackedColumns(s.daily_detail, cats, slotOf), "span-7", "막대에 마우스를 올리면 분류별 건수"),
         card("요일 · 시간대", heatmap(s.weekday_hour), "span-7", "문제가 시작된 시각 기준"),
         card("처리 현황", outcome(s), "span-5"),
         placeCard,

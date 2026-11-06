@@ -398,6 +398,7 @@ def group_complaints(rows: list[dict[str, Any]], window: timedelta = GROUP_WINDO
 
 
 PERIODS = {"today": 1, "week": 7, "month": 30, "all": None}
+DAILY_CHART_DAYS = 30  # 일별 추이 그래프는 기간과 관계없이 최소 최근 30일
 
 
 def compute_stats(groups: list[Group], period: str, now: datetime, top: int = 10,
@@ -435,9 +436,11 @@ def compute_stats(groups: list[Group], period: str, now: datetime, top: int = 10
             out[g.first["category"]] = out.get(g.first["category"], 0) + 1
         return out
 
+    chart_days = max(n_days, DAILY_CHART_DAYS)
+    chart_first = today - timedelta(days=chart_days - 1)
     daily_detail = []
-    for d in range(n_days):
-        day = first_day + timedelta(days=d)
+    for d in range(chart_days):
+        day = chart_first + timedelta(days=d)
         items = [g for g in groups if day <= g.first["posted_at"] < day + timedelta(days=1)]
         daily_detail.append([day.strftime("%m/%d"), len(items), by_cat(items), day.weekday()])
     room_detail = [

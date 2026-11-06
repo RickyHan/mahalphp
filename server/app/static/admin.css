@@ -530,13 +530,13 @@ mark { background: var(--highlight); color: inherit; border-radius: 3px; padding
 .dc-line { position: relative; border-top: 1px dashed var(--viz-grid); height: 0; }
 .dc-line:last-child { border-top: 1px solid var(--border); }
 .dc-line span { position: absolute; right: calc(100% + 6px); top: -8px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.dc-plot { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 3px; }
-.dc-col { flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; cursor: default; border-radius: 6px; }
+.dc-plot { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 2px; }
+.dc-col { flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; cursor: default; border-radius: 4px; }
 .dc-col:hover, .dc-col:focus { background: color-mix(in srgb, var(--text) 5%, transparent); outline: none; }
-.dc-stack { width: 100%; max-width: 34px; display: flex; flex-direction: column-reverse; gap: 2px; }
-.dc-seg { display: block; flex-basis: 0; min-height: 3px; background: var(--c); }
+.dc-stack { width: 78%; max-width: 22px; display: flex; flex-direction: column-reverse; gap: 1px; }
+.dc-seg { display: block; flex-basis: 0; min-height: 2px; background: var(--c); }
 .dc-stack .dc-seg:last-child { border-radius: 4px 4px 0 0; }
-.dc-axis { display: flex; gap: 3px; margin: 6px 0 0 28px; font-size: 11px; color: var(--muted); }
+.dc-axis { display: flex; gap: 2px; margin: 6px 0 0 28px; font-size: 11px; color: var(--muted); }
 .dc-axis span { flex: 1; min-width: 0; text-align: center; white-space: nowrap; overflow: visible; }
 .dc-axis .weekend, .hm-day.weekend { color: var(--danger); }
 
