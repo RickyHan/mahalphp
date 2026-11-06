@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
-from . import db, live
+from . import db, live, store
 from .auth import SettingsDep, require_admin
 from .config import Settings
 
@@ -236,7 +236,9 @@ def list_vendors(settings: SettingsDep) -> dict[str, Any]:
         rooms = {r["room_name"]: r for r in cur.fetchall()}
         cur.execute("SELECT value FROM app_settings WHERE name = 'vendors_synced_at'")
         synced = cur.fetchone()
+        readiness = store.reply_readiness(cur, _now(settings))
     for v in items:
+        v["reply_ready"] = store.ready_state(readiness, v["room_name"])
         vc = cats.get(v["id"], [])
         v["category_ids"] = [c["id"] for c in vc]
         v["category_names"] = [c["name"] for c in vc]
@@ -246,7 +248,10 @@ def list_vendors(settings: SettingsDep) -> dict[str, Any]:
         v["messages"] = int(r["n"]) if r else 0
         last = r["last_at"] if r else None
         v["last_at"] = last.isoformat() if isinstance(last, datetime) else last
-    return {"ok": True, "items": items, "synced_at": synced["value"] if synced else None}
+    return {
+        "ok": True, "items": items, "synced_at": synced["value"] if synced else None,
+        "reply_check": {"checked": readiness["checked"], "reported_at": readiness["reported_at"]},
+    }
 
 
 @router.post("/api/admin/vendors/sync")
@@ -507,7 +512,29 @@ def dispatch_history(settings: SettingsDep, limit: int = 100) -> dict[str, Any]:
         items = [{k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in r.items()} for r in cur.fetchall()]
         cur.execute("SELECT status, COUNT(*) AS n FROM reply_queue WHERE kind = 'vendor' GROUP BY status")
         counts = {r["status"]: int(r["n"]) for r in cur.fetchall()}
+        readiness = store.reply_readiness(cur, _now(settings))
+    for d in items:
+        d["reply_ready"] = store.ready_state(readiness, d["vendor_room"]) if d["status"] == "pending" else None
     return {"ok": True, "items": items, "counts": counts}
+
+
+@router.post("/api/admin/vendor-dispatch/{dispatch_id}/manual")
+def dispatch_manual(dispatch_id: int, settings: SettingsDep) -> dict[str, Any]:
+    """문구를 복사해 직접 보냈음 → 보냄으로 처리 (휴대폰이 나중에 또 보내지 않도록)"""
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT status FROM reply_queue WHERE id = %s AND kind = 'vendor'", (dispatch_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(404, "전달 기록이 없습니다.")
+        if row["status"] == "sent":
+            raise HTTPException(422, "이미 보낸 요청입니다.")
+        cur.execute(
+            "UPDATE reply_queue SET status = 'sent', note = '관리자가 직접 보냄', done_at = %s WHERE id = %s",
+            (_now(settings), dispatch_id),
+        )
+    live.bump("vendor")
+    live.bump("complaint")
+    return {"ok": True}
 
 
 @router.post("/api/admin/vendor-dispatch/{dispatch_id}/retry")

@@ -78,7 +78,9 @@ def test_complaint_ack_then_vendor_room(admin, settings):
     # 업체 전달 실패가 민원의 '접수 안내 보냄' 상태를 덮어쓰지 않는다
     group = next(g for g in admin.get("/api/admin/complaints").json()["items"] if g["ids"][0] == mid)
     assert group["reply_status"] == 1
-    assert group["vendor_dispatch"] == [{"vendor": "엘레벨레", "room": "엘레벨레 업무방", "status": "failed", "note": "휴대폰에 이 방의 답장 가능한 카톡 알림이 없음"}]
+    d = group["vendor_dispatch"][0]
+    assert len(group["vendor_dispatch"]) == 1 and d["text"].startswith("[민원 처리 요청]") and d["ready"] is None
+    assert {k: d[k] for k in ("vendor", "room", "status", "note")} == {"vendor": "엘레벨레", "room": "엘레벨레 업무방", "status": "failed", "note": "휴대폰에 이 방의 답장 가능한 카톡 알림이 없음"}
 
     # 이력 · 다시 보내기
     hist = admin.get("/api/admin/vendor-dispatch").json()
@@ -245,3 +247,45 @@ def test_vendor_with_many_categories(admin, settings):
     assert admin.post("/api/admin/vendors", data={"name": "x", "category_ids": "1,abc"}).status_code == 422
     assert admin.post("/api/admin/vendors", data={"name": "x", "category_ids": "999999"}).status_code == 422
     admin.delete(f"/api/admin/vendors/{vid}")
+
+
+def test_reply_ready_rooms_and_manual_send(admin, settings):
+    """앱이 보고한 '답장 가능한 방'으로 업체 톡방마다 보낼 수 있음/새 알림 필요 표시, 문구를 직접 보냈으면 보냄 처리"""
+    ok_room, wait_room = "●준비테스트CCTV", "●준비테스트누수"
+    for room in (ok_room, wait_room):
+        _post(room, "기사", "업체 톡방 첫 메시지입니다")
+        assert admin.post("/api/admin/vendors/from-room", json={"room_name": room}).status_code == 201
+
+    def states():
+        data = admin.get("/api/admin/vendors").json()
+        return data, {v["room_name"]: v["reply_ready"] for v in data["items"] if v["room_name"] in (ok_room, wait_room)}
+
+    data, st = states()
+    assert data["reply_check"]["checked"] is False and st == {ok_room: "unknown", wait_room: "unknown"}  # 휴대폰 보고 전
+
+    res = TestClient(app).post("/api/replies/ready", headers=KEY, json={"device_id": DEVICE, "rooms": [f"  {ok_room} ", "★어느빌라", ""]})
+    assert res.status_code == 200 and res.json()["rooms"] == 2
+    data, st = states()
+    assert data["reply_check"]["checked"] is True and st == {ok_room: "ready", wait_room: "waiting"}
+    assert TestClient(app).post("/api/replies/ready", json={"device_id": DEVICE, "rooms": []}).status_code in (401, 403)
+
+    # 오래된 보고(10분 넘음)는 믿지 않음
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        later = store.reply_readiness(cur, store.now_local(settings) + store.READY_FRESH + store.READY_FRESH)
+        assert later["checked"] is False and store.ready_state(later, ok_room) == "unknown"
+        assert store.ready_state(later, None) is None
+        msg = _post("★준비테스트빌라", "301호", "CCTV 안 나와요")
+        rid = store.enqueue_reply(cur, msg, DEVICE, wait_room, "[민원 처리 요청] 테스트 문구", store.now_local(settings), kind="vendor", vendor_name="준비테스트누수")
+
+    d = next(x for x in admin.get("/api/admin/vendor-dispatch").json()["items"] if x["id"] == rid)
+    assert d["status"] == "pending" and d["reply_ready"] == "waiting" and d["text"] == "[민원 처리 요청] 테스트 문구"
+    # 문구를 복사해 직접 보냄 → 보냄 처리, 휴대폰 대기열에서 빠짐
+    assert admin.post(f"/api/admin/vendor-dispatch/{rid}/manual").status_code == 200
+    d = next(x for x in admin.get("/api/admin/vendor-dispatch").json()["items"] if x["id"] == rid)
+    assert d["status"] == "sent" and d["note"] == "관리자가 직접 보냄" and d["reply_ready"] is None
+    assert rid not in {p["id"] for p in _pending()}
+    assert admin.post(f"/api/admin/vendor-dispatch/{rid}/manual").status_code == 422
+    assert admin.post("/api/admin/vendor-dispatch/999999/manual").status_code == 404
+    # 휴대폰이 빈 목록을 보고하면(앱 재시작 직후 등) 모두 '새 알림 필요'
+    TestClient(app).post("/api/replies/ready", headers=KEY, json={"device_id": DEVICE, "rooms": []})
+    assert states()[1] == {ok_room: "waiting", wait_room: "waiting"}

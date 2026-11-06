@@ -1054,3 +1054,12 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .fa-conf { margin-left: auto; flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .fa-card .cp-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .fa-card.fa-skip { opacity: .75; }
+
+/* 업체 톡방 답장 가능 여부 · 처리 요청 대기 동작 */
+.kpi-row.kpi-five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .kpi-row.kpi-five { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .kpi-row.kpi-five { grid-template-columns: minmax(0, 1fr); } }
+.ready-badge { margin-top: 0; cursor: help; }
+.dispatch-actions { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.dispatch-ready, .cp-dispatch { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.cp-dispatch .cp-reply { margin: 0; }

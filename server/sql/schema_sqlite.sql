@@ -219,3 +219,10 @@ CREATE TABLE IF NOT EXISTS classification_examples (
   note         TEXT    NOT NULL DEFAULT '',
   created_at   TEXT    NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS reply_ready (
+  device_id  TEXT NOT NULL,
+  room_name  TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, room_name)
+);

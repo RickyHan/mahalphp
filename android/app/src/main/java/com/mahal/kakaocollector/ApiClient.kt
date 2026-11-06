@@ -5,6 +5,7 @@ import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -78,6 +79,20 @@ class ApiClient(private val settings: AppSettings) {
             }
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /** 지금 카톡 답장을 보낼 수 있는 방 목록 보고 (성공 여부) */
+    fun reportReadyRooms(rooms: Collection<String>): Boolean {
+        val json = org.json.JSONObject()
+            .put("device_id", settings.deviceId)
+            .put("rooms", org.json.JSONArray(rooms.take(2000)))
+        val body = json.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+        val request = Request.Builder().url("${settings.serverUrl}/api/replies/ready").header("X-Api-Key", settings.apiKey).post(body).build()
+        return try {
+            client.newCall(request).execute().use { it.isSuccessful }
+        } catch (e: Exception) {
+            false
         }
     }
 

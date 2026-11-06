@@ -273,3 +273,10 @@ CREATE TABLE IF NOT EXISTS `classification_examples` (
   `created_at`   DATETIME(3)     NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='관리자가 바로잡은 민원 판정 사례 (Gemini 지시문에 함께 보냄)';
+
+CREATE TABLE IF NOT EXISTS `reply_ready` (
+  `device_id`  VARCHAR(64)  NOT NULL,
+  `room_name`  VARCHAR(255) NOT NULL COMMENT '공백 정리한 방 이름',
+  `updated_at` DATETIME(3)  NOT NULL,
+  PRIMARY KEY (`device_id`, `room_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='휴대폰이 지금 카톡 답장을 보낼 수 있는 방 (앱이 30초~5분마다 보고)';

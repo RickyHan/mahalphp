@@ -720,6 +720,60 @@ def enqueue_faq_answers(cur, conf: dict[str, str], matches: list[cp.FaqMatch], b
     return handled
 
 
+# ---- 답장 가능한 방 (앱 보고: 카톡 답장 수단은 앱 메모리에만 있어 재시작하면 사라짐) ----------------------
+
+READY_FRESH = timedelta(minutes=10)  # 이 시간 안에 보고한 휴대폰만 믿는다
+
+
+def room_key_name(name: str | None) -> str:
+    """앱의 RoomFilter.normalize 와 같은 규칙: 앞뒤 공백 제거 · 연속 공백 하나로"""
+    return " ".join((name or "").split())
+
+
+def save_ready_rooms(cur, device_id: str, rooms: list[str], at: datetime) -> tuple[int, bool]:
+    """(방 수, 이전 보고와 달라졌는지)"""
+    names = sorted({room_key_name(r)[:255] for r in rooms if room_key_name(r)})
+    cur.execute("SELECT room_name FROM reply_ready WHERE device_id = %s", (device_id,))
+    changed = {r["room_name"] for r in cur.fetchall()} != set(names)
+    cur.execute("DELETE FROM reply_ready WHERE device_id = %s", (device_id,))
+    for name in names:
+        cur.execute("INSERT INTO reply_ready (device_id, room_name, updated_at) VALUES (%s, %s, %s)", (device_id, name, at))
+    key = f"reply_ready_at:{device_id}"[:64]
+    cur.execute("DELETE FROM app_settings WHERE name = %s", (key,))
+    cur.execute("INSERT INTO app_settings (name, value) VALUES (%s, %s)", (key, at.isoformat(timespec="seconds")))
+    return len(names), changed
+
+
+def reply_readiness(cur, now: datetime) -> dict[str, Any]:
+    """최근(READY_FRESH) 보고한 휴대폰들 기준으로 답장 가능한 방.
+    {"checked": 보고한 휴대폰이 있는지, "reported_at": 가장 최근 보고 시각, "rooms": 답장 가능한 방(정리한 이름) 집합}"""
+    cur.execute("SELECT name, value FROM app_settings WHERE name LIKE %s ESCAPE '!'", (db.like("reply_ready_at:"),))
+    fresh, latest = [], None
+    for r in cur.fetchall():
+        try:
+            at = datetime.fromisoformat(r["value"])
+        except (TypeError, ValueError):
+            continue
+        latest = at if latest is None or at > latest else latest
+        if now - at <= READY_FRESH:
+            fresh.append(r["name"].split(":", 1)[1])
+    rooms: set[str] = set()
+    if fresh:
+        marks = ", ".join(["%s"] * len(fresh))
+        cur.execute(f"SELECT room_name FROM reply_ready WHERE device_id IN ({marks})", fresh)
+        rooms = {r["room_name"] for r in cur.fetchall()}
+    return {"checked": bool(fresh), "reported_at": latest.isoformat(timespec="seconds") if latest else None, "rooms": rooms}
+
+
+def ready_state(readiness: dict[str, Any], room: str | None) -> str | None:
+    """'ready' 보낼 수 있음 · 'waiting' 그 톡방에 새 알림 필요 · 'unknown' 휴대폰 보고 없음 · None 톡방 없음"""
+    if not room:
+        return None
+    if not readiness["checked"]:
+        return "unknown"
+    return "ready" if room_key_name(room) in readiness["rooms"] else "waiting"
+
+
 # ---- 휴대폰 동기화 ('지금 동기화' 요청 · 휴대폰 마지막 연락) --------------------------------------------
 
 def touch_device(cur, device_id: str, at: datetime) -> None:

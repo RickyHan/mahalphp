@@ -859,8 +859,73 @@
   loadSync().catch(() => {});
   setInterval(() => loadSync().catch(() => {}), 60000);
 
+  // 클립보드 복사: http 주소(보안 연결 아님)에서는 navigator.clipboard 가 없어 예전 방식으로 대신한다
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* 아래 방식으로 */
+    }
+    const area = el("textarea", { readonly: "", "aria-hidden": "true" });
+    area.value = text;
+    area.style.cssText = "position:fixed;top:-1000px;left:0;opacity:0";
+    document.body.append(area);
+    area.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch {
+      ok = false;
+    }
+    area.remove();
+    if (!ok) window.prompt("자동 복사가 막혀 있습니다. 아래 문구를 복사하십시오 (Ctrl+C).", text);
+    return ok;
+  }
+
+  // 업체 톡방 처리 요청 대기: 문구 복사 · 직접 보냄 처리 버튼 (민원 대시보드·업체 화면 공용)
+  const READY_LABEL = { ready: ["보낼 수 있음", "ok"], waiting: ["새 알림 필요", "wait"], unknown: ["휴대폰 확인 안 됨", "bad"] };
+  function readyBadge(state) {
+    const [label, tone] = READY_LABEL[state] || [];
+    if (!label) return null;
+    const title = {
+      ready: "휴대폰이 이 톡방에 카톡 답장을 보낼 수 있습니다.",
+      waiting: "휴대폰에 이 톡방의 답장 수단이 없습니다(앱 재시작 뒤 등). 이 톡방에 새 글이 한 번 오거나, 문구를 복사해 직접 보내십시오.",
+      unknown: "최근 10분 안에 휴대폰 보고가 없습니다(앱 꺼짐·구버전).",
+    }[state];
+    return el("span", { class: `status-badge ${tone} ready-badge`, title, text: label });
+  }
+  function dispatchActions(d, after) {
+    const copy = el("button", { class: "btn btn-small", type: "button", text: "문구 복사" });
+    copy.addEventListener("click", async () => {
+      if (await copyText(d.text || "")) {
+        copy.textContent = "복사됨 ✓";
+        setTimeout(() => (copy.textContent = "문구 복사"), 1500);
+      }
+    });
+    const manual = el("button", {
+      class: "btn btn-small",
+      type: "button",
+      text: "직접 보냄 처리",
+      title: "복사한 문구를 업체 톡방에 직접 보냈으면 눌러 주십시오. 휴대폰이 나중에 또 보내지 않습니다.",
+      onclick: async () => {
+        if (!confirm("업체 톡방에 직접 보냈습니까? 보냄으로 처리하면 휴대폰이 이 요청을 다시 보내지 않습니다.")) return;
+        try {
+          await postJson(`/api/admin/vendor-dispatch/${d.id}/manual`, {});
+          after?.();
+        } catch (err) {
+          reportError(err);
+        }
+      },
+    });
+    return el("div", { class: "dispatch-actions" }, copy, manual);
+  }
+
   // admin-ops.js 에서 쓰는 공용 함수
   window.KC = Object.assign(window.KC || {}, {
+    copyText, readyBadge, dispatchActions,
     api, el, postJson, reportError, fmtDateTime, openRoom: (room, id) => openRoom(room, id).catch(reportError),
     refreshAfterDelete, deleteRoom, roomChip, searchable,
     currentRoom: () => state.room, currentTab: () => state.tab,

@@ -306,14 +306,17 @@ def complaint_groups(settings: SettingsDep, category: str | None = None) -> dict
     if firsts:
         with db.transaction(settings) as conn, conn.cursor() as cur:
             cur.execute(
-                f"""SELECT message_id, vendor_name, room_name, status, note FROM reply_queue
+                f"""SELECT id, message_id, vendor_name, room_name, status, note, text FROM reply_queue
                     WHERE kind = 'vendor' AND message_id IN ({', '.join(['%s'] * len(firsts))}) ORDER BY id""",
                 firsts,
             )
-            for r in cur.fetchall():
-                sent_by_message.setdefault(r["message_id"], []).append(
-                    {"vendor": r["vendor_name"], "room": r["room_name"], "status": r["status"], "note": r["note"]}
-                )
+            rows_q = cur.fetchall()
+            readiness = store.reply_readiness(cur, store.now_local(settings))
+            for r in rows_q:
+                sent_by_message.setdefault(r["message_id"], []).append({
+                    "id": r["id"], "vendor": r["vendor_name"], "room": r["room_name"], "status": r["status"], "note": r["note"],
+                    "text": r["text"], "ready": store.ready_state(readiness, r["room_name"]) if r["status"] == "pending" else None,
+                })
     for g in groups:
         g["vendor_dispatch"] = sent_by_message.get(g["ids"][0], [])
     return {

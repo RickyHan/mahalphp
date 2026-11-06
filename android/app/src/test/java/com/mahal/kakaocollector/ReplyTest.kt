@@ -44,6 +44,24 @@ class ReplyTest {
     }
 
     @Test
+    fun readyRoomsListsOnlyRoomsThatCanReplyToChat() {
+        assertEquals(emptySet<String>(), ReplyRegistry.readyRooms())          // 앱 재시작 직후: 보낼 수 있는 방 없음
+        ReplyRegistry.remember(" ●바른CCTV  업무방 ", kakaoNotification("CHAT"), identity = "1|")
+        ReplyRegistry.remember("댓글만온방", kakaoNotification("THREAD"), identity = "5|", thread = true)
+        assertEquals(setOf("●바른CCTV 업무방"), ReplyRegistry.readyRooms())  // 공백 정리, 댓글만 온 방은 제외
+    }
+
+    @Test
+    fun readyRoomsAreReportedOnChangeOrEveryFiveMinutes() {
+        val rooms = setOf("●A")
+        assertEquals(true, ReplyRelay.shouldReport(rooms, null, 0, 1_000))                       // 처음
+        assertEquals(false, ReplyRelay.shouldReport(rooms, rooms, 1_000, 61_000))                // 같고 1분 지남
+        assertEquals(true, ReplyRelay.shouldReport(setOf("●A", "●B"), rooms, 1_000, 2_000))      // 바뀜
+        assertEquals(true, ReplyRelay.shouldReport(rooms, rooms, 1_000, 1_000 + ReplyRelay.READY_REPORT_MS)) // 5분
+        assertEquals(true, ReplyRelay.shouldReport(rooms, rooms, 10_000, 5_000))                 // 시계가 뒤로 감
+    }
+
+    @Test
     fun noReplyActionForUnknownRoom() {
         assertEquals(ReplyRegistry.Result.NoAction, ReplyRegistry.send(app, "모르는 방", "x"))
         val plain = Notification.Builder(app, "chat").setContentTitle("a").build()

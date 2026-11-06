@@ -65,7 +65,15 @@
         el("p", { class: "cp-meta", text: `${g.room_name} · ${g.sender_name} · ${span(g.start_at, g.end_at)}` }),
         replyLabel(g.reply_status, g.reply_note) ? el("p", { class: "cp-reply", text: replyLabel(g.reply_status, g.reply_note) }) : null,
         ...(g.vendor_dispatch || []).map((m) =>
-          el("p", { class: "cp-reply", text: `🏢 ${m.vendor} 톡방(${m.room}) 처리 요청: ${DISPATCH_LABEL[m.status] || m.status}${m.status !== "sent" && m.status !== "pending" && m.note ? ` — ${m.note}` : ""}` }),
+          m.status === "pending"
+            ? el(
+                "div",
+                { class: "cp-dispatch" },
+                el("p", { class: "cp-reply", text: `🏢 ${m.vendor} 톡방(${m.room}) 처리 요청: ${m.ready === "ready" ? "⏳ 곧 전송" : "⏳ 대기"}` }),
+                KC.readyBadge(m.ready),
+                KC.dispatchActions(m, () => loadComplaints().catch(reportError)),
+              )
+            : el("p", { class: "cp-reply", text: `🏢 ${m.vendor} 톡방(${m.room}) 처리 요청: ${DISPATCH_LABEL[m.status] || m.status}${m.status !== "sent" && m.status !== "pending" && m.note ? ` — ${m.note}` : ""}` }),
         ),
         el(
           "div",

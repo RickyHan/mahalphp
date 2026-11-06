@@ -50,6 +50,9 @@ object ReplyRegistry {
 
     fun canReply(room: String) = pick(room) != null
 
+    /** 지금 채팅방으로 답장을 보낼 수 있는 방 (공백 정리한 이름). 서버에 보고해 관리자 화면에 '새 알림 필요'를 표시한다 */
+    fun readyRooms(): Set<String> = actions.filterValues { perRoom -> perRoom.values.any { !it.thread } }.keys.toSortedSet()
+
     fun replyAction(notification: Notification): Notification.Action? =
         notification.actions?.firstOrNull { a -> a.remoteInputs?.any { it.allowFreeFormInput } == true }
 

@@ -9,6 +9,14 @@ import android.content.Context
 object ReplyRelay {
     private val lock = Any()
 
+    /** 답장 가능한 방 보고: 바뀌었을 때 바로, 아니어도 5분마다 (서버는 10분 넘은 보고를 믿지 않음) */
+    internal const val READY_REPORT_MS = 5 * 60_000L
+    private var lastReady: Set<String>? = null
+    private var lastReadyAt = 0L
+
+    internal fun shouldReport(rooms: Set<String>, last: Set<String>?, lastAt: Long, now: Long): Boolean =
+        rooms != last || now - lastAt >= READY_REPORT_MS || now < lastAt
+
     /** 한 번 확인·전송. 반환값: 보낸 건수 (서버 연결 실패면 -1) */
     fun relayOnce(context: Context): Int = synchronized(lock) {
         val settings = AppSettings(context)
@@ -19,6 +27,12 @@ object ReplyRelay {
         if (pending.syncRequestedAt > settings.lastSyncHandled) {
             settings.lastSyncHandled = pending.syncRequestedAt
             UploadWorker.enqueue(context)
+        }
+        val ready = ReplyRegistry.readyRooms()
+        val now = System.currentTimeMillis()
+        if (shouldReport(ready, lastReady, lastReadyAt, now) && api.reportReadyRooms(ready)) {
+            lastReady = ready
+            lastReadyAt = now
         }
         val replies = pending.replies
         var sent = 0

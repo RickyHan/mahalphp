@@ -35,7 +35,7 @@
       api("/api/admin/vendors"), api("/api/admin/vendor-dispatch", { limit: 50 }), api("/api/admin/vendors/unlinked-rooms"), loadRooms(), loadCategories(),
     ]);
     state.items = data.items;
-    renderKpis(data.synced_at);
+    renderKpis(data.synced_at, data.reply_check);
     render();
     renderDispatch(dispatch);
     renderUnlinked(unlinked);
@@ -128,7 +128,8 @@
             el("div", { class: "dispatch-title" }, el("strong", { text: d.vendor_name || "-" }), el("span", { class: "muted", text: " → " }), KC.roomChip(d.vendor_room)),
             el("div", { class: "muted small", text: `민원: ${d.complaint_room || "-"}${d.category ? ` · ${d.category}` : ""} · ${fmtDateTime(d.done_at || d.created_at).slice(0, 16)}` }),
             d.note && d.status !== "sent" ? el("div", { class: `small ${tone === "bad" ? "note-bad" : "muted"}`, text: d.note }) : null,
-            el("details", {}, el("summary", { text: "보낸 문구" }), el("pre", { class: "dispatch-text", text: d.text })),
+            el("details", {}, el("summary", { text: d.status === "pending" ? "보낼 문구" : "보낸 문구" }), el("pre", { class: "dispatch-text", text: d.text })),
+            d.status === "pending" ? el("div", { class: "dispatch-ready" }, KC.readyBadge(d.reply_ready), KC.dispatchActions(d, loadVendors)) : null,
           ),
           retry,
         ),
@@ -150,8 +151,10 @@
     );
   }
 
-  function renderKpis(syncedAt) {
+  function renderKpis(syncedAt, check) {
     const total = state.items.length;
+    const linked = state.items.filter((v) => v.room_name);
+    const ready = linked.filter((v) => v.reply_ready === "ready").length;
     const withRoom = state.items.filter((v) => v.room_name).length;
     const withCat = state.items.filter((v) => (v.category_ids || []).length).length;
     $("vd-kpis").replaceChildren(
@@ -159,6 +162,9 @@
       kpi("chat", "green", "처리 요청 톡방 연결", withRoom, `/ ${total}`),
       kpi("category", withCat < total ? "rose" : "indigo", "담당 카테고리 지정", withCat, `/ ${total}`),
       kpi("sync", "slate", "마지막 수집", syncedAt ? fmtDateTime(syncedAt).slice(5, 16) : "–", ""),
+      check?.checked
+        ? kpi("send", ready < linked.length ? "rose" : "green", "지금 바로 보낼 수 있는 톡방", ready, `/ ${linked.length}`)
+        : kpi("send", "slate", "지금 바로 보낼 수 있는 톡방", "–", check?.reported_at ? `휴대폰 보고 ${fmtDateTime(check.reported_at).slice(5, 16)}` : "휴대폰 보고 없음"),
     );
   }
 
@@ -207,6 +213,7 @@
           "div",
           { class: "vd-room-cell" },
           v.room_name ? KC.roomChip(v.room_name, v.messages > 0) : el("span", { class: "warn-text", text: "미지정 — 요청 못 보냄" }),
+          v.room_name ? KC.readyBadge(v.reply_ready) : null,
           el("button", { class: "link-btn", type: "button", text: v.room_name ? "변경" : "톡방 설정", onclick: () => openRoomPicker(v, roomCell, showRoom) }),
         ),
       );

@@ -25,6 +25,7 @@ from typing import Annotated, Any
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from . import admin, apartments, categories, datamgmt, db, examples, faq, live, media, schedules, store, vendors, worker
 from .auth import SettingsDep, get_settings, require_api_key, require_reader  # noqa: F401 (get_settings: 테스트에서 사용)
@@ -190,6 +191,21 @@ def replies_pending(settings: SettingsDep, device_id: Annotated[str, Query(min_l
         store.touch_device(cur, device_id, store.now_local(settings))
         sync_at = store.sync_requested_at(cur)
     return {"ok": True, "items": items, "sync_requested_at": sync_at}
+
+
+class ReadyRooms(BaseModel):
+    device_id: str = Field(min_length=1, max_length=64)
+    rooms: list[Annotated[str, Field(max_length=300)]] = Field(default_factory=list, max_length=2000)
+
+
+@app.post("/api/replies/ready", dependencies=[Authorized])
+def replies_ready(body: ReadyRooms, settings: SettingsDep) -> dict[str, Any]:
+    """휴대폰이 지금 카톡 답장을 보낼 수 있는 방 목록 (앱 재시작 뒤 끊긴 업체 톡방을 관리자 화면에 표시)"""
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        n, changed = store.save_ready_rooms(cur, body.device_id, body.rooms, store.now_local(settings))
+    if changed:
+        live.bump("vendor")
+    return {"ok": True, "rooms": n}
 
 
 @app.post("/api/replies/{reply_id}/result", dependencies=[Authorized])
