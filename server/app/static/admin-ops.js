@@ -123,6 +123,63 @@
     await loadExamples();
   }
 
+  // ---- FAQ 답변 (민원 대시보드의 'FAQ 답변' 보기) -------------------------------------------------
+
+  let cpMode = "complaint";
+  const FAQ_STATUS = { sent: "✅ 답변 보냄", pending: "⏳ 휴대폰 전송 대기", failed: "⚠️ 전송 실패", expired: "⚠️ 만료(앱이 가져가지 않음)" };
+
+  function setMode(mode) {
+    cpMode = mode;
+    for (const b of document.querySelectorAll("#cp-mode button")) {
+      const on = b.dataset.mode === mode;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    const faq = mode === "faq";
+    for (const id of ["cp-category", "cp-classify", "cp-retry", "cp-list", "ex-panel"]) $(id).hidden = faq;
+    for (const id of ["fa-category", "fa-list"]) $(id).hidden = !faq;
+    return loadDashboard();
+  }
+
+  const loadDashboard = () => (cpMode === "faq" ? loadFaqAnswers() : Promise.all([loadComplaints(), loadExamples()]));
+
+  async function loadFaqAnswers() {
+    const room = $("cp-room-only").checked && KC.currentRoom();
+    const data = await api("/api/admin/faq/history", { limit: 300, category: $("fa-category").value, room: room || "" });
+    const sel = $("fa-category");
+    const keep = sel.value;
+    sel.replaceChildren(el("option", { value: "", text: "전체 분야" }), ...data.categories.map((c) => el("option", { value: c, text: c })));
+    sel.value = data.categories.includes(keep) ? keep : "";
+    const c = data.counts;
+    $("cp-status").textContent = `FAQ 답변 기록 ${c.total}건 · 보냄 ${c.sent} · 전송 대기 ${c.pending} · 보내지 않음 ${c.skipped}${room ? ` · '${room}' 방만` : ""}`;
+    const list = $("fa-list");
+    list.replaceChildren();
+    if (!data.items.length) list.append(el("li", { class: "empty-row", text: "FAQ 자동 답변 기록이 없습니다." }));
+    for (const h of data.items) {
+      const status = h.status ? FAQ_STATUS[h.status] || h.status : `⏸ 보내지 않음${h.note ? ` — ${h.note}` : ""}`;
+      list.append(
+        el(
+          "li",
+          { class: `cp-card fa-card${h.status ? "" : " fa-skip"}` },
+          el(
+            "div",
+            { class: "cp-head" },
+            el("span", { class: "chip-cat", text: h.category || "FAQ" }),
+            el("strong", { class: "cp-summary", text: h.question }),
+            el("span", { class: `fa-kind${h.report ? " report" : ""}`, text: h.report ? "민원도 접수" : "답변만" }),
+            el("span", { class: "fa-conf", title: "Gemini 확신도", text: `${Math.round((h.confidence || 0) * 100)}%` }),
+          ),
+          el("p", { class: "cp-text", text: h.message_text || "(삭제된 메시지)" }),
+          el("p", { class: "cp-meta", text: `${h.room_name} · ${h.sender_name || "-"} · ${fmtDateTime(h.posted_at || h.created_at).slice(0, 16)}` }),
+          el("p", { class: "cp-reply", text: status }),
+          h.message_id
+            ? el("div", { class: "cp-actions" }, el("button", { class: "btn btn-small", type: "button", text: "대화에서 보기", onclick: () => KC.openRoom(h.room_name, h.message_id) }))
+            : null,
+        ),
+      );
+    }
+  }
+
   async function toggleGroup(button, detail, g) {
     const open = detail.hidden;
     detail.hidden = !open;
@@ -249,13 +306,13 @@
 
   // 탭별 화면 읽기. admin-vendors.js 가 여기에 'vendors' 를 추가한다.
   const LOADERS = (KC.loaders = Object.assign(KC.loaders || {}, {
-    complaints: () => Promise.all([loadComplaints(), loadExamples()]),
+    complaints: () => loadDashboard(),
     members: loadMembers,
     settings: loadSettings,
   }));
   // 실시간 신호가 왔을 때 다시 읽을 탭
   const LIVE_TOPICS = {
-    complaints: ["message", "complaint", "category", "delete", "vendor"],
+    complaints: ["message", "complaint", "category", "delete", "vendor", "faq"],
     stats: ["complaint", "category", "delete", "vendor"],
     members: ["message", "delete"],
     vendors: ["vendor", "category", "complaint"],
@@ -280,7 +337,9 @@
   };
 
   $("cp-category").addEventListener("change", () => loadComplaints().catch(reportError));
-  $("cp-room-only").addEventListener("change", () => loadComplaints().catch(reportError));
+  $("cp-room-only").addEventListener("change", () => loadDashboard().catch(reportError));
+  $("fa-category").addEventListener("change", () => loadFaqAnswers().catch(reportError));
+  for (const b of document.querySelectorAll("#cp-mode button")) b.addEventListener("click", () => setMode(b.dataset.mode).catch(reportError));
   $("cp-classify").addEventListener("click", () => send("POST", "/api/admin/classify").then(() => setTimeout(() => loadComplaints().catch(reportError), 3000)).catch(reportError));
   $("cp-retry").addEventListener("click", () =>
     send("POST", "/api/admin/classify?retry_failed=true").then(() => setTimeout(() => loadComplaints().catch(reportError), 3000)).catch(reportError),

@@ -216,6 +216,7 @@ CREATE TABLE IF NOT EXISTS `faq_items` (
   `sort_order` INT             NOT NULL DEFAULT 0,
   `created_at` DATETIME(3)     NOT NULL,
   `updated_at` DATETIME(3)     NOT NULL,
+  `report`     TINYINT(1)      NOT NULL DEFAULT 1 COMMENT '신고형: 민원도 함께 접수',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='FAQ';
 

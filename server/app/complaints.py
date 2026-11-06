@@ -113,6 +113,11 @@ def build_prompt(categories: list[tuple[str, str]] | None = None, examples: list
     (예: "배관 구조와 역류 원인, 향후 대책을 직접 설명 듣고 싶다. 미팅 시간 알려주면 참석하겠다")
   - 입주민끼리 서로에게 하는 요청·지적·부탁·다툼 — 특정 세대·호수·사람을 불러 규칙을 지켜 달라는 말 등
     (예: "203호님 차량 2대 주차하셨는데 1대만 해 주세요, 1대 주차 원칙입니다", "윗집 소리 좀 줄여 주세요")
+  - 방법·절차·가능 여부·위치·기간·비용을 묻는 문의 — 관리 측이나 다른 입주민에게 묻는 질문 모두 (FAQ 답변 대상)
+    (예: "CCTV 확인하는 법 아시는 분?", "어제 누가 도어락을 계속 눌렀는데 출입한 사람 확인이 가능한지 궁금합니다",
+     "녹화 기간이 얼마나 되나요", "관리비 자동이체 어떻게 하나요")
+    지난 일을 배경으로 설명하더라도 결국 묻는 것이 방법·가능 여부면 문의다.
+    단, 시설이 지금 고장·불량이라 고쳐 달라고 하면 민원 (예: "CCTV 화면이 안 나와요 확인 부탁드립니다")
   - 다른 사람 말에 대한 맞장구·반박, 법적 문제 제기, 정보 공유
   - 인사·잡담·감사, 관리사무소·관리자(동대표 등)의 공지나 답변, 광고·홍보, 개인 간 거래, 건물과 무관한 내용
 애매하면 민원이 아닌 것으로 판정한다.
@@ -255,7 +260,7 @@ class GeminiClient:
 
     def match_faq(self, items: list[Item], faqs: list[tuple[int, str, str]]) -> list["FaqMatch"]:
         body = self._post(faq_request_body(items, faqs))
-        return parse_faq_response(body, {i.id for i in items}, {f[0] for f in faqs})
+        return parse_faq_response(body, {i.id for i in items}, {f[0] for f in faqs}, min_confidence=0.0)
 
 
 # ---- FAQ 자동 답변: 메시지가 어느 FAQ 질문과 같은 의도인지 ---------------------------------------
@@ -278,8 +283,13 @@ def build_faq_prompt(faqs: list[tuple[int, str, str]]) -> str:
 
 같은 의도로 본다: 그 FAQ 질문이 다루는 상황을 입주민이 겪고 있거나(예: "엘리베이터가 멈췄어요" → 승강기 고장),
   그 내용을 묻거나 요청하는 메시지. 표현이 달라도 의도가 같으면 해당한다.
+  - 사건·사정 설명과 질문이 섞여 있어도, 묻는 핵심(질문 부분)이 FAQ 질문과 같으면 해당한다.
+    예) "어제 누가 저희 집 도어락을 계속 눌렀어요. CCTV 확인하는 법 아시는 분? 출입인원 확인 가능한지 궁금합니다" → CCTV 열람 방법
+  - 관리 측이 아니라 다른 입주민에게 묻는 형태("아시는 분 계신가요?")여도 해당한다.
+  - 같은 분야의 FAQ 가 여러 개면 묻는 내용에 가장 가까운 하나를 고른다(예: 볼 수 있는지·보는 방법 → 열람 방법, 고장 → 불량).
 해당 없음(null): 인사·잡담·감사, 관리회사·관리자의 공지나 답변, 이미 처리됐다는 보고, 다른 사람 말에 대한 단순 맞장구,
-  FAQ 와 주제만 비슷하고 묻는 내용이 다른 경우, 여러 FAQ 중 어느 것인지 애매한 경우. 애매하면 null 로 한다.
+  FAQ 와 주제만 비슷하고 묻는 내용이 전혀 다른 경우.
+confidence: 묻는 핵심이 FAQ 와 분명히 같으면 0.8 이상, 같은 쪽으로 보이지만 확실하지 않으면 0.5~0.7.
 
 FAQ 목록 (번호. [분야] 질문):
 {guide}
@@ -297,8 +307,10 @@ def faq_request_body(items: list[Item], faqs: list[tuple[int, str, str]]) -> dic
     }
 
 
-def parse_faq_response(body: dict[str, Any], requested: set[int], faq_ids: set[int]) -> list[FaqMatch]:
-    """확실한(FAQ_MIN_CONFIDENCE 이상) 짝만 돌려준다"""
+def parse_faq_response(
+    body: dict[str, Any], requested: set[int], faq_ids: set[int], min_confidence: float = FAQ_MIN_CONFIDENCE
+) -> list[FaqMatch]:
+    """min_confidence 이상인 짝만 돌려준다 (분류 주기에서는 0 으로 받아 낮은 것도 '보내지 않음'으로 기록)"""
     try:
         parts = body["candidates"][0]["content"]["parts"]
         results = json.loads("".join(p.get("text", "") for p in parts))["results"]
@@ -314,7 +326,7 @@ def parse_faq_response(body: dict[str, Any], requested: set[int], faq_ids: set[i
             confidence = min(1.0, max(0.0, float(r.get("confidence", 0))))
         except (TypeError, ValueError):
             continue
-        if rid in requested and rid not in seen and fid in faq_ids and confidence >= FAQ_MIN_CONFIDENCE:
+        if rid in requested and rid not in seen and fid in faq_ids and confidence >= min_confidence:
             seen[rid] = FaqMatch(rid, fid, confidence)
     return list(seen.values())
 

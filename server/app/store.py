@@ -577,14 +577,23 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
         missing = set(by_id) - {v.id for v in verdicts}
         if missing:
             mark_failed(cur, sorted(missing), "응답에 결과 없음", now)
-        answered = enqueue_faq_answers(cur, conf, matches, by_id, now)
+        handled = enqueue_faq_answers(cur, conf, matches, by_id, now)
         for v in sorted((v for v in verdicts if v.is_complaint), key=lambda v: v.id):
-            complaints += 1
             msg = by_id[v.id]
+            faq = handled.get(v.id)
+            if faq and not faq["report"]:
+                # 문의형 FAQ(방법·절차 문의): FAQ 답변으로 끝. 민원 접수·접수 안내·업체 처리 요청 없음
+                note = "FAQ 문의 — 답변으로 처리" if faq["sent"] else "FAQ 문의 — 같은 답변을 최근에 보내 생략"
+                cur.execute("UPDATE complaint_check SET verdict = 0, reply_note = %s WHERE message_id = %s", (note, v.id))
+                continue
+            complaints += 1
             fresh = now - to_dt(msg["posted_at"]) <= cp.REPLY_MAX_AGE
             new_issue = fresh and is_new_issue(cur, v.id, group_window(conf))
-            if v.id in answered:
-                set_reply_status(cur, v.id, 4, "FAQ 답변 전송 대기")  # FAQ 답변이 접수 안내를 대신함
+            if faq:  # 신고형 FAQ: FAQ 답변이 접수 안내를 대신함 (같은 답변을 최근에 보내 생략했으면 안내도 보내지 않음)
+                if faq["sent"]:
+                    set_reply_status(cur, v.id, 4, "FAQ 답변 전송 대기")
+                else:
+                    set_reply_status(cur, v.id, 2, "같은 FAQ 답변을 최근에 보내 안내 생략")
             elif conf["auto_reply_enabled"] == "1":
                 if not fresh:
                     set_reply_status(cur, v.id, 3, "30분 지난 메시지라 안내 생략")
@@ -598,7 +607,7 @@ def classify_once(settings: Settings, client: cp.GeminiClient | None = None) -> 
             # 2) 이 카테고리를 맡은 업체의 카톡방에 처리 요청 (접수 안내 뒤 순서로, 같은 문제 반복·오래된 메시지 제외)
             if conf["vendor_enabled"] == "1" and new_issue:
                 vendor_count += enqueue_vendor_messages(cur, conf, v, msg, now)
-    result = {"done": len(items), "complaints": complaints, "vendor": vendor_count, "faq": len(answered)}
+    result = {"done": len(items), "complaints": complaints, "vendor": vendor_count, "faq": sum(1 for h in handled.values() if h["sent"])}
     if faq_error:
         result["faq_error"] = faq_error
     return result
@@ -669,38 +678,46 @@ def faq_matches(settings: Settings, client, conf: dict[str, str], items: list[cp
         return [], str(exc)
 
 
-def enqueue_faq_answers(cur, conf: dict[str, str], matches: list[cp.FaqMatch], by_id: dict[int, Any], now: datetime) -> set[int]:
-    """짝이 맞은 메시지에 FAQ 답변을 대기열에 넣는다. 같은 방에 같은 FAQ 를 묶음 시간 안에 이미 보냈으면 생략."""
-    answered: set[int] = set()
+def enqueue_faq_answers(cur, conf: dict[str, str], matches: list[cp.FaqMatch], by_id: dict[int, Any], now: datetime) -> dict[int, dict[str, bool]]:
+    """짝이 맞은 메시지에 FAQ 답변을 대기열에 넣는다.
+    - 확신도가 cp.FAQ_MIN_CONFIDENCE 미만이면 보내지 않고 이력에만 남긴다(왜 안 나갔는지 확인용).
+    - 같은 방에 같은 FAQ 를 묶음 시간 안에 이미 보냈으면 생략.
+    돌려주는 값: 확실히 짝이 맞은 메시지 → {"sent": 이번에 보냄, "report": 신고형 FAQ(민원도 접수)}"""
+    handled: dict[int, dict[str, bool]] = {}
     if not matches:
-        return answered
-    cur.execute("SELECT id, question, answer, enabled FROM faq_items")
+        return handled
+    cur.execute("SELECT id, question, answer, enabled, report FROM faq_items")
     faqs = {r["id"]: r for r in cur.fetchall()}
     window = group_window(conf)
+    sent_any = False
     for m in sorted(matches, key=lambda m: m.id):
         faq, msg = faqs.get(m.faq_id), by_id[m.id]
         if not faq or not faq["enabled"]:
             continue
-        cur.execute(
-            "SELECT id FROM faq_answers WHERE room_name = %s AND faq_id = %s AND reply_id IS NOT NULL AND created_at >= %s",
-            (msg["room_name"], m.faq_id, now - window),
-        )
         reply_id, note = None, None
-        if cur.fetchone():
-            note = "같은 방에 같은 답변을 최근에 보내 생략"
+        if m.confidence < cp.FAQ_MIN_CONFIDENCE:
+            note = f"확신도 낮아 보내지 않음 ({m.confidence:.2f} < {cp.FAQ_MIN_CONFIDENCE:.2f})"
         else:
-            reply_id = enqueue_reply(cur, m.id, msg["device_id"], msg["room_name"], faq["answer"], now, kind="faq")
-            answered.add(m.id)
+            cur.execute(
+                "SELECT id FROM faq_answers WHERE room_name = %s AND faq_id = %s AND reply_id IS NOT NULL AND created_at >= %s",
+                (msg["room_name"], m.faq_id, now - window),
+            )
+            if cur.fetchone():
+                note = "같은 방에 같은 답변을 최근에 보내 생략"
+            else:
+                reply_id = enqueue_reply(cur, m.id, msg["device_id"], msg["room_name"], faq["answer"], now, kind="faq")
+                sent_any = True
+            handled[m.id] = {"sent": reply_id is not None, "report": bool(faq["report"])}
         cur.execute(
             """INSERT INTO faq_answers (message_id, faq_id, question, room_name, reply_id, confidence, note, created_at)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (m.id, m.faq_id, faq["question"][:500], msg["room_name"], reply_id, round(m.confidence, 3), note, now),
         )
-    if answered:
+    if sent_any:
         from . import live
 
         live.bump("faq")
-    return answered
+    return handled
 
 
 # ---- 휴대폰 동기화 ('지금 동기화' 요청 · 휴대폰 마지막 연락) --------------------------------------------

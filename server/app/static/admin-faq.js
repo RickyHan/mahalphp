@@ -86,7 +86,7 @@
     toggle.checked = i.enabled;
     toggle.addEventListener("change", async () => {
       try {
-        await send("PUT", `/api/admin/faq/${i.id}`, { category: i.category, question: i.question, answer: i.answer, enabled: toggle.checked });
+        await send("PUT", `/api/admin/faq/${i.id}`, { category: i.category, question: i.question, answer: i.answer, enabled: toggle.checked, report: i.report });
         i.enabled = toggle.checked;
         tr.classList.toggle("off", !i.enabled);
       } catch (err) {
@@ -98,7 +98,11 @@
       "tr",
       { class: i.enabled ? "" : "off" },
       el("td", {}, i.category ? el("span", { class: "fq-cat", text: i.category }) : el("span", { class: "muted", text: "–" })),
-      el("td", { class: "fq-q", text: i.question }),
+      el("td", { class: "fq-q" }, i.question, el("div", {}, el("span", {
+        class: `fa-kind${i.report ? " report" : ""}`,
+        title: i.report ? "고장·불량 신고형: FAQ 답변과 함께 민원도 접수(업체 처리 요청 포함)" : "문의형: FAQ 답변만 보내고 민원으로 접수하지 않음",
+        text: i.report ? "민원도 접수" : "답변만",
+      }))),
       el("td", {}, el("div", { class: "fq-a", title: i.answer, text: i.answer })),
       el("td", { class: "num" }, el("span", { class: `count-pill${i.sent ? " has" : ""}`, text: `${i.sent}건` })),
       el("td", {}, toggle),
@@ -142,10 +146,12 @@
     answer.value = i?.answer || "";
     const enabled = el("input", { type: "checkbox", class: "switch-toggle", "aria-label": "사용" });
     enabled.checked = i ? i.enabled : true;
+    const report = el("input", { type: "checkbox", "aria-label": "민원도 접수" });
+    report.checked = i ? i.report : true;
     const save = el("button", { class: "btn btn-primary btn-small", type: "button", text: i ? "저장" : "추가" });
     const cancel = el("button", { class: "btn btn-small", type: "button", text: "취소", onclick: () => ((editing = null), render()) });
     save.addEventListener("click", async () => {
-      const body = { category: category.value, question: question.value, answer: answer.value, enabled: enabled.checked };
+      const body = { category: category.value, question: question.value, answer: answer.value, enabled: enabled.checked, report: report.checked };
       if (!body.question.trim() || !body.answer.trim()) return reportError(new Error("질문과 답변을 모두 입력하십시오."));
       save.disabled = true;
       try {
@@ -167,7 +173,14 @@
         el("label", { class: "vd-field" }, el("span", { class: "vd-cap", text: "질문 (이런 의도의 메시지에 답합니다. '/'로 여러 표현을 적을 수 있습니다)" }), question),
         el("label", { class: "vd-field fq-edit-answer" }, el("span", { class: "vd-cap", text: "보낼 답변" }), answer),
       ),
-      el("div", { class: "fq-edit-foot" }, el("label", { class: "check" }, enabled, " 사용"), cancel, save),
+      el(
+        "div",
+        { class: "fq-edit-foot" },
+        el("label", { class: "check", title: "끄면 방법·절차 문의로 보고 FAQ 답변만 보냅니다(민원 접수·업체 처리 요청 없음)" }, report, " 고장·불량 신고형 — 답변과 함께 민원도 접수"),
+        el("label", { class: "check" }, enabled, " 사용"),
+        cancel,
+        save,
+      ),
     );
     form.addEventListener("keydown", (e) => e.key === "Escape" && cancel.click());
     return el("tr", { class: "fq-edit-row" }, el("td", { colspan: "6" }, form));

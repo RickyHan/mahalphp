@@ -150,3 +150,104 @@ def test_seed_faq_once(admin, settings):
     assert len(items) == len(seed) and sum(1 for i in items if not i["enabled"]) == sum(1 for i in seed if not i["enabled"])
     with db.transaction(settings) as conn, conn.cursor() as cur:  # 뒤 테스트에 끼어들지 않도록 정리
         cur.execute("DELETE FROM faq_items")
+
+
+def test_inquiry_faq_is_answer_only_and_report_faq_keeps_complaint(admin, settings):
+    """문의형 FAQ 와 짝이 맞으면 민원 접수·접수 안내·업체 요청 없이 FAQ 답변만,
+    신고형은 FAQ 답변이 접수 안내를 대신하고 민원은 유지, 같은 답변 생략 때는 접수 안내도 보내지 않음,
+    확신 낮은 짝은 보내지 않고 기록만"""
+    ids = {}
+    for key, cat, q, report in (("view", "CCTV관련문의", "CCTV 열람방법", False), ("bad", "CCTV관련문의", "CCTV 불량 시,", True)):
+        res = admin.post("/api/admin/faq", json={"category": cat, "question": q, "answer": f"{q} 답변", "report": report})
+        assert res.status_code == 201
+        ids[key] = res.json()["id"]
+    assert {i["id"]: i["report"] for i in admin.get("/api/admin/faq").json()["items"]}[ids["view"]] is False
+
+    class Gem:
+        def classify(self, items):  # 지난 사건 + CCTV 이야기 → 민원으로 잘못 판정되는 경우를 흉내
+            return [cp.Verdict(i.id, "CCTV" in i.text, "CCTV" if "CCTV" in i.text else "기타", "CCTV", 0.9) for i in items]
+
+        def match_faq(self, items, faqs):
+            out = []
+            for i in items:
+                if "확인하는 법" in i.text:
+                    out.append(cp.FaqMatch(i.id, ids["view"], 0.9))
+                elif "애매" in i.text:
+                    out.append(cp.FaqMatch(i.id, ids["view"], 0.6))
+                elif "안 나와요" in i.text:
+                    out.append(cp.FaqMatch(i.id, ids["bad"], 0.9))
+            return out
+
+    now = _now(settings)
+    room = "★FAQ유형빌라"
+    _post(room, "관리", "처음 인사드립니다 반갑습니다", now)
+    admin.post("/api/admin/apartments/sync")
+    store.classify_once(settings, client=Gem())
+
+    ask = _post(room, "502호", "CCTV 확인하는 법 아시는분 계신가요? 어제 누가 저희집 도어락을 계속 틀었어요", now)
+    broken = _post(room, "301호", "CCTV 화면이 안 나와요 확인 부탁드립니다", now)
+    vague = _post(room, "201호", "CCTV 관련해서 애매한 이야기인데 확인 좀", now)
+    store.classify_once(settings, client=Gem())
+    ask2 = _post(room, "402호", "저도 CCTV 확인하는 법 궁금합니다", now)
+    broken2 = _post(room, "101호", "CCTV 1층 화면이 안 나와요 고쳐주세요", now)
+    store.classify_once(settings, client=Gem())
+
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        def check(mid):
+            cur.execute("SELECT verdict, reply_status, reply_note FROM complaint_check WHERE message_id = %s", (mid,))
+            return cur.fetchone()
+
+        def kinds(mid):
+            cur.execute("SELECT kind FROM reply_queue WHERE message_id = %s ORDER BY id", (mid,))
+            return [r["kind"] for r in cur.fetchall()]
+
+        assert check(ask)["verdict"] == 0 and "FAQ 문의" in check(ask)["reply_note"]   # 문의형: 민원 아님
+        assert kinds(ask) == ["faq"]                                                  # FAQ 답변만 (안내·업체 없음)
+        assert check(broken)["verdict"] == 1 and check(broken)["reply_status"] == 4    # 신고형: 민원 유지
+        assert "ack" not in kinds(broken) and "faq" in kinds(broken)
+        assert check(vague)["verdict"] == 1 and "ack" in kinds(vague)                 # 확신 낮음: 평소대로 접수 안내
+        assert check(ask2)["verdict"] == 0 and kinds(ask2) == []                      # 같은 답변 최근 전송 → 아무것도 안 보냄
+        assert check(broken2)["verdict"] == 1 and check(broken2)["reply_status"] == 2 and kinds(broken2) == []  # 접수 안내도 생략
+
+    hist = admin.get("/api/admin/faq/history", params={"room": room}).json()
+    by_msg = {h["message_id"]: h for h in hist["items"]}
+    assert by_msg[ask]["category"] == "CCTV관련문의" and by_msg[ask]["report"] is False and by_msg[ask]["status"] == "pending"
+    assert "확신도 낮아" in by_msg[vague]["note"] and by_msg[vague]["status"] is None
+    assert "같은 방에 같은 답변" in by_msg[ask2]["note"]
+    assert hist["counts"]["total"] >= 5 and "CCTV관련문의" in hist["categories"]
+    assert {h["message_id"] for h in admin.get("/api/admin/faq/history", params={"room": "없는방"}).json()["items"]} == set()
+    for fid in ids.values():
+        admin.delete(f"/api/admin/faq/{fid}")
+
+
+def test_prompts_treat_how_to_questions_as_faq_not_complaint():
+    prompt = cp.build_prompt()
+    assert "방법·절차·가능 여부" in prompt and "CCTV 확인하는 법" in prompt
+    faq_prompt = cp.build_faq_prompt([(1, "CCTV", "CCTV 열람방법")])
+    assert "섞여 있어도" in faq_prompt and "다른 입주민에게 묻는" in faq_prompt
+    body = {"candidates": [{"content": {"parts": [{"text": json.dumps({"results": [{"id": 1, "faq_id": 10, "confidence": 0.6}]})}]}}]}
+    assert cp.parse_faq_response(body, {1}, {10}) == []                                       # 기본: 확실한 것만
+    assert cp.parse_faq_response(body, {1}, {10}, min_confidence=0.0) == [cp.FaqMatch(1, 10, 0.6)]
+
+
+def test_seed_marks_how_to_faqs_answer_only(settings):
+    items = json.loads(faq.SEED_FILE.read_text(encoding="utf-8"))
+    kinds = {i["question"]: i["report"] for i in items}
+    assert kinds["CCTV 열람방법"] is False and kinds["녹화 기간 문의"] is False
+    assert kinds["CCTV 불량 시,"] is True and kinds["승강기 고장 / 점검중 표기 / 운행정지 / 큰소음발생 / 승강기버튼고장"] is True
+
+
+def test_seed_v2_updates_existing_rows(settings):
+    """v1 로 이미 들어간 문항도 v2 로 올라갈 때 한 번 신고형/문의형을 맞춤"""
+    faq.seed_faq(settings)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE faq_items SET report = 1 WHERE question = 'CCTV 열람방법'")
+        cur.execute("DELETE FROM app_settings WHERE name = 'faq_seed'")
+        cur.execute("INSERT INTO app_settings (name, value) VALUES ('faq_seed', '1')")
+    faq.seed_faq(settings)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT report FROM faq_items WHERE question = 'CCTV 열람방법'")
+        assert [r["report"] for r in cur.fetchall()] == [0]
+        cur.execute("SELECT report FROM faq_items WHERE question = 'CCTV 불량 시,'")
+        assert all(r["report"] == 1 for r in cur.fetchall())
+    assert faq.seed_faq(settings) is None

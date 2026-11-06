@@ -28,7 +28,7 @@ router = APIRouter(dependencies=[Depends(require_admin)])
 
 # 처음 받은 FAQ(엑셀). 서버 시작 때 한 번만 넣는다(이후 웹에서 고친 내용은 덮어쓰지 않음).
 SEED_FILE = Path(__file__).parent / "data" / "faq.json"
-SEED_VERSION = "1"
+SEED_VERSION = "2"  # 2: 문항별 신고형/문의형(report) 구분
 
 
 def _now(settings) -> datetime:
@@ -59,12 +59,15 @@ def seed_faq(settings) -> int | None:
         have = {r["question"] for r in cur.fetchall()}
         added = 0
         for order, item in enumerate(json.loads(SEED_FILE.read_text(encoding="utf-8"))):
+            report = int(bool(item.get("report", True)))
             if item["question"] in have:
+                # v1 에서 이미 넣은 문항: 신고형/문의형만 처음 한 번 맞춘다 (이후 웹에서 바꾼 값은 유지)
+                cur.execute("UPDATE faq_items SET report = %s WHERE question = %s", (report, item["question"][:500]))
                 continue
             cur.execute(
-                """INSERT INTO faq_items (category, question, answer, enabled, sort_order, created_at, updated_at)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (item.get("category") or "", item["question"][:500], item["answer"], int(bool(item.get("enabled", True))), order, now, now),
+                """INSERT INTO faq_items (category, question, answer, enabled, report, sort_order, created_at, updated_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                (item.get("category") or "", item["question"][:500], item["answer"], int(bool(item.get("enabled", True))), report, order, now, now),
             )
             added += 1
         cur.execute("DELETE FROM app_settings WHERE name = 'faq_seed'")
@@ -78,6 +81,9 @@ class FaqBody(BaseModel):
     question: str = Field(min_length=1, max_length=500)
     answer: str = Field(min_length=1, max_length=5000)
     enabled: bool = True
+    # 신고형(True): 고장·불량처럼 처리가 필요한 문항 → FAQ 답변과 함께 민원도 접수(업체 처리 요청 포함)
+    # 문의형(False): 방법·절차·정보를 묻는 문항 → FAQ 답변만 보내고 민원으로 접수하지 않음
+    report: bool = True
 
 
 class FaqSettingsBody(BaseModel):
@@ -95,13 +101,14 @@ def _clean(body: FaqBody) -> tuple[str, str, str]:
 def list_faq(settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
         conf = store.get_settings_map(cur)
-        cur.execute("SELECT id, category, question, answer, enabled, sort_order, updated_at FROM faq_items ORDER BY sort_order, id")
+        cur.execute("SELECT id, category, question, answer, enabled, report, sort_order, updated_at FROM faq_items ORDER BY sort_order, id")
         items = [_ser(r) for r in cur.fetchall()]
         cur.execute("SELECT faq_id, COUNT(*) AS n, MAX(created_at) AS last_at FROM faq_answers WHERE reply_id IS NOT NULL GROUP BY faq_id")
         sent = {r["faq_id"]: r for r in cur.fetchall()}
         rooms = len(store.building_rooms(cur))
     for i in items:
         i["enabled"] = bool(i["enabled"])
+        i["report"] = bool(i["report"])
         s = sent.get(i["id"])
         i["sent"] = int(s["n"]) if s else 0
         i["last_at"] = _ser({"t": s["last_at"]})["t"] if s and s["last_at"] else None
@@ -130,9 +137,9 @@ def create_faq(body: FaqBody, settings: SettingsDep) -> dict[str, Any]:
         cur.execute("SELECT COALESCE(MAX(sort_order), 0) AS m FROM faq_items")
         order = int(cur.fetchone()["m"]) + 1
         cur.execute(
-            """INSERT INTO faq_items (category, question, answer, enabled, sort_order, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-            (category, question, answer, int(body.enabled), order, now, now),
+            """INSERT INTO faq_items (category, question, answer, enabled, report, sort_order, created_at, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (category, question, answer, int(body.enabled), int(body.report), order, now, now),
         )
         new_id = cur.lastrowid
     live.bump("faq")
@@ -147,8 +154,8 @@ def update_faq(faq_id: int, body: FaqBody, settings: SettingsDep) -> dict[str, A
         if cur.fetchone() is None:
             raise HTTPException(404, "FAQ 문항이 없습니다.")
         cur.execute(
-            "UPDATE faq_items SET category = %s, question = %s, answer = %s, enabled = %s, updated_at = %s WHERE id = %s",
-            (category, question, answer, int(body.enabled), _now(settings), faq_id),
+            "UPDATE faq_items SET category = %s, question = %s, answer = %s, enabled = %s, report = %s, updated_at = %s WHERE id = %s",
+            (category, question, answer, int(body.enabled), int(body.report), _now(settings), faq_id),
         )
     live.bump("faq")
     return {"ok": True}
@@ -163,17 +170,39 @@ def delete_faq(faq_id: int, settings: SettingsDep) -> dict[str, Any]:
 
 
 @router.get("/api/admin/faq/history")
-def faq_history(settings: SettingsDep, limit: int = 50) -> dict[str, Any]:
-    limit = max(1, min(limit, 200))
+def faq_history(settings: SettingsDep, limit: int = 50, room: str | None = None, category: str | None = None) -> dict[str, Any]:
+    """FAQ 자동 답변 이력 (최근 순). 보낸 것·생략한 것·확신이 낮아 보내지 않은 것 모두"""
+    limit = max(1, min(limit, 300))
+    where, params = [], []
+    if room:
+        where.append("a.room_name = %s")
+        params.append(room)
+    if category:
+        where.append("f.category = %s")
+        params.append(category)
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute(
-            """SELECT a.id, a.created_at, a.room_name, a.question, a.confidence, a.note, a.faq_id,
-                      m.sender_name, m.message_text, q.status, q.note AS send_note, q.done_at
+            """SELECT a.id, a.message_id, a.created_at, a.room_name, a.question, a.confidence, a.note, a.faq_id,
+                      f.category, f.report, m.sender_name, m.message_text, m.posted_at,
+                      q.status, q.note AS send_note, q.done_at
                FROM faq_answers a
+               LEFT JOIN faq_items f ON f.id = a.faq_id
                LEFT JOIN kakao_messages m ON m.id = a.message_id
-               LEFT JOIN reply_queue q ON q.id = a.reply_id
-               ORDER BY a.id DESC LIMIT %s""",
-            (limit,),
+               LEFT JOIN reply_queue q ON q.id = a.reply_id"""
+            + (" WHERE " + " AND ".join(where) if where else "")
+            + " ORDER BY a.id DESC LIMIT %s",
+            (*params, limit),
         )
         items = [_ser(r) for r in cur.fetchall()]
-    return {"ok": True, "items": items}
+        cur.execute(
+            """SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN q.status = 'sent' THEN 1 ELSE 0 END), 0) AS sent,
+                      COALESCE(SUM(CASE WHEN q.status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+                      COALESCE(SUM(CASE WHEN a.reply_id IS NULL THEN 1 ELSE 0 END), 0) AS skipped
+               FROM faq_answers a LEFT JOIN reply_queue q ON q.id = a.reply_id"""
+        )
+        counts = {k: int(v or 0) for k, v in cur.fetchone().items()}
+        cur.execute("SELECT DISTINCT category FROM faq_items WHERE category <> '' ORDER BY category")
+        cats = [r["category"] for r in cur.fetchall()]
+    for i in items:
+        i["report"] = None if i["report"] is None else bool(i["report"])
+    return {"ok": True, "items": items, "counts": counts, "categories": cats}
