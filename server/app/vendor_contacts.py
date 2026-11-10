@@ -18,6 +18,7 @@ import io
 import re
 import zipfile
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
@@ -120,7 +121,7 @@ def parse_contacts(rows: list[list[str]]) -> list[dict[str, Any]]:
     idx = {"vendor": h.index("업체"), "phone": next(i for i, c in enumerate(h) if "번호" in c or "전화" in c)}
     for key, word in (("device", "기종"), ("region", "지역")):
         idx[key] = next((i for i, c in enumerate(h) if word in c), None)
-    cat_col = 0 if idx["vendor"] > 0 and not h[0] else None
+    cat_col = 0 if idx["vendor"] > 0 and (not h[0] or h[0] in ("분류", "구분", "카테고리")) else None
     out: list[dict[str, Any]] = []
     current, category = None, ""
     for r in rows[head + 1:]:
@@ -169,6 +170,45 @@ def plan_import(cur, parsed: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return plan
 
 
+SEED_FILE = Path(__file__).parent / "data" / "vendor_contacts.tsv"
+SEED_VERSION = "1"
+
+
+def apply_plan(cur, plan: list[dict[str, Any]], now: datetime) -> None:
+    for p in plan:
+        if p["vendor_id"] is None:
+            cur.execute(
+                """INSERT INTO vendors (name, biz_no, phone, address, room_name, created_at, updated_at)
+                   VALUES (%s, '', '', '', NULL, %s, %s)""",
+                (p["vendor"][:100], now, now),
+            )
+            p["vendor_id"] = cur.lastrowid
+            p["created"] = True
+        replace_contacts(cur, p["vendor_id"], p["contacts"], now)
+
+
+def seed_contacts(settings) -> dict[str, int] | None:
+    """처음 받은 업체 번호표를 서버 시작 때 한 번 반영 (이후 웹에서 고친 연락처는 덮어쓰지 않음)"""
+    if not SEED_FILE.exists():
+        return None
+    now = _now(settings)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT value FROM app_settings WHERE name = 'vendor_contacts_seed'")
+        row = cur.fetchone()
+        if row and row["value"] == SEED_VERSION:
+            return None
+        plan = plan_import(cur, parse_contacts(read_table(SEED_FILE.name, SEED_FILE.read_bytes())))
+        apply_plan(cur, plan, now)
+        cur.execute("DELETE FROM app_settings WHERE name = 'vendor_contacts_seed'")
+        cur.execute("INSERT INTO app_settings (name, value) VALUES ('vendor_contacts_seed', %s)", (SEED_VERSION,))
+    live.bump("vendor")
+    return {
+        "vendors": len(plan),
+        "created": sum(1 for p in plan if p.get("created")),
+        "contacts": sum(len(p["contacts"]) for p in plan),
+    }
+
+
 @router.post("/api/admin/vendors/contacts/import")
 async def import_contacts(settings: SettingsDep, file: UploadFile = File(...), apply: bool = False) -> dict[str, Any]:
     data = await file.read(MAX_FILE + 1)
@@ -181,16 +221,7 @@ async def import_contacts(settings: SettingsDep, file: UploadFile = File(...), a
     with db.transaction(settings) as conn, conn.cursor() as cur:
         plan = plan_import(cur, parsed)
         if apply:
-            for p in plan:
-                if p["vendor_id"] is None:
-                    cur.execute(
-                        """INSERT INTO vendors (name, biz_no, phone, address, room_name, created_at, updated_at)
-                           VALUES (%s, '', '', '', NULL, %s, %s)""",
-                        (p["vendor"][:100], now, now),
-                    )
-                    p["vendor_id"] = cur.lastrowid
-                    p["created"] = True
-                replace_contacts(cur, p["vendor_id"], p["contacts"], now)
+            apply_plan(cur, plan, now)
             cur.execute("DELETE FROM app_settings WHERE name = 'vendor_contacts_imported_at'")
             cur.execute("INSERT INTO app_settings (name, value) VALUES ('vendor_contacts_imported_at', %s)", (now.isoformat(timespec="seconds"),))
     if apply:

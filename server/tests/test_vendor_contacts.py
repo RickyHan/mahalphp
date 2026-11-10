@@ -106,3 +106,22 @@ def test_import_preview_then_apply_and_edit(admin, settings):
     # 업체 삭제 때 연락처도 지움
     assert admin.delete(f"/api/admin/vendors/{lift['id']}").status_code == 200
     assert TestClient(app).post("/api/admin/vendors/contacts/import", files={"file": ("a.csv", csv_body)}).status_code in (401, 403)
+
+
+def test_seed_file_applies_once(admin, settings):
+    """처음 받은 번호표(data/vendor_contacts.tsv)는 서버 시작 때 한 번만 반영, 기존 업체 이름에 맞춰 붙음"""
+    from app import db
+
+    parsed = vc.parse_contacts(vc.read_table(vc.SEED_FILE.name, vc.SEED_FILE.read_bytes()))
+    assert len(parsed) == 7 and sum(len(p["contacts"]) for p in parsed) == 23
+    assert {p["category"] for p in parsed} == {"누수", "배관", "소방", "승강기"}
+    assert all(c["phone"].count("-") == 2 for p in parsed for c in p["contacts"])
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM app_settings WHERE name = 'vendor_contacts_seed'")
+    res = admin.post("/api/admin/vendors", data={"name": "●수자원누수탐지"})
+    assert res.status_code == 201
+    done = vc.seed_contacts(settings)
+    assert done["vendors"] == 7 and done["contacts"] == 23 and done["created"] <= 6
+    assert vc.seed_contacts(settings) is None
+    lift = next(v for v in admin.get("/api/admin/vendors").json()["items"] if v["id"] == res.json()["id"])
+    assert len(lift["contacts"]) == 1 and lift["phone"] == lift["contacts"][0]["phone"]

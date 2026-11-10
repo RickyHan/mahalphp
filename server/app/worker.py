@@ -81,6 +81,14 @@ async def lifespan(_app):
                 log.info("FAQ 문항 등록: %s개", added)
         except Exception:
             log.exception("FAQ 자동 등록 실패")
+    try:  # 업체 담당자 번호표(처음 받은 것) 한 번 반영
+        from . import vendor_contacts
+
+        done = vendor_contacts.seed_contacts(get_settings())
+        if done:
+            log.info("업체 담당자 연락처 등록: 업체 %(vendors)s곳(새로 %(created)s) · 번호 %(contacts)s개", done)
+    except Exception:
+        log.exception("업체 담당자 연락처 자동 등록 실패")
     try:  # 민원 판정 기본 사례 등록 + 이미 잘못 잡힌 같은 내용 바로잡기 (한 번)
         from . import examples
 
