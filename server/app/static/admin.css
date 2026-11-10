@@ -1099,3 +1099,24 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .sms-settings { margin-bottom: 20px; }
 .sms-settings details { margin: 4px 0; }
 .sms-settings details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+
+/* 건물 담당 업체: 분류마다 한 줄 (분류 | 검색·업체 선택·보내지 않음 | 실제 보낼 곳), 단 나누지 않음 */
+.acc-list { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.acc-list .av-row {
+  grid-template-columns: 96px minmax(360px, 1.25fr) minmax(0, 1fr);
+  grid-template-areas: "cat select target";
+  gap: 10px; padding: 6px 12px; border-radius: 6px;
+}
+.acc-list .av-pick .sel-wrap { grid-template-columns: 150px minmax(0, 1fr); align-items: center; }
+.acc-list .sel-search-row { height: 32px; }
+.acc-list .av-select { height: 32px; }
+.acc-list .av-none-btn { height: 32px; padding: 0 10px; }
+.acc-list .av-target-cell { min-height: 0; }
+.acc-list .av-targets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+@media (max-width: 1100px) {
+  .acc-list .av-row { grid-template-columns: 96px minmax(0, 1fr); grid-template-areas: "cat select" ". target"; }
+}
+@media (max-width: 640px) {
+  .acc-list .av-row { grid-template-columns: minmax(0, 1fr); grid-template-areas: "cat" "select" "target"; }
+  .acc-list .av-pick .sel-wrap { grid-template-columns: minmax(0, 1fr); }
+}
