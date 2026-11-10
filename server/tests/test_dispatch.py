@@ -62,9 +62,13 @@ def _report(reply_id, sent, note=None, device=DEVICE):
 def test_vendor_message_template():
     text = cp.format_vendor_message(cp.DEFAULT_VENDOR_TEMPLATE, vendor="엘레벨레", room="OO아파트", category="누수", summary="천장 누수",
                                     content="물이   새요\n빨리", sender="1203호", at=datetime(2026, 11, 2, 9, 5))
-    assert "엘레벨레 담당자님" in text and "'OO아파트' 대화방" in text and "물이 새요 빨리" in text
-    assert "- 보낸 사람: 1203호" in text and "- 접수 시각: 11/02 09:05" in text
-    assert "{" not in text
+    assert text == "[민원 처리 요청]\n안녕하세요. 엘레벨레 담당자님,\n'OO아파트' [누수]\n민원이 접수되었습니다."
+    # 내용·보낸 사람·시각 항목은 문구에 넣으면 그대로 채워짐
+    full = cp.format_vendor_message("{내용} / {보낸사람} / {시각} / {요약}", vendor="v", room="r", category="c", summary="천장 누수",
+                                    content="물이   새요\n빨리", sender="1203호", at=datetime(2026, 11, 2, 9, 5))
+    assert full == "물이 새요 빨리 / 1203호 / 11/02 09:05 / 천장 누수"
+    # 손대지 않은 예전 기본 문구는 새 기본 문구로 바뀜
+    assert all(old != cp.DEFAULT_VENDOR_TEMPLATE for old in cp.OLD_VENDOR_TEMPLATES)
 
 
 def test_complaint_ack_then_vendor_room(admin, settings):
@@ -81,7 +85,7 @@ def test_complaint_ack_then_vendor_room(admin, settings):
     assert [i["room_name"] for i in items] == ["전달테스트방", "엘레벨레 업무방"]  # 접수 안내가 먼저
     ack, vendor = items
     assert "민원이 접수되었습니다" in ack["text"]
-    assert "엘레벨레 담당자님" in vendor["text"] and "'전달테스트방' 대화방" in vendor["text"] and "욕실 천장 누수" in vendor["text"]
+    assert "엘레벨레 담당자님" in vendor["text"] and "'전달테스트방' [누수]" in vendor["text"]
 
     _report(ack["id"], True)
     _report(vendor["id"], False, "휴대폰에 이 방의 답장 가능한 카톡 알림이 없음")
@@ -211,12 +215,14 @@ def test_apartment_specific_vendors(admin, settings):
     # 실제 민원 흐름: 가나아파트 주차 민원 → 동네주차업체 톡방
     class ParkingGemini:
         def classify(self, items):
-            return [cp.Verdict(i.id, True, "기계주차", "주차 민원", 0.9) for i in items]
+            return [cp.Verdict(i.id, "주차" in i.text, "기계주차", "주차 민원", 0.9) for i in items]
 
+    for item in _pending():  # 앞 단계에서 남은 요청 정리 (문구에 원문이 없어 이번 민원만 골라내기 위해)
+        _report(item["id"], True)
     _post("★가나아파트", "101호", "주차장에 이중주차 차량 빼주세요")
     store.classify_once(settings, client=ParkingGemini())
     # 가나아파트에서 온 민원의 업체 요청만 본다
-    rooms = [i["room_name"] for i in _pending() if "'★가나아파트' 대화방" in i["text"] and "이중주차" in i["text"]]
+    rooms = [i["room_name"] for i in _pending() if "'★가나아파트' [기계주차]" in i["text"]]
     assert rooms == ["●동네주차업체"]
     for item in _pending():
         _report(item["id"], True)
