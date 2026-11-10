@@ -23,6 +23,16 @@ class FakeGemini:
         return [cp.Verdict(i.id, "누수" in i.text, "누수" if "누수" in i.text else "기타", "누수 민원", 0.9) for i in items]
 
 
+@pytest.fixture(autouse=True)
+def sms_off(settings):
+    """예전(카톡방만) 동작을 보는 테스트: 업체 문자는 끈 상태로"""
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        store.put_settings(cur, {"sms_enabled": "0"})
+    yield
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        store.put_settings(cur, {"sms_enabled": "0"})
+
+
 @pytest.fixture
 def admin(settings):
     c = TestClient(app)

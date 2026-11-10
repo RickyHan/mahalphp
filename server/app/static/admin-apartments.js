@@ -403,23 +403,87 @@
     return acc.vendors.find((v) => v.id === id);
   }
 
-  /** 고른 값에 따라 실제로 처리 요청이 갈 곳 */
-  function target(row) {
+  /** 고른 값에 따라 실제로 처리 요청이 갈 곳: 문자(건물×업체 담당자 → 연락처가 한 명뿐인 업체) 우선, 없으면 카톡방 */
+  const refreshers = new Set(); // 담당자 번호를 바꾸면 같은 업체를 쓰는 다른 분류 칸도 다시 그린다
+  function smsTargets(v) {
+    if (v.contacts?.length) return { phones: v.contacts.map((c) => c.phone), from: "이 건물 담당자" };
+    if (v.directory?.length === 1) return { phones: [v.directory[0].phone], from: "업체 대표 번호" };
+    return { phones: [], from: "" };
+  }
+
+  function contactEditor(v, done) {
+    const listId = `apv-dir-${v.id}`;
+    const rows = (v.contacts?.length ? v.contacts : [{ phone: "", name: "" }]).map((c) => ({ ...c }));
+    const box = el("div", { class: "av-contact-edit" });
+    const draw = () => {
+      box.replaceChildren(
+        el("datalist", { id: listId }, ...(v.directory || []).map((c) => el("option", { value: c.phone, text: [c.device, c.region].filter(Boolean).join(" · ") }))),
+        el("div", { class: "muted small", text: `${v.name} · 이 건물에서 문자 받을 담당자 (비우면 카톡방으로)` }),
+        ...rows.map((r, i) => {
+          const phone = el("input", { type: "tel", value: r.phone, list: listId, placeholder: "010-0000-0000", "aria-label": "담당자 번호" });
+          const name = el("input", { type: "text", value: r.name, maxlength: "100", placeholder: "이름·메모 (선택)", "aria-label": "담당자 이름" });
+          phone.addEventListener("input", () => (r.phone = phone.value));
+          name.addEventListener("input", () => (r.name = name.value));
+          const del = el("button", { class: "btn btn-small", type: "button", text: "삭제", onclick: () => (rows.splice(i, 1), draw()) });
+          return el("div", { class: "av-contact-row" }, phone, name, del);
+        }),
+        el(
+          "div",
+          { class: "row-actions" },
+          el("button", { class: "btn btn-small", type: "button", text: "+ 담당자", onclick: () => (rows.push({ phone: "", name: "" }), draw()) }),
+          el("button", {
+            class: "btn btn-small btn-primary",
+            type: "button",
+            text: "번호 저장",
+            onclick: async () => {
+              try {
+                const r = await send("PUT", `/api/admin/apartments/${acc.id}/vendor-contacts/${v.id}`, { contacts: rows.filter((x) => x.phone.trim()) });
+                v.contacts = r.contacts;
+                done();
+                refreshers.forEach((f) => f());
+              } catch (err) {
+                reportError(err);
+              }
+            },
+          }),
+          el("button", { class: "btn btn-small", type: "button", text: "취소", onclick: done }),
+        ),
+      );
+    };
+    draw();
+    return box;
+  }
+
+  function target(row, cell) {
     if (row.value === "none") return el("span", { class: "av-target none" }, el("span", { class: "ms", text: "block" }), "보내지 않음");
-    const list = row.value === "default" ? row.defaults : [vendorById(Number(row.value.slice(2)))].filter(Boolean);
+    const list = (row.value === "default" ? row.defaults.map((d) => vendorById(d.id) || d) : [vendorById(Number(row.value.slice(2)))]).filter(Boolean);
     if (!list.length) return el("span", { class: "av-target none" }, el("span", { class: "ms", text: "info" }), "기본 업체 없음 — 보내지 않음");
     return el(
       "div",
       { class: "av-targets" },
-      ...list.map((v) =>
-        v.room_name
+      ...list.map((v) => {
+        const { phones, from } = smsTargets(v);
+        const edit = el("button", {
+          class: "link-btn",
+          type: "button",
+          text: v.contacts?.length ? "담당자 변경" : "문자 담당자 지정",
+          onclick: () => cell.replaceChildren(contactEditor(v, () => cell.replaceChildren(target(row, cell)))),
+        });
+        const sms = phones.length
+          ? el("span", { class: "av-target sms", title: `${from} — 문자를 먼저 보내고, 실패하면 카톡방으로` }, el("span", { class: "ms", text: "sms" }), `문자 ${phones.join(", ")}`)
+          : null;
+        const kakao = v.room_name
           ? KC.roomChip(v.room_name, acc.vendors.find((x) => x.id === v.id)?.has_messages ?? true)
-          : el("span", { class: "av-target warn" }, el("span", { class: "ms", text: "warning" }), `${v.name}: 톡방 미지정`),
-      ),
+          : phones.length
+            ? null
+            : el("span", { class: "av-target warn" }, el("span", { class: "ms", text: "warning" }), `${v.name}: 번호·톡방 없음`);
+        return el("div", { class: `av-channel${phones.length ? " has-sms" : ""}` }, sms, kakao, edit);
+      }),
     );
   }
 
   function buildPanel() {
+    refreshers.clear();
     const dirty = el("span", { class: "muted small acc-dirty" });
     const save = el("button", { class: "btn btn-primary btn-small", type: "button", text: "저장", disabled: true });
     const cancel = el("button", { class: "btn btn-small", type: "button", text: "닫기" });
@@ -443,7 +507,12 @@
       for (const v of acc.vendors) group.append(el("option", { value: `v:${v.id}`, text: v.room_name ? `${v.name}  ·  ${v.room_name}` : `${v.name}  (톡방 없음)` }));
       select.append(group);
       select.value = row.value;
-      const targetCell = el("div", { class: "av-target-cell" }, target(row));
+      const targetCell = el("div", { class: "av-target-cell" });
+      const redraw = () => {
+        if (!targetCell.querySelector(".av-contact-edit")) targetCell.replaceChildren(target(row, targetCell));
+      };
+      redraw();
+      refreshers.add(redraw);
       // '보내지 않음' 바로 고르기 (목록이 길어 위쪽 항목이 잘 안 보이므로 따로 버튼)
       let before = row.value === "none" ? "default" : row.value;
       const noneBtn = el("button", { type: "button", class: "av-none-btn", "aria-pressed": String(row.value === "none") });
@@ -464,7 +533,7 @@
         if (row.value !== "none") before = row.value;
         row.value = value;
         select.value = value;
-        targetCell.replaceChildren(target(row));
+        targetCell.replaceChildren(target(row, targetCell));
         li.classList.toggle("custom", row.value !== "default");
         li.classList.toggle("none", row.value === "none");
         syncNone();

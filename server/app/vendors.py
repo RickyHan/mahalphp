@@ -474,6 +474,7 @@ def delete_vendor(vendor_id: int, settings: SettingsDep) -> dict[str, Any]:
         cur.execute("DELETE FROM apartment_vendors WHERE vendor_id = %s", (vendor_id,))
         cur.execute("DELETE FROM vendor_categories WHERE vendor_id = %s", (vendor_id,))
         cur.execute("DELETE FROM vendor_contacts WHERE vendor_id = %s", (vendor_id,))
+        cur.execute("DELETE FROM apartment_vendor_contacts WHERE vendor_id = %s", (vendor_id,))
         cur.execute("DELETE FROM vendors WHERE id = %s", (vendor_id,))
     live.bump("vendor")
     return {"ok": True}

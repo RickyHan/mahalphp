@@ -27,7 +27,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import admin, apartments, categories, datamgmt, db, examples, faq, live, media, schedules, store, vendor_contacts, vendors, worker
+from . import admin, apartments, categories, datamgmt, db, dispatch_web, examples, faq, live, media, schedules, store, vendor_contacts, vendors, worker
 from .auth import SettingsDep, get_settings, require_api_key, require_reader  # noqa: F401 (get_settings: 테스트에서 사용)
 
 MESSAGE_TYPES = {"text", "photo", "video", "emoticon", "file", "other"}
@@ -43,6 +43,7 @@ app.include_router(apartments.router)
 app.include_router(schedules.router)
 app.include_router(faq.router)
 app.include_router(examples.router)
+app.include_router(dispatch_web.router)
 app.mount("/admin/static", StaticFiles(directory=admin.STATIC_DIR), name="admin-static")
 
 

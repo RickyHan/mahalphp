@@ -237,3 +237,40 @@ CREATE TABLE IF NOT EXISTS vendor_contacts (
   created_at TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_vendor_contacts_vendor ON vendor_contacts (vendor_id, sort_order);
+
+-- 업체 문자(뿌리오) 대기열·이력. status: pending|sent|failed · test=1 이면 테스트 번호로 보낸 것
+CREATE TABLE IF NOT EXISTS sms_queue (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id   INTEGER,
+  vendor_id    INTEGER,
+  vendor_name  TEXT NOT NULL DEFAULT '',
+  phone        TEXT NOT NULL,
+  room_name    TEXT NOT NULL DEFAULT '',
+  category     TEXT NOT NULL DEFAULT '',
+  text         TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'pending',
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  note         TEXT,
+  message_key  TEXT,
+  msg_type     TEXT,
+  send_after   TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  done_at      TEXT,
+  test         INTEGER NOT NULL DEFAULT 0,
+  target_phone TEXT,
+  fallback_id  INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_sms_queue_status ON sms_queue (status, send_after);
+CREATE INDEX IF NOT EXISTS idx_sms_queue_message ON sms_queue (message_id);
+
+-- 건물 × 업체 담당자 (문자 받을 번호). 같은 건물·업체면 분류가 달라도 같은 담당자
+CREATE TABLE IF NOT EXISTS apartment_vendor_contacts (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  apartment_id INTEGER NOT NULL,
+  vendor_id    INTEGER NOT NULL,
+  phone        TEXT NOT NULL,
+  name         TEXT NOT NULL DEFAULT '',
+  sort_order   INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_apt_vendor_contacts ON apartment_vendor_contacts (apartment_id, vendor_id);

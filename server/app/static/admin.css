@@ -1085,3 +1085,17 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .import-preview li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
 .head-actions { flex: none; }
 .page-head .head-actions .btn-lg { margin-left: 0; }
+
+/* 업체 문자: 건물 담당자 · 발송 이력 · 설정 */
+.av-channel { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.av-target.sms { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: var(--success-soft); color: var(--success); }
+.av-target.sms .ms { font-size: 15px; }
+.av-contact-edit { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px dashed var(--border); border-radius: 8px; }
+.av-contact-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.av-contact-row input[type="tel"] { width: 150px; }
+.av-contact-row input[type="text"] { flex: 1; min-width: 120px; }
+#dp-views button span { margin-left: 4px; font-weight: 600; opacity: .7; font-variant-numeric: tabular-nums; }
+#dp-views { flex-wrap: wrap; }
+.sms-settings { margin-bottom: 20px; }
+.sms-settings details { margin: 4px 0; }
+.sms-settings details summary { cursor: pointer; color: var(--muted); font-size: 13px; }

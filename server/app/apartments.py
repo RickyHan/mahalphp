@@ -415,6 +415,7 @@ def rename_apartment(apartment_id: int, body: ApartmentBody, settings: SettingsD
 def delete_apartment(apartment_id: int, settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM apartment_vendors WHERE apartment_id = %s", (apartment_id,))
+        cur.execute("DELETE FROM apartment_vendor_contacts WHERE apartment_id = %s", (apartment_id,))
         cur.execute("DELETE FROM apartment_rooms WHERE apartment_id = %s", (apartment_id,))
         cur.execute("DELETE FROM apartments WHERE id = %s", (apartment_id,))
     live.bump("apartment")
@@ -576,6 +577,10 @@ def apartment_vendors(apartment_id: int, settings: SettingsDep) -> dict[str, Any
         current = {r["category_id"]: r["vendor_id"] for r in cur.fetchall()}
         cur.execute("SELECT DISTINCT room_name FROM kakao_messages")
         rooms = {r["room_name"] for r in cur.fetchall()}
+        from .vendor_contacts import contacts_by_vendor
+
+        directory = contacts_by_vendor(cur)
+        assigned = apartment_contacts(cur, apartment_id)
     rows = []
     for c in cats:
         defaults = [v for v in vendors if c["id"] in vendor_cats.get(v["id"], set())]
@@ -592,8 +597,68 @@ def apartment_vendors(apartment_id: int, settings: SettingsDep) -> dict[str, Any
         "ok": True,
         "apartment": apt,
         "categories": rows,
-        "vendors": [{"id": v["id"], "name": v["name"], "room_name": v["room_name"], "has_messages": v["room_name"] in rooms} for v in vendors],
+        "vendors": [
+            {"id": v["id"], "name": v["name"], "room_name": v["room_name"], "has_messages": v["room_name"] in rooms,
+             "directory": directory.get(v["id"], []), "contacts": assigned.get(v["id"], [])}
+            for v in vendors
+        ],
     }
+
+
+# ---- 건물 × 업체 담당자 (업체 문자 받을 번호) ------------------------------------------------------------
+
+def apartment_contacts(cur, apartment_id: int) -> dict[int, list[dict[str, str]]]:
+    cur.execute(
+        "SELECT vendor_id, phone, name FROM apartment_vendor_contacts WHERE apartment_id = %s ORDER BY vendor_id, sort_order, id",
+        (apartment_id,),
+    )
+    out: dict[int, list[dict[str, str]]] = {}
+    for r in cur.fetchall():
+        out.setdefault(r["vendor_id"], []).append({"phone": r["phone"], "name": r["name"]})
+    return out
+
+
+class ContactBody(BaseModel):
+    phone: str = Field(default="", max_length=30)  # 빈 줄은 건너뜀
+    name: str = Field(default="", max_length=100)
+
+
+class ContactsBody(BaseModel):
+    contacts: list[ContactBody] = Field(default_factory=list, max_length=10)
+
+
+@router.put("/api/admin/apartments/{apartment_id}/vendor-contacts/{vendor_id}")
+def save_apartment_vendor_contacts(apartment_id: int, vendor_id: int, body: ContactsBody, settings: SettingsDep) -> dict[str, Any]:
+    """이 건물에서 이 업체에 문자를 보낼 담당자 번호 (비우면 이 건물은 이 업체에 카톡방으로 보냄)"""
+    from .vendor_contacts import norm_phone
+
+    contacts, seen = [], set()
+    for c in body.contacts:
+        phone = norm_phone(c.phone)
+        digits = re.sub(r"\D", "", phone)
+        if not digits:
+            continue
+        if not re.fullmatch(r"0\d{8,10}", digits):
+            raise HTTPException(422, f"휴대폰 번호를 확인하십시오: {c.phone}")
+        if digits in seen:
+            continue
+        seen.add(digits)
+        contacts.append({"phone": phone, "name": c.name.strip()})
+    now = _now(settings)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        _apartment(cur, apartment_id)
+        cur.execute("SELECT id FROM vendors WHERE id = %s", (vendor_id,))
+        if cur.fetchone() is None:
+            raise HTTPException(404, "업체가 없습니다.")
+        cur.execute("DELETE FROM apartment_vendor_contacts WHERE apartment_id = %s AND vendor_id = %s", (apartment_id, vendor_id))
+        for i, c in enumerate(contacts):
+            cur.execute(
+                """INSERT INTO apartment_vendor_contacts (apartment_id, vendor_id, phone, name, sort_order, created_at)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                (apartment_id, vendor_id, c["phone"], c["name"], i, now),
+            )
+    live.bump("apartment")
+    return {"ok": True, "contacts": contacts}
 
 
 @router.put("/api/admin/apartments/{apartment_id}/vendors")

@@ -64,6 +64,14 @@
         el("p", { class: "cp-text", text: g.latest_text || "" }),
         el("p", { class: "cp-meta", text: `${g.room_name} · ${g.sender_name} · ${span(g.start_at, g.end_at)}` }),
         replyLabel(g.reply_status, g.reply_note) ? el("p", { class: "cp-reply", text: replyLabel(g.reply_status, g.reply_note) }) : null,
+        ...(g.vendor_sms || []).map((m) =>
+          el("p", {
+            class: "cp-reply",
+            text: `📱 ${m.test ? "[테스트] " : ""}${m.vendor || "담당 업체 없음"} 문자(${m.phone.replace(/^(01\d)(\d{3,4})(\d{4})$/, "$1-$2-$3")}): ${
+              { sent: "✅ 보냄", pending: "⏳ 대기", failed: "⚠️ 실패" }[m.status] || m.status
+            }${m.status === "failed" && m.note ? ` — ${m.note}` : ""}`,
+          }),
+        ),
         ...(g.vendor_dispatch || []).map((m) =>
           m.status === "pending"
             ? el(

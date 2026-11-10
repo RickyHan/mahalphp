@@ -317,8 +317,22 @@ def complaint_groups(settings: SettingsDep, category: str | None = None) -> dict
                     "id": r["id"], "vendor": r["vendor_name"], "room": r["room_name"], "status": r["status"], "note": r["note"],
                     "text": r["text"], "ready": store.ready_state(readiness, r["room_name"]) if r["status"] == "pending" else None,
                 })
+    sms_by_message: dict[int, list[dict[str, Any]]] = {}
+    if firsts:
+        with db.transaction(settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"""SELECT message_id, vendor_name, phone, status, note, test, fallback_id FROM sms_queue
+                    WHERE message_id IN ({', '.join(['%s'] * len(firsts))}) ORDER BY id""",
+                firsts,
+            )
+            for r in cur.fetchall():
+                sms_by_message.setdefault(r["message_id"], []).append({
+                    "vendor": r["vendor_name"], "phone": r["phone"], "status": r["status"], "note": r["note"],
+                    "test": bool(r["test"]), "fallback": bool(r["fallback_id"]),
+                })
     for g in groups:
         g["vendor_dispatch"] = sent_by_message.get(g["ids"][0], [])
+        g["vendor_sms"] = sms_by_message.get(g["ids"][0], [])
     return {
         "ok": True,
         "items": groups,

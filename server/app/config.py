@@ -40,6 +40,8 @@ class Settings:
     session_secret: bytes
     session_hours: int
     gemini_api_key: str
+    ppurio_account: str = ""
+    ppurio_api_key: str = ""
 
     @classmethod
     def load(cls) -> "Settings":
@@ -71,4 +73,6 @@ class Settings:
             ).digest(),
             session_hours=int(os.getenv("ADMIN_SESSION_HOURS", "12")),
             gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+            ppurio_account=os.getenv("PPURIO_ACCOUNT", "").strip(),
+            ppurio_api_key=os.getenv("PPURIO_API_KEY", "").strip(),
         )

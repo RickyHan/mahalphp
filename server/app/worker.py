@@ -25,6 +25,12 @@ def wake() -> None:
 def _loop() -> None:
     backoff = 0
     while not _stop.is_set():
+        try:  # 업체 문자(뿌리오): 대기 중인 것 먼저 보낸다
+            from . import sms_dispatch
+
+            sms_dispatch.send_pending(get_settings())
+        except Exception:
+            log.exception("업체 문자 발송 실패")
         try:
             result = store.classify_once(get_settings())
         except Exception as exc:  # DB 일시 오류 등 — 워커는 계속 살아 있어야 한다

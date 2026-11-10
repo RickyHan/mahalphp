@@ -212,6 +212,8 @@ def install_schema(settings: Settings) -> list[str]:
             conn.executescript("CREATE INDEX IF NOT EXISTS idx_kakao_messages_room_key ON kakao_messages (room_key);")
             _add_column_if_missing(conn, settings, "vendors", "category_id", "INTEGER")
             _add_column_if_missing(conn, settings, "faq_items", "report", "INTEGER NOT NULL DEFAULT 1")
+            for col, ddl in (("test", "INTEGER NOT NULL DEFAULT 0"), ("target_phone", "TEXT"), ("fallback_id", "INTEGER")):
+                _add_column_if_missing(conn, settings, "sms_queue", col, ddl)  # 예전(v1) 문자 표가 남아 있는 경우
             _add_column_if_missing(conn, settings, "reply_queue", "kind", "TEXT NOT NULL DEFAULT 'ack'")
             _add_column_if_missing(conn, settings, "reply_queue", "vendor_id", "INTEGER")
             _add_column_if_missing(conn, settings, "reply_queue", "vendor_name", "TEXT")
@@ -235,6 +237,8 @@ def install_schema(settings: Settings) -> list[str]:
             _add_column_if_missing(conn, settings, "kakao_messages", "room_key", "VARCHAR(64) NULL")
             _add_column_if_missing(conn, settings, "kakao_messages", "room_trusted", "TINYINT(1) NULL")
             _add_column_if_missing(conn, settings, "faq_items", "report", "TINYINT(1) NOT NULL DEFAULT 1 COMMENT '신고형: 민원도 함께 접수'")
+            for col, ddl in (("test", "TINYINT(1) NOT NULL DEFAULT 0"), ("target_phone", "VARCHAR(20) NULL"), ("fallback_id", "BIGINT UNSIGNED NULL")):
+                _add_column_if_missing(conn, settings, "sms_queue", col, ddl)  # 예전(v1) 문자 표가 남아 있는 경우
             _add_index_if_missing(conn, settings, "kakao_messages", "idx_kakao_messages_room_key", "`room_key`")
             _add_column_if_missing(conn, settings, "vendors", "category_id", "BIGINT UNSIGNED NULL")
             _add_column_if_missing(conn, settings, "reply_queue", "kind", "VARCHAR(10) NOT NULL DEFAULT 'ack'")

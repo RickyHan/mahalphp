@@ -292,3 +292,41 @@ CREATE TABLE IF NOT EXISTS `vendor_contacts` (
   PRIMARY KEY (`id`),
   KEY `idx_vendor_contacts_vendor` (`vendor_id`, `sort_order`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='업체 담당자 연락처 (여러 명)';
+
+-- 업체 문자(뿌리오) 대기열·이력. status: pending|sent|failed · test=1 이면 테스트 번호로 보낸 것
+CREATE TABLE IF NOT EXISTS `sms_queue` (
+  `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `message_id`   BIGINT UNSIGNED NULL COMMENT '민원 메시지 (테스트 발송은 NULL)',
+  `vendor_id`    BIGINT UNSIGNED NULL,
+  `vendor_name`  VARCHAR(100)    NOT NULL DEFAULT '',
+  `phone`        VARCHAR(20)     NOT NULL,
+  `room_name`    VARCHAR(255)    NOT NULL DEFAULT '',
+  `category`     VARCHAR(30)     NOT NULL DEFAULT '',
+  `text`         TEXT            NOT NULL,
+  `status`       VARCHAR(10)     NOT NULL DEFAULT 'pending',
+  `attempts`     INT             NOT NULL DEFAULT 0,
+  `note`         VARCHAR(255)    NULL,
+  `message_key`  VARCHAR(40)     NULL,
+  `msg_type`     VARCHAR(3)      NULL,
+  `send_after`   DATETIME(3)     NOT NULL,
+  `created_at`   DATETIME(3)     NOT NULL,
+  `done_at`      DATETIME(3)     NULL,
+  `test`         TINYINT(1)      NOT NULL DEFAULT 0 COMMENT '테스트 번호로 보낸 것',
+  `target_phone` VARCHAR(20)     NULL COMMENT '테스트 모드가 아니었으면 받았을 번호',
+  `fallback_id`  BIGINT UNSIGNED NULL COMMENT '문자 실패로 대신 보낸 카톡 처리 요청(reply_queue.id)',
+  PRIMARY KEY (`id`),
+  KEY `idx_sms_queue_status` (`status`, `send_after`),
+  KEY `idx_sms_queue_message` (`message_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='업체 문자 발송';
+
+CREATE TABLE IF NOT EXISTS `apartment_vendor_contacts` (
+  `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `apartment_id` BIGINT UNSIGNED NOT NULL,
+  `vendor_id`    BIGINT UNSIGNED NOT NULL,
+  `phone`        VARCHAR(20)     NOT NULL,
+  `name`         VARCHAR(100)    NOT NULL DEFAULT '' COMMENT '담당자 이름·메모',
+  `sort_order`   INT             NOT NULL DEFAULT 0,
+  `created_at`   DATETIME(3)     NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_apt_vendor_contacts` (`apartment_id`, `vendor_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='건물 × 업체 담당자 (문자 받을 번호)';

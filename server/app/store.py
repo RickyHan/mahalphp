@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -23,6 +24,13 @@ SETTING_DEFAULTS = {
     "faq_enabled": "1",
     "staff_exclude_enabled": "1",
     "staff_prefixes": "동대표",
+    # 업체 문자(뿌리오): 번호가 있으면 문자 먼저, 없으면 카톡방. 테스트 모드면 문자는 테스트 번호로만
+    "sms_enabled": "1",
+    "sms_from": "",
+    "sms_test_mode": "1",
+    "sms_test_number": "01075728018",
+    "ppurio_account": "",
+    "ppurio_api_key": "",
 }
 
 
@@ -446,10 +454,12 @@ def enqueue_reply(cur, message_id: int, device_id: str, room: str, text: str, at
     return cur.lastrowid
 
 
-def target_vendors(cur, room: str, category: str) -> list[dict[str, Any]]:
+def target_vendors(cur, room: str, category: str, require_room: bool = True) -> list[dict[str, Any]]:
     """처리 요청을 받을 업체:
     민원 방이 아파트이고 그 아파트에 이 분류의 업체가 지정돼 있으면 그 업체('보내지 않음'이면 없음),
-    지정이 없으면 기본 업체(민원처리업체의 담당 카테고리). 톡방이 없는 업체는 제외."""
+    지정이 없으면 기본 업체(민원처리업체의 담당 카테고리).
+    require_room 이면 톡방이 없는 업체는 제외 (문자로 보낼 수 있으면 톡방이 없어도 대상이므로 False 로 부른다)."""
+    has_room = " AND v.room_name IS NOT NULL AND v.room_name <> ''" if require_room else ""
     cur.execute(
         """SELECT av.vendor_id FROM apartment_vendors av
            JOIN apartments a ON a.id = av.apartment_id
@@ -461,31 +471,97 @@ def target_vendors(cur, room: str, category: str) -> list[dict[str, Any]]:
     if row is not None:
         if row["vendor_id"] is None:
             return []
-        cur.execute("SELECT id, name, room_name FROM vendors WHERE id = %s AND room_name IS NOT NULL AND room_name <> ''", (row["vendor_id"],))
+        cur.execute(f"SELECT v.id, v.name, v.room_name FROM vendors v WHERE v.id = %s{has_room}", (row["vendor_id"],))
         return cur.fetchall()
     cur.execute(
-        """SELECT v.id, v.name, v.room_name FROM vendors v
+        f"""SELECT v.id, v.name, v.room_name FROM vendors v
            JOIN vendor_categories vc ON vc.vendor_id = v.id
            JOIN complaint_categories c ON c.id = vc.category_id
-           WHERE c.name = %s AND v.room_name IS NOT NULL AND v.room_name <> ''""",
+           WHERE c.name = %s{has_room}""",
         (category,),
     )
     return cur.fetchall()
 
 
+def sms_numbers(cur, apartment_id: int | None, vendor_id: int) -> list[str]:
+    """이 업체에 문자를 보낼 번호: 건물×업체 담당자 → 없으면 업체 연락처가 한 명뿐일 때 그 번호.
+    (업체 연락처가 여러 명이면 누구에게 보낼지 모르므로 문자 대신 카톡방으로)"""
+    if apartment_id is not None:
+        cur.execute(
+            "SELECT phone FROM apartment_vendor_contacts WHERE apartment_id = %s AND vendor_id = %s ORDER BY sort_order, id",
+            (apartment_id, vendor_id),
+        )
+        phones = [r["phone"] for r in cur.fetchall()]
+        if phones:
+            return phones
+    cur.execute("SELECT phone FROM vendor_contacts WHERE vendor_id = %s ORDER BY sort_order, id", (vendor_id,))
+    phones = [r["phone"] for r in cur.fetchall()]
+    return phones if len(phones) == 1 else []
+
+
+def enqueue_sms(cur, *, message_id: int | None, vendor: dict[str, Any] | None, phone: str, room: str, category: str,
+                text: str, now: datetime, test: bool = False, target_phone: str | None = None) -> int:
+    cur.execute(
+        """INSERT INTO sms_queue (message_id, vendor_id, vendor_name, phone, room_name, category, text, status, attempts,
+                                  send_after, created_at, test, target_phone)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', 0, %s, %s, %s, %s)""",
+        (message_id, vendor["id"] if vendor else None, (vendor["name"] if vendor else "")[:100], re.sub(r"\D", "", phone)[:20],
+         room[:255], category[:30], text, now, now, int(test), re.sub(r"\D", "", target_phone or "")[:20] or None),
+    )
+    return cur.lastrowid
+
+
+def vendor_device(cur, vendor: dict[str, Any], msg: dict[str, Any]) -> str:
+    """업체 방 알림을 받은 휴대폰(최근 수신 기준)이 보낸다. 없으면 민원을 받은 휴대폰"""
+    cur.execute("SELECT device_id FROM kakao_messages WHERE room_name = %s ORDER BY id DESC LIMIT 1", (vendor["room_name"],))
+    row = cur.fetchone()
+    return row["device_id"] if row else msg["device_id"]
+
+
 def enqueue_vendor_messages(cur, conf: dict[str, str], v: cp.Verdict, msg: dict[str, Any], now: datetime) -> int:
-    """이 민원을 맡은 업체(아파트별 지정 → 기본 업체)의 카톡방으로 처리 요청 메시지를 대기열에 넣는다."""
+    """이 민원을 맡은 업체(아파트별 지정 → 기본 업체)에 처리 요청.
+    - 문자 사용 + 테스트 모드: 문자는 모두 테스트 번호로만(업체 수만큼, 담당 업체가 없어도 한 통), 카톡방 요청은 예전처럼
+    - 문자 사용: 건물×업체 담당자 번호가 있으면 문자, 없으면 업체 카톡방
+    - 문자 끔: 업체 카톡방 (예전과 같음)"""
+    building = room_buildings(cur).get(msg["room_name"])
+    apartment_id = building["id"] if building else None
+    sms_on = conf.get("sms_enabled") == "1"
+    test = sms_on and conf.get("sms_test_mode") == "1"
+    test_to = re.sub(r"\D", "", conf.get("sms_test_number", ""))
     count = 0
-    for vendor in target_vendors(cur, msg["room_name"], v.category):
-        # 업체 방 알림을 받은 휴대폰(최근 수신 기준)이 보낸다. 없으면 민원을 받은 휴대폰
-        cur.execute("SELECT device_id FROM kakao_messages WHERE room_name = %s ORDER BY id DESC LIMIT 1", (vendor["room_name"],))
-        row = cur.fetchone()
-        device = row["device_id"] if row else msg["device_id"]
+    targets = target_vendors(cur, msg["room_name"], v.category, require_room=False)
+    for vendor in targets:
         text = cp.format_vendor_message(
             conf["vendor_template"], vendor=vendor["name"], room=msg["room_name"], category=v.category, summary=v.summary,
             content=msg["message_text"] or "", sender=msg["sender_name"], at=to_dt(msg["posted_at"]),
         )
-        enqueue_reply(cur, v.id, device, vendor["room_name"], text, now, kind="vendor", vendor_id=vendor["id"], vendor_name=vendor["name"])
+        phones = sms_numbers(cur, apartment_id, vendor["id"]) if sms_on else []
+        if test:
+            if test_to:
+                where = f"문자 {', '.join(phones)}" if phones else (f"카톡방 {vendor['room_name']}" if vendor["room_name"] else "번호·톡방 없음")
+                enqueue_sms(cur, message_id=v.id, vendor=vendor, phone=test_to, room=msg["room_name"], category=v.category,
+                            text=f"[테스트 · 실제 대상: {vendor['name']} / {where}]\n{text}", now=now, test=True,
+                            target_phone=phones[0] if phones else None)
+                count += 1
+            if vendor["room_name"]:  # 테스트 중에는 카톡방 처리 요청을 예전처럼 그대로
+                enqueue_reply(cur, v.id, vendor_device(cur, vendor, msg), vendor["room_name"], text, now,
+                              kind="vendor", vendor_id=vendor["id"], vendor_name=vendor["name"])
+                count += 1
+        elif phones:
+            for phone in phones:
+                enqueue_sms(cur, message_id=v.id, vendor=vendor, phone=phone, room=msg["room_name"], category=v.category, text=text, now=now)
+                count += 1
+        elif vendor["room_name"]:
+            enqueue_reply(cur, v.id, vendor_device(cur, vendor, msg), vendor["room_name"], text, now,
+                          kind="vendor", vendor_id=vendor["id"], vendor_name=vendor["name"])
+            count += 1
+    if test and test_to and not targets:
+        text = cp.format_vendor_message(
+            conf["vendor_template"], vendor="(담당 업체 없음)", room=msg["room_name"], category=v.category, summary=v.summary,
+            content=msg["message_text"] or "", sender=msg["sender_name"], at=to_dt(msg["posted_at"]),
+        )
+        enqueue_sms(cur, message_id=v.id, vendor=None, phone=test_to, room=msg["room_name"], category=v.category,
+                    text=f"[테스트 · 이 분류의 담당 업체 없음]\n{text}", now=now, test=True)
         count += 1
     return count
 
