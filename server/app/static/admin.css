@@ -1127,3 +1127,22 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
   .acc-list .av-row { grid-template-columns: minmax(0, 1fr); grid-template-areas: "cat" "select" "target"; }
   .acc-list .av-pick .sel-wrap { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* 건물 담당 업체: 카드 모양 걷어냄 — 테두리·배경 없이 얇은 구분선만, 검색·선택 칸은 flex 로 반드시 한 줄 */
+.acc-list { gap: 0; padding: 4px 16px 8px; }
+.acc-list .av-row,
+.acc-list .av-row.custom,
+.acc-list .av-row.none {
+  border: 0; border-bottom: 1px solid var(--border); border-radius: 0;
+  background: transparent; box-shadow: none; padding: 4px 4px;
+}
+.acc-list .av-row:last-child { border-bottom: 0; }
+.acc-list .av-row:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.acc-list .av-row.none .av-cat strong { color: var(--muted); }
+.acc-list .av-pick .sel-wrap { display: flex; align-items: center; gap: 6px; }
+.acc-list .av-pick .sel-search-row { flex: 0 0 130px; }
+.acc-list .av-pick .sel-wrap > select { flex: 1 1 auto; min-width: 0; width: auto; grid-area: auto; }
+@media (max-width: 640px) {
+  .acc-list .av-pick .sel-wrap { flex-direction: column; align-items: stretch; }
+  .acc-list .av-pick .sel-search-row { flex: none; }
+}
