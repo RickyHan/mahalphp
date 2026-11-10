@@ -1100,21 +1100,28 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
 .sms-settings details { margin: 4px 0; }
 .sms-settings details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
-/* 건물 담당 업체: 분류마다 한 줄 (분류 | 검색·업체 선택·보내지 않음 | 실제 보낼 곳), 단 나누지 않음 */
-.acc-list { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+/* 건물 담당 업체: 분류마다 완전한 한 줄 (분류 | 검색 · 업체 선택 · 보내지 않음 | 실제 보낼 곳), 단 나누지 않음 */
+.acc-list { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 8px 16px; }
 .acc-list .av-row {
-  grid-template-columns: 96px minmax(360px, 1.25fr) minmax(0, 1fr);
+  grid-template-columns: 84px minmax(0, 520px) minmax(0, 1fr);
   grid-template-areas: "cat select target";
-  gap: 10px; padding: 6px 12px; border-radius: 6px;
+  gap: 10px; padding: 3px 10px; border-radius: 6px; min-height: 0;
 }
-.acc-list .av-pick .sel-wrap { grid-template-columns: 150px minmax(0, 1fr); align-items: center; }
-.acc-list .sel-search-row { height: 32px; }
-.acc-list .av-select { height: 32px; }
-.acc-list .av-none-btn { height: 32px; padding: 0 10px; }
+.acc-list .av-cat strong { font-size: 13px; }
+.acc-list .av-pick { gap: 6px; }
+.acc-list .av-pick .sel-wrap { grid-template-columns: 130px minmax(0, 1fr); align-items: center; gap: 6px; }
+.acc-list .sel-wrap > .av-select { grid-area: auto; height: 30px; }   /* 예전 grid-area 때문에 두 줄로 밀리던 것 */
+.acc-list .sel-search-row { height: 30px; }
+.acc-list .sel-search { height: 24px !important; }
+.acc-list .av-none-btn { height: 30px; padding: 0 10px; }
 .acc-list .av-target-cell { min-height: 0; }
-.acc-list .av-targets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.acc-list .av-targets, .acc-list .av-channel { flex-wrap: nowrap; gap: 6px; }
+.acc-list .av-targets { display: flex; align-items: center; overflow-x: auto; scrollbar-width: none; }
+.acc-list .av-channel > * { flex: none; }
+.acc-list .av-target-cell .link-btn { white-space: nowrap; font-size: 12px; }
 @media (max-width: 1100px) {
-  .acc-list .av-row { grid-template-columns: 96px minmax(0, 1fr); grid-template-areas: "cat select" ". target"; }
+  .acc-list .av-row { grid-template-columns: 84px minmax(0, 1fr); grid-template-areas: "cat select" ". target"; padding: 6px 10px; }
+  .acc-list .av-targets { flex-wrap: wrap; }
 }
 @media (max-width: 640px) {
   .acc-list .av-row { grid-template-columns: minmax(0, 1fr); grid-template-areas: "cat" "select" "target"; }
