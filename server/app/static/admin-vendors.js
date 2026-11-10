@@ -139,7 +139,8 @@
 
   function matches(v, q) {
     if (!q) return true;
-    return [v.name, v.phone, v.room_name, v.address, v.biz_no, ...(v.category_names || [])].some((x) => (x || "").toLowerCase().includes(q));
+    const phones = (v.contacts || []).flatMap((c) => [c.phone, c.phone.replace(/\D/g, ""), c.region]);
+    return [v.name, v.phone, v.room_name, v.address, v.biz_no, ...(v.category_names || []), ...phones].some((x) => (x || "").toLowerCase().includes(q));
   }
 
   function kpi(icon, tone, label, value, unit) {
@@ -181,6 +182,114 @@
     for (const v of items) list.append(vendorRow(v));
   }
 
+  // ---- 담당자 연락처 (여러 명) ----------------------------------------------------------------------
+
+  const telLink = (phone) => el("a", { class: "tel-link", href: `tel:${phone.replace(/[^0-9+]/g, "")}`, text: phone });
+  const contactLine = (c) =>
+    el("div", { class: "contact-line" }, telLink(c.phone), c.device ? el("span", { class: "contact-dev", text: c.device }) : null, c.region ? el("span", { class: "muted small", text: c.region }) : null);
+
+  function contactsCell(v) {
+    const box = el("div", { class: "contacts-cell" });
+    const show = () => {
+      const list = v.contacts || [];
+      const rest = list.slice(1);
+      box.replaceChildren(
+        list.length ? contactLine(list[0]) : el("span", { class: "muted", text: "—" }),
+        rest.length ? el("details", { class: "contact-more" }, el("summary", { text: `외 ${rest.length}명` }), ...rest.map(contactLine)) : null,
+        el("button", { class: "link-btn", type: "button", text: list.length ? "편집" : "추가", onclick: edit }),
+      );
+    };
+    const edit = () => {
+      const area = el("textarea", { rows: String(Math.max(3, (v.contacts || []).length + 1)), class: "contacts-edit", "aria-label": "담당자 연락처" });
+      area.value = (v.contacts || []).map((c) => [c.phone, c.device, c.region].join(" | ")).join("\n");
+      const save = el("button", { class: "btn btn-small btn-primary", type: "button", text: "저장" });
+      const cancel = el("button", { class: "btn btn-small", type: "button", text: "취소", onclick: show });
+      save.addEventListener("click", async () => {
+        const contacts = area.value.split("\n").map((line) => line.split("|").map((x) => x.trim())).filter((p) => p[0])
+          .map(([phone, device = "", region = ""]) => ({ phone, device, region }));
+        save.disabled = true;
+        try {
+          const r = await sendJson("PUT", `/api/admin/vendors/${v.id}/contacts`, { contacts });
+          v.contacts = r.contacts;
+          v.phone = r.contacts[0]?.phone || "";
+          show();
+        } catch (err) {
+          reportError(err);
+          save.disabled = false;
+        }
+      });
+      box.replaceChildren(
+        el("div", { class: "muted small", text: "한 줄에 한 명: 번호 | 기종 | 지역 (첫 줄이 대표 번호)" }),
+        area,
+        el("div", { class: "row-actions" }, save, cancel),
+      );
+      area.focus();
+    };
+    show();
+    return box;
+  }
+
+  // 번호표(엑셀·CSV) 올리기: 먼저 미리보기 → 확인하면 반영
+  async function importContacts(file, apply) {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`/api/admin/vendors/contacts/import?apply=${apply}`, { method: "POST", credentials: "same-origin", body: form });
+    if (res.status === 401) location.href = "/admin/login";
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((Array.isArray(data.detail) ? data.detail.map((d) => d.msg).join(", ") : data.detail) || `요청 실패 (HTTP ${res.status})`);
+    return data;
+  }
+
+  function showImport(file, r) {
+    const box = $("vd-result");
+    box.hidden = false;
+    box.classList.add("has-new");
+    const rows = r.vendors.map((v) =>
+      el(
+        "li",
+        {},
+        el("strong", { text: v.name }),
+        v.category ? el("span", { class: "chip-cat", text: v.category }) : null,
+        el("span", {
+          class: v.matched || (r.applied && !v.created) ? "muted" : "warn-text",
+          text: r.applied ? (v.created ? " 새 업체로 추가" : ` → '${v.matched || v.name}' 에 반영`) : v.matched ? ` → 기존 '${v.matched}' 에 반영` : " → 없는 업체: 새로 추가",
+        }),
+        el("span", { class: "muted", text: ` · ${v.contacts.length}명 (${v.contacts.map((c) => c.phone).join(", ")})` }),
+      ),
+    );
+    const actions = r.applied
+      ? [el("button", { class: "btn btn-small", type: "button", text: "닫기", onclick: () => (box.hidden = true) })]
+      : [
+          el("button", {
+            class: "btn btn-small btn-primary",
+            type: "button",
+            text: "이대로 반영",
+            onclick: async () => {
+              try {
+                showImport(file, await importContacts(file, true));
+                await loadVendors();
+              } catch (err) {
+                reportError(err);
+              }
+            },
+          }),
+          el("button", { class: "btn btn-small", type: "button", text: "취소", onclick: () => (box.hidden = true) }),
+        ];
+    box.replaceChildren(
+      el(
+        "div",
+        { class: "import-preview" },
+        el("p", {
+          text: r.applied
+            ? `반영했습니다: 업체 ${r.vendors.length}곳 · 연락처 ${r.contacts}개. 새로 추가된 업체는 톡방·담당 카테고리를 지정해 주십시오.`
+            : `미리보기 (${file.name}): 업체 ${r.vendors.length}곳 · 연락처 ${r.contacts}개. 파일에 있는 업체의 연락처는 파일 내용으로 바뀝니다(다른 업체는 그대로).`,
+        }),
+        el("ul", {}, ...rows),
+        el("div", { class: "row-actions" }, ...actions),
+      ),
+    );
+  }
+
   function vendorRow(v) {
     const input = el("input", { class: "apt-name", value: v.name, maxlength: "100", "aria-label": "업체 이름" });
     const save = el("button", { class: "btn btn-small btn-primary", type: "button", text: "저장", disabled: true });
@@ -219,7 +328,7 @@
       );
     };
     showRoom();
-    const tel = v.phone ? el("a", { class: "tel-link", href: `tel:${v.phone.replace(/[^0-9+]/g, "")}`, text: v.phone }) : el("span", { class: "muted", text: "—" });
+    const tel = contactsCell(v);
     const doc = v.has_doc ? el("a", { class: "doc-link", href: `/api/admin/vendors/${v.id}/doc`, target: "_blank", rel: "noopener", title: "사업자등록증 보기" }, el("span", { class: "ms", text: "description" })) : null;
     tr.append(
       el("td", { class: "apt-name-cell" }, el("div", { class: "name-with-doc" }, input, doc)),
@@ -449,6 +558,17 @@
   KC.searchable($("vd-room"), "카톡 대화방 검색");
   KC.loaders = Object.assign(KC.loaders || {}, { vendors: loadVendors });
   $("vd-sync").addEventListener("click", () => sync().catch(reportError));
+  $("vd-import").addEventListener("click", () => $("vd-import-file").click());
+  $("vd-import-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      showImport(file, await importContacts(file, false));
+    } catch (err) {
+      reportError(err);
+    }
+  });
   $("vd-doc").addEventListener("change", () => {
     const f = $("vd-doc").files[0];
     $("vd-doc-name").textContent = f ? `${f.name} (${Math.ceil(f.size / 1024)}KB)` : "선택된 파일 없음";

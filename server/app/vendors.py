@@ -237,8 +237,12 @@ def list_vendors(settings: SettingsDep) -> dict[str, Any]:
         cur.execute("SELECT value FROM app_settings WHERE name = 'vendors_synced_at'")
         synced = cur.fetchone()
         readiness = store.reply_readiness(cur, _now(settings))
+        from .vendor_contacts import contacts_by_vendor
+
+        contacts = contacts_by_vendor(cur)
     for v in items:
         v["reply_ready"] = store.ready_state(readiness, v["room_name"])
+        v["contacts"] = contacts.get(v["id"]) or ([{"phone": v["phone"], "device": "", "region": ""}] if v["phone"] else [])
         vc = cats.get(v["id"], [])
         v["category_ids"] = [c["id"] for c in vc]
         v["category_names"] = [c["name"] for c in vc]
@@ -450,6 +454,11 @@ async def update_vendor(
             (*values.values(), _now(settings), vendor_id),
         )
         set_vendor_categories(cur, vendor_id, ids)
+        # 대표 번호를 상세에서 바꾸면 담당자 연락처의 첫 번호도 같이 (연락처 목록이 있을 때)
+        cur.execute("SELECT id, phone FROM vendor_contacts WHERE vendor_id = %s ORDER BY sort_order, id LIMIT 1", (vendor_id,))
+        first = cur.fetchone()
+        if first and values["phone"] and first["phone"] != values["phone"]:
+            cur.execute("UPDATE vendor_contacts SET phone = %s WHERE id = %s", (values["phone"], first["id"]))
         if stored is not None or remove_doc:
             cur.execute(
                 "UPDATE vendors SET doc_path = %s, doc_mime = %s, doc_name = %s WHERE id = %s",
@@ -464,6 +473,7 @@ def delete_vendor(vendor_id: int, settings: SettingsDep) -> dict[str, Any]:
     with db.transaction(settings) as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM apartment_vendors WHERE vendor_id = %s", (vendor_id,))
         cur.execute("DELETE FROM vendor_categories WHERE vendor_id = %s", (vendor_id,))
+        cur.execute("DELETE FROM vendor_contacts WHERE vendor_id = %s", (vendor_id,))
         cur.execute("DELETE FROM vendors WHERE id = %s", (vendor_id,))
     live.bump("vendor")
     return {"ok": True}

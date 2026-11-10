@@ -27,7 +27,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import admin, apartments, categories, datamgmt, db, examples, faq, live, media, schedules, store, vendors, worker
+from . import admin, apartments, categories, datamgmt, db, examples, faq, live, media, schedules, store, vendor_contacts, vendors, worker
 from .auth import SettingsDep, get_settings, require_api_key, require_reader  # noqa: F401 (get_settings: 테스트에서 사용)
 
 MESSAGE_TYPES = {"text", "photo", "video", "emoticon", "file", "other"}
@@ -35,6 +35,7 @@ MAX_TEXT_BYTES = 65535  # MySQL TEXT 한도
 
 app = FastAPI(title="Kakao Notification Collector", version="2.0.0", lifespan=worker.lifespan)
 app.include_router(admin.router)
+app.include_router(vendor_contacts.router)  # /vendors/contacts/import 가 /vendors/{id} 보다 먼저
 app.include_router(vendors.router)
 app.include_router(categories.router)
 app.include_router(datamgmt.router)

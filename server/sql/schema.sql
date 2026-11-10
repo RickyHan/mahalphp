@@ -280,3 +280,15 @@ CREATE TABLE IF NOT EXISTS `reply_ready` (
   `updated_at` DATETIME(3)  NOT NULL,
   PRIMARY KEY (`device_id`, `room_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='휴대폰이 지금 카톡 답장을 보낼 수 있는 방 (앱이 30초~5분마다 보고)';
+
+CREATE TABLE IF NOT EXISTS `vendor_contacts` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `vendor_id`  BIGINT UNSIGNED NOT NULL,
+  `phone`      VARCHAR(30)     NOT NULL,
+  `device`     VARCHAR(20)     NOT NULL DEFAULT '' COMMENT '기종 (안드로이드·아이폰)',
+  `region`     VARCHAR(200)    NOT NULL DEFAULT '' COMMENT '담당 지역',
+  `sort_order` INT             NOT NULL DEFAULT 0,
+  `created_at` DATETIME(3)     NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_vendor_contacts_vendor` (`vendor_id`, `sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='업체 담당자 연락처 (여러 명)';

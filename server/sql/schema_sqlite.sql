@@ -226,3 +226,14 @@ CREATE TABLE IF NOT EXISTS reply_ready (
   updated_at TEXT NOT NULL,
   PRIMARY KEY (device_id, room_name)
 );
+
+CREATE TABLE IF NOT EXISTS vendor_contacts (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  vendor_id  INTEGER NOT NULL REFERENCES vendors (id) ON DELETE CASCADE,
+  phone      TEXT    NOT NULL,
+  device     TEXT    NOT NULL DEFAULT '',
+  region     TEXT    NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vendor_contacts_vendor ON vendor_contacts (vendor_id, sort_order);
