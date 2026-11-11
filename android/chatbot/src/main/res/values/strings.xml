@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">민원 카톡 챗봇 (알림 유지)</string>
+    <string name="listener_label">민원 카카오톡 메시지 자동 수집</string>
+    <string name="open_web">웹 관리 화면 열기</string>
+    <string name="section_menu">메뉴</string>
+    <string name="capture_start">수집 시작</string>
+    <string name="capture_stop">수집 중지</string>
+    <string name="action_turn_on">켜기</string>
+    <string name="action_settings">설정</string>
+    <string name="action_choose">선택</string>
+    <string name="status_notification">알림줄에 상태 표시</string>
+    <string name="section_recent">최근 수집</string>
+    <string name="open_listener_settings">알림 접근 권한 설정 열기</string>
+    <string name="open_battery_settings">배터리 최적화 예외 설정 열기</string>
+    <string name="restricted_hint">Android 13 이상에서 권한 스위치가 비활성이면: 설정 &gt; 애플리케이션 &gt; 민원 카카오톡 메시지 자동 수집 &gt; 우측 상단 ⋮ &gt; \'제한된 설정 허용\' 후 다시 시도하십시오.</string>
+    <string name="section_server">서버 연결</string>
+    <string name="hint_server_url">서버 주소</string>
+    <string name="hint_api_key">API 키</string>
+    <string name="save">저장</string>
+    <string name="test_connection">연결 테스트</string>
+    <string name="upload_now">지금 전송</string>
+    <string name="section_capture">수집 설정</string>
+    <string name="capture_images">사진 미리보기 수집</string>
+    <string name="room_filter_open">수집할 방 선택</string>
+    <string name="room_filter_title">수집할 방 선택</string>
+    <string name="room_mode_all">모든 방 수집</string>
+    <string name="room_mode_only">선택한 방만 수집</string>
+    <string name="room_mode_except">선택한 방은 제외하고 수집</string>
+    <string name="room_filter_hint">목록에는 카톡 알림이 한 번이라도 온 방이 자동으로 쌓입니다. 아직 알림이 오지 않은 방은 이름을 직접 추가하십시오 (카톡 방 이름과 똑같이). 제외된 방의 대화는 수집하지 않습니다.</string>
+    <string name="room_manual_hint">방 이름 직접 추가</string>
+    <string name="room_add">추가</string>
+    <string name="room_list_title">방 목록 (%1$d)</string>
+    <string name="room_empty">아직 알림으로 확인된 방이 없습니다. 카톡을 받으면 여기에 표시됩니다.</string>
+    <string name="open_diagnostics">알림 구조 진단 (방 이름이 이상할 때)</string>
+    <string name="diagnostics_title">알림 구조 진단</string>
+    <string name="diagnostics_share">이 내용 보내기 (카톡·메일 등)</string>
+    <string name="diagnostics_empty">아직 기록된 카톡 알림이 없습니다.\n알림 접근 권한을 켠 뒤 카톡을 받으면 최근 100건이 여기에 기록됩니다.</string>
+    <string name="save_and_test">저장하고 연결 확인</string>
+    <string name="server_hint">서버 주소 예: http://61.83.189.246:28000 · API 키는 서버 설치 시 출력된 값입니다.</string>
+    <string name="capture_images_hint">카톡 알림에 붙은 사진 미리보기를 함께 저장합니다.</string>
+    <string name="status_notification_hint">알림줄에 🟢/🟡/🔴 상태와 수집 시작·중지 버튼을 항상 표시합니다.</string>
+    <string name="section_permission">권한</string>
+    <string name="section_options">수집 옵션 · 권한</string>
+    <string name="keep_notifications_hint">이 앱은 카카오톡 알림과 다른 앱 알림을 지우지 않습니다. 알림은 수집·저장만 하고 알림창에 그대로 둡니다.</string>
+</resources>

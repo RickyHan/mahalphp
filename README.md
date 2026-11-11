@@ -77,6 +77,12 @@ curl -fsSL https://raw.githubusercontent.com/rickyhan/mahalphp/claude/new-creati
 
 앱은 수집·전송만 합니다. 휴대폰에는 전송 대기분만 남고, 서버에 저장된 사진은 휴대폰에서 지웁니다. 맨 위 **🖥 웹 관리 화면 열기**로 웹을 엽니다.
 
+### 카톡 챗봇 앱 (알림 유지) — `android/chatbot`
+
+- 수집 앱과 같은 기능(카톡 알림에서 채팅방 이름·보낸 사람 수집 → 휴대폰 저장 → 30초마다 서버 전송, 카톡 답장으로 안내·업체 요청)을 하되 **알림을 하나도 지우지 않습니다** (카톡 알림 30개 정리·다른 앱 알림 지우기 없음).
+- 앱 ID `com.mahal.kakaochatbot` 이라 기존 수집 앱과 함께 설치할 수 있습니다. Android 8.0 이상(갤럭시 S10+ · Android 12 포함).
+- 공개 APK: `release/kakao-chatbot.apk` (서버 주소·키는 앱에서 입력). 기존 수집 앱 v2.3.6 은 `release/kakao-collector-2.3.6.apk` 로 보관.
+
 ## 3. 웹 관리 화면 (`/admin`)
 
 | 탭 | 내용 |

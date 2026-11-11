@@ -11,6 +11,7 @@ android/.gradle/
 android/build/
 android/app/build/
 android/local/build/
+android/chatbot/build/
 android/local.properties
 android/keystore.properties
 *.jks

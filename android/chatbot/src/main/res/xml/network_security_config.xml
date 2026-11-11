@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 수집 서버를 IP + http 로 운영하는 경우를 위해 평문 통신을 허용합니다.
+     운영 시에는 https 사용을 권장하며, 그 경우 cleartextTrafficPermitted 를 false 로 바꾸십시오. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
