@@ -69,10 +69,17 @@ def send_pending(settings, client: sms.PpurioClient | None = None) -> dict[str, 
         problem = "뿌리오 연동 정보 없음 (시스템 설정 > 업체 문자에서 계정·인증키 입력)"
     elif not sender:
         problem = "발신번호 미설정 (시스템 설정 > 업체 문자)"
+    off = conf.get("sms_enabled") != "1"
     sent = failed = 0
     for row in rows:
         now = store.now_local(settings)
         attempts = int(row["attempts"]) + 1
+        if off and row["message_id"] is not None:
+            # 문자를 끈 뒤 남아 있던 민원 문자: 보내지 않고, 실제 업체 문자면 카톡방으로 대신
+            with db.transaction(settings) as conn, conn.cursor() as cur:
+                _finish(cur, row, "failed", "업체 문자 꺼짐 — 보내지 않음", now, attempts=int(row["attempts"]))
+            failed += 1
+            continue
         if problem:
             with db.transaction(settings) as conn, conn.cursor() as cur:
                 _finish(cur, row, "failed", problem, now, attempts=attempts)

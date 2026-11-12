@@ -76,8 +76,8 @@ def _setup(admin):
 
 
 def test_sms_settings_and_building_contacts(admin, settings):
-    d = store.SETTING_DEFAULTS  # 기본: 문자 켬 · 테스트 모드 · 테스트 번호
-    assert (d["sms_enabled"], d["sms_test_mode"], d["sms_test_number"]) == ("1", "1", "01075728018")
+    d = store.SETTING_DEFAULTS  # 기본: 문자 꺼짐(카톡방으로만) · 켜면 테스트 모드 · 테스트 번호
+    assert (d["sms_enabled"], d["sms_test_mode"], d["sms_test_number"]) == ("0", "1", "01075728018")
     s = admin.put("/api/admin/sms", json={"enabled": True, "test_mode": True, "test_number": "01075728018"}).json()
     assert s["enabled"] is True and s["test_mode"] is True and s["test_number"] == "01075728018"
     r = admin.put("/api/admin/sms", json={"sender": "02-123-4567", "account": "acct", "api_key": "secret-key"}).json()
@@ -190,3 +190,37 @@ def test_real_mode_sms_first_then_kakao_and_fallback(admin, settings):
     g = next(g for g in admin.get("/api/admin/complaints").json()["items"] if g["ids"][0] == m1)
     assert g["vendor_sms"] and g["vendor_sms"][0]["status"] == "sent"
     admin.put("/api/admin/sms", json={"test_mode": True})
+
+
+def test_kakao_only_by_default_and_queued_sms_not_sent(admin, settings):
+    """카톡방으로만: 서버 시작 때 한 번 문자를 끄고, 민원은 카톡방으로만 · 꺼지기 전 남은 민원 문자는 보내지 않고 카톡방으로 대신"""
+    admin.put("/api/admin/sms", json={"enabled": True, "test_mode": False, "sender": "0212345678"})
+    _, vendor, apt, _ = _setup(admin)
+    admin.put(f"/api/admin/apartments/{apt['id']}/vendor-contacts/{vendor['id']}", json={"contacts": [{"phone": "010-4444-0001"}]})
+    queued = _post("★문자빌라", "401호", "복도 CCTV 꺼졌어요 확인 부탁드립니다")
+    store.classify_once(settings, client=Gem())
+    assert [r["status"] for r in _rows(settings, queued)[0]] == ["pending"]   # 켜져 있을 때 들어간 문자
+
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM app_settings WHERE name = 'sms_kakao_only'")
+        assert store.apply_kakao_only(cur) is True
+        assert store.apply_kakao_only(cur) is False                          # 한 번만
+    assert admin.get("/api/admin/sms").json()["enabled"] is False
+
+    m = _post("★문자빌라", "402호", "엘리베이터 앞 CCTV 화면이 깨져요 봐주세요")
+    store.classify_once(settings, client=Gem())
+    s, k = _rows(settings, m)
+    assert s == [] and [r["room_name"] for r in k] == ["●문자CCTV"]          # 번호가 있어도 카톡방으로만
+
+    fake = FakePpurio()
+    sms_dispatch.send_pending(settings, client=fake)
+    assert fake.sent == []                                                     # 꺼진 뒤에는 민원 문자를 보내지 않음
+    s, k = _rows(settings, queued)
+    assert s[0]["status"] == "failed" and "꺼짐" in s[0]["note"] and [r["room_name"] for r in k] == ["●문자CCTV"]
+
+    # 관리자가 다시 켜면 그 설정을 따름 (서버 재시작해도 다시 끄지 않음)
+    admin.put("/api/admin/sms", json={"enabled": True})
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        assert store.apply_kakao_only(cur) is False
+    assert admin.get("/api/admin/sms").json()["enabled"] is True
+    admin.put("/api/admin/sms", json={"enabled": False})

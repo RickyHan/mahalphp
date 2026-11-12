@@ -24,8 +24,9 @@ SETTING_DEFAULTS = {
     "faq_enabled": "1",
     "staff_exclude_enabled": "1",
     "staff_prefixes": "동대표",
-    # 업체 문자(뿌리오): 번호가 있으면 문자 먼저, 없으면 카톡방. 테스트 모드면 문자는 테스트 번호로만
-    "sms_enabled": "1",
+    # 업체 문자(뿌리오): 켜면 번호가 있으면 문자 먼저, 없으면 카톡방. 테스트 모드면 문자는 테스트 번호로만
+    # 기본은 꺼짐 = 업체 처리 요청은 카톡방으로만 (문자 기능·설정·이력 화면은 그대로 둠)
+    "sms_enabled": "0",
     "sms_from": "",
     "sms_test_mode": "1",
     "sms_test_number": "01075728018",
@@ -52,6 +53,21 @@ def get_settings_map(cur) -> dict[str, str]:
     if conf["vendor_template"] in cp.OLD_VENDOR_TEMPLATES:  # 손대지 않은 이전 기본 문구 → 새 기본 문구
         conf["vendor_template"] = cp.DEFAULT_VENDOR_TEMPLATE
     return conf
+
+
+KAKAO_ONLY_VERSION = "1"
+
+
+def apply_kakao_only(cur) -> bool:
+    """업체 처리 요청을 카톡방으로만 보내도록 한 번 되돌린다 (서버 시작 때, 이후 관리자가 다시 켜면 그 설정을 따름)"""
+    cur.execute("SELECT value FROM app_settings WHERE name = 'sms_kakao_only'")
+    row = cur.fetchone()
+    if row and row["value"] == KAKAO_ONLY_VERSION:
+        return False
+    put_settings(cur, {"sms_enabled": "0"})
+    cur.execute("DELETE FROM app_settings WHERE name = 'sms_kakao_only'")
+    cur.execute("INSERT INTO app_settings (name, value) VALUES ('sms_kakao_only', %s)", (KAKAO_ONLY_VERSION,))
+    return True
 
 
 def put_settings(cur, values: dict[str, str]) -> None:

@@ -87,6 +87,12 @@ async def lifespan(_app):
                 log.info("FAQ 문항 등록: %s개", added)
         except Exception:
             log.exception("FAQ 자동 등록 실패")
+    try:  # 업체 처리 요청을 카톡방으로만 (업체 문자 끄기, 한 번)
+        with db.transaction(get_settings()) as conn, conn.cursor() as cur:
+            if store.apply_kakao_only(cur):
+                log.warning("업체 처리 요청: 카톡방으로만 보내도록 업체 문자를 껐습니다")
+    except Exception:
+        log.exception("업체 문자 끄기 실패")
     try:  # 업체 담당자 번호표(처음 받은 것) 한 번 반영
         from . import vendor_contacts
 
