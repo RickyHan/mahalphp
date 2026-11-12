@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from difflib import SequenceMatcher
@@ -32,6 +33,7 @@ from pydantic import BaseModel, Field
 from . import db, live
 from .auth import SettingsDep, require_admin
 
+log = logging.getLogger("kakao.apartments")
 router = APIRouter(dependencies=[Depends(require_admin)])
 
 # 별 모양 문자 (★ ☆ ⭐ ✩ ✪ ✫ ✬ ✭ ✮ ✯ ✰ 🌟 *). 이모지 변형 선택자(U+FE0F)는 무시
@@ -774,3 +776,63 @@ def seed_building_vendors(settings) -> dict[str, Any] | None:
     live.bump("apartment")
     live.bump("vendor")
     return {"vendors_created": created, "assigned": assigned, "none": none, "missing": sorted(missing)}
+
+
+# ---- 임시 지정 (서버 시작 때 한 번, 건물·톡방이 있을 때 적용) ------------------------------------------------
+
+TEMP_ASSIGNMENTS = [
+    # (건물 이름, 업체 톡방, 업체 이름, 분류들) — 111테스트 건물 시험용: 청소·승강기·소방·전기 → [시언] 톡방
+    ("111테스트", "[시언]", "시언", ("청소", "승강기", "소방", "전기")),
+]
+TEMP_ASSIGNMENT_VERSION = "1"
+
+
+def apply_temp_assignments(settings) -> list[str]:
+    """임시 지정을 적용한다. 건물과 톡방이 모두 있어야 적용하고, 적용한 것만 기록(다음 시작 때 나머지 재시도)."""
+    from .categories import all_categories
+
+    done: list[str] = []
+    now = _now(settings)
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT name, value FROM app_settings WHERE name LIKE %s ESCAPE '!'", (db.like("temp_assign:"),))
+        applied = {r["name"] for r in cur.fetchall() if r["value"] == TEMP_ASSIGNMENT_VERSION}
+        cats = {c["name"]: c["id"] for c in all_categories(cur)}
+        for building, room, vendor_name, categories in TEMP_ASSIGNMENTS:
+            flag = f"temp_assign:{building}:{room}"[:64]
+            if flag in applied:
+                continue
+            cur.execute("SELECT id FROM apartments WHERE name = %s ORDER BY id LIMIT 1", (building,))
+            apt = cur.fetchone()
+            cur.execute("SELECT 1 AS x FROM kakao_messages WHERE room_name = %s LIMIT 1", (room,))
+            if apt is None or cur.fetchone() is None:
+                log.warning("임시 지정 보류: 건물 '%s' 또는 톡방 '%s' 이 아직 없음", building, room)
+                continue
+            # 이 톡방에 연결된 업체 → 없으면 같은 이름 업체에 톡방 연결 → 없으면 새 업체
+            cur.execute("SELECT id FROM vendors WHERE room_name = %s ORDER BY id LIMIT 1", (room,))
+            row = cur.fetchone()
+            if row is None:
+                cur.execute("SELECT id FROM vendors WHERE name = %s AND (room_name IS NULL OR room_name = '') ORDER BY id LIMIT 1", (vendor_name,))
+                row = cur.fetchone()
+                if row:
+                    cur.execute("UPDATE vendors SET room_name = %s, updated_at = %s WHERE id = %s", (room, now, row["id"]))
+                else:
+                    cur.execute(
+                        "INSERT INTO vendors (name, biz_no, phone, address, room_name, created_at, updated_at) VALUES (%s, '', '', '', %s, %s, %s)",
+                        (vendor_name, room, now, now),
+                    )
+                    row = {"id": cur.lastrowid}
+            for cat in categories:
+                if cat not in cats:
+                    continue
+                cur.execute("DELETE FROM apartment_vendors WHERE apartment_id = %s AND category_id = %s", (apt["id"], cats[cat]))
+                cur.execute(
+                    "INSERT INTO apartment_vendors (apartment_id, category_id, vendor_id, updated_at) VALUES (%s, %s, %s, %s)",
+                    (apt["id"], cats[cat], row["id"], now),
+                )
+            cur.execute("DELETE FROM app_settings WHERE name = %s", (flag,))
+            cur.execute("INSERT INTO app_settings (name, value) VALUES (%s, %s)", (flag, TEMP_ASSIGNMENT_VERSION))
+            done.append(f"{building} {'·'.join(categories)} → {room}")
+    if done:
+        live.bump("apartment")
+        live.bump("vendor")
+    return done

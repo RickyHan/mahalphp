@@ -215,3 +215,24 @@ def test_building_with_extra_room(admin, settings):
     with db.transaction(settings) as conn, conn.cursor() as cur:  # 정리
         cur.execute("DELETE FROM apartments WHERE listed = 1")
         cur.execute("DELETE FROM apartment_rooms")
+
+
+def test_temp_assignment_111_test_to_sieon(admin, settings):
+    """임시 지정: 111테스트 건물의 청소·승강기·소방·전기 → [시언] 톡방 (건물·톡방이 생긴 뒤 한 번)"""
+    assert ap.apply_temp_assignments(settings) == []          # 아직 건물·톡방 없음 → 보류
+    _post_room = lambda room: TestClient(app).post("/api/messages", headers={"X-Api-Key": API_KEY}, data={
+        "device_id": "temp", "room_name": room, "sender_name": "관리", "message_text": "안녕하세요 시험입니다",
+        "is_group_chat": "true", "posted_at": "1793855519857"})
+    assert _post_room("[시언]").status_code == 201
+    assert admin.post("/api/admin/apartments", json={"name": "111테스트"}).status_code == 201
+    done = ap.apply_temp_assignments(settings)
+    assert done == ["111테스트 청소·승강기·소방·전기 → [시언]"]
+    assert ap.apply_temp_assignments(settings) == []          # 한 번만
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        for cat in ("청소", "승강기", "소방", "전기"):
+            cur.execute("""SELECT v.room_name FROM apartment_vendors av JOIN apartments a ON a.id = av.apartment_id
+                           JOIN complaint_categories c ON c.id = av.category_id JOIN vendors v ON v.id = av.vendor_id
+                           WHERE a.name = '111테스트' AND c.name = %s""", (cat,))
+            assert cur.fetchone()["room_name"] == "[시언]"
+        cur.execute("SELECT COUNT(*) AS n FROM vendors WHERE room_name = '[시언]'")
+        assert cur.fetchone()["n"] == 1
