@@ -194,9 +194,11 @@
       const list = v.contacts || [];
       const rest = list.slice(1);
       box.replaceChildren(
-        list.length ? contactLine(list[0]) : el("span", { class: "muted", text: "—" }),
-        rest.length ? el("details", { class: "contact-more" }, el("summary", { text: `외 ${rest.length}명` }), ...rest.map(contactLine)) : null,
-        el("button", { class: "link-btn", type: "button", text: list.length ? "편집" : "추가", onclick: edit }),
+        ...[
+          list.length ? contactLine(list[0]) : el("span", { class: "muted", text: "—" }),
+          rest.length ? el("details", { class: "contact-more" }, el("summary", { text: `외 ${rest.length}명` }), ...rest.map(contactLine)) : null,
+          el("button", { class: "link-btn", type: "button", text: list.length ? "편집" : "추가", onclick: edit }),
+        ].filter(Boolean), // replaceChildren 은 null 을 'null' 글자로 넣으므로 뺀다
       );
     };
     const edit = () => {

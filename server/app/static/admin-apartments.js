@@ -596,6 +596,31 @@
 
   KC.loaders = Object.assign(KC.loaders || {}, { apartments: loadApartments });
 
+  // 다른 화면에서 업체를 추가·수정하면 열려 있는 건물의 업체 목록도 새로 (고르던 값은 그대로)
+  async function refreshAccordionVendors() {
+    if (!acc.id || !acc.detail) return;
+    const id = acc.id;
+    const data = await api(`/api/admin/apartments/${id}/vendors`);
+    if (acc.id !== id) return;
+    acc.vendors = data.vendors;
+    const defaults = new Map(data.categories.map((c) => [c.category_id, c.defaults]));
+    for (const r of acc.rows) if (defaults.has(r.category_id)) r.defaults = defaults.get(r.category_id);
+    const old = acc.detail;
+    acc.detail = buildPanel();
+    old.replaceWith(acc.detail);
+  }
+  const prevTab = KC.onTab;
+  KC.onTab = (tab) => {
+    prevTab?.(tab);
+    if (tab === "apartments") refreshAccordionVendors().catch(reportError);
+  };
+  const prevLive = KC.onLive;
+  KC.onLive = (topics) => {
+    const r = prevLive ? prevLive(topics) : null;
+    if (KC.currentTab() === "apartments" && topics.includes("vendor")) refreshAccordionVendors().catch(reportError);
+    return r;
+  };
+
   $("apt-sync").addEventListener("click", () => sync().catch(reportError));
   $("apt-search").addEventListener("input", render);
   for (const b of document.querySelectorAll(".apt-filter .seg-btn")) {
