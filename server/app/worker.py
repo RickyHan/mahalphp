@@ -87,13 +87,6 @@ async def lifespan(_app):
                 log.info("FAQ 문항 등록: %s개", added)
         except Exception:
             log.exception("FAQ 자동 등록 실패")
-    try:  # 임시 지정 (예: 111테스트 건물 청소·승강기·소방·전기 → [시언] 톡방)
-        from . import apartments as _apts
-
-        for line in _apts.apply_temp_assignments(get_settings()):
-            log.warning("임시 담당 업체 지정: %s", line)
-    except Exception:
-        log.exception("임시 담당 업체 지정 실패")
     try:  # 업체 처리 요청을 카톡방으로만 (업체 문자 끄기, 한 번)
         with db.transaction(get_settings()) as conn, conn.cursor() as cur:
             if store.apply_kakao_only(cur):
