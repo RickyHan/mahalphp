@@ -1146,3 +1146,7 @@ button.room-chip:hover .room-chip-go { opacity: 1; }
   .acc-list .av-pick .sel-wrap { flex-direction: column; align-items: stretch; }
   .acc-list .av-pick .sel-search-row { flex: none; }
 }
+
+/* 민원 분류 변경 */
+.cp-recat { display: inline-flex; align-items: center; gap: 6px; }
+.cp-recat select { height: 30px; font-size: 13px; }

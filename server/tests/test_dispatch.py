@@ -305,3 +305,46 @@ def test_reply_ready_rooms_and_manual_send(admin, settings):
     # 휴대폰이 빈 목록을 보고하면(앱 재시작 직후 등) 모두 '새 알림 필요'
     TestClient(app).post("/api/replies/ready", headers=KEY, json={"device_id": DEVICE, "rooms": []})
     assert states()[1] == {ok_room: "waiting", wait_room: "waiting"}
+
+
+def test_recategorize_resends_ack_and_vendor(admin, settings):
+    """민원 대시보드 '분류 변경': 분류를 바꾸면 이전 대기 안내·요청은 취소, 새 분류로 민원 방 안내 + 새 담당 업체 요청"""
+    cats = {c["name"]: c for c in admin.get("/api/admin/categories").json()["items"]}
+    for room in ("●분류변경누수업체", "●분류변경배관업체"):
+        _post(room, "기사", "업체 톡방 인사드립니다")
+    admin.post("/api/admin/vendors/sync")
+    vendors = {v["room_name"]: v for v in admin.get("/api/admin/vendors").json()["items"] if v["room_name"]}
+    for room, cat in (("●분류변경누수업체", "누수"), ("●분류변경배관업체", "배관")):
+        v = vendors[room]
+        assert admin.put(f"/api/admin/vendors/{v['id']}", data={"name": v["name"], "room_name": room, "category_ids": str(cats[cat]["id"])}).status_code == 200
+    with db.transaction(settings) as conn, conn.cursor() as cur:  # 다른 기본 업체가 끼지 않게 이 두 분류는 이 업체들만
+        cur.execute("DELETE FROM vendor_categories WHERE category_id IN (%s, %s) AND vendor_id NOT IN (%s, %s)",
+                    (cats["누수"]["id"], cats["배관"]["id"], vendors["●분류변경누수업체"]["id"], vendors["●분류변경배관업체"]["id"]))
+    for item in _pending():
+        _report(item["id"], True)
+
+    mid = _post("분류변경방", "305호", "화장실 바닥에서 누수가 있어요 확인 부탁드립니다")
+    store.classify_once(settings, client=FakeGemini())
+    before = {(i["room_name"]) for i in _pending()}
+    assert {"분류변경방", "●분류변경누수업체"} <= before
+
+    group = next(g for g in admin.get("/api/admin/complaints").json()["items"] if g["ids"][0] == mid)
+    r = admin.post("/api/admin/complaints/recategorize", json={"ids": group["ids"], "category": "배관"})
+    assert r.status_code == 200 and r.json()["vendor"] == 1 and r.json()["ack"] == 1
+    pend = _pending()
+    rooms = [i["room_name"] for i in pend]
+    assert "●분류변경누수업체" not in rooms and "●분류변경배관업체" in rooms           # 예전 업체 요청 취소, 새 업체로
+    ack = next(i for i in pend if i["room_name"] == "분류변경방")
+    assert "[배관]" in ack["text"] and len([i for i in pend if i["room_name"] == "분류변경방"]) == 1
+    g = next(g for g in admin.get("/api/admin/complaints").json()["items"] if g["ids"][0] == mid)
+    assert g["category"] == "배관"
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT status FROM reply_queue WHERE message_id = %s AND room_name = '●분류변경누수업체'", (mid,))
+        assert [x["status"] for x in cur.fetchall()] == ["expired"]
+        cur.execute("SELECT is_complaint, note FROM classification_examples WHERE message_id = %s", (mid,))
+        ex = cur.fetchone()
+        assert ex["is_complaint"] == 1 and ex["note"] == "분류: 배관"                 # 같은 내용은 이 분류로 판정하도록
+    assert admin.post("/api/admin/complaints/recategorize", json={"ids": [mid], "category": "없는분류"}).status_code == 422
+    assert admin.post("/api/admin/complaints/recategorize", json={"ids": [99999999], "category": "배관"}).status_code == 404
+    for item in _pending():
+        _report(item["id"], True)

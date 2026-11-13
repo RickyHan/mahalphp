@@ -31,8 +31,43 @@
 
   // ---- 민원 ------------------------------------------------------------------------------
 
+  let cpCategories = [];
+
+  // 다른 분류로 바꾸기: 고르면 확인 후 민원 방 접수 안내 + 새 담당 업체 처리 요청을 다시 보냄
+  function recategorizeControl(g) {
+    const box = el("span", { class: "cp-recat" });
+    const open = () => {
+      const select = el("select", { "aria-label": "바꿀 분류" }, el("option", { value: "", text: "분류 선택" }),
+        ...cpCategories.filter((c) => c !== g.category).map((c) => el("option", { value: c, text: c })));
+      const cancel = el("button", { class: "btn btn-small", type: "button", text: "취소", onclick: () => box.replaceChildren(btn) });
+      select.addEventListener("change", async () => {
+        const to = select.value;
+        if (!to) return;
+        if (!confirm(`[${g.category}] → [${to}] 로 바꿉니다.\n\n· 민원 방에 [${to}] 접수 안내를 다시 보냅니다.\n· [${to}] 담당 업체 톡방에 처리 요청을 다시 보냅니다.\n· 아직 안 나간 이전 안내·요청은 취소합니다.`)) {
+          select.value = "";
+          return;
+        }
+        select.disabled = true;
+        try {
+          const r = await send("POST", "/api/admin/complaints/recategorize", { ids: g.ids, category: to });
+          KC.toast?.(`[${to}] 로 바꿨습니다 · 업체 요청 ${r.vendor}건`);
+          await loadComplaints();
+        } catch (err) {
+          reportError(err);
+          select.disabled = false;
+        }
+      });
+      box.replaceChildren(select, cancel);
+      select.focus();
+    };
+    const btn = el("button", { class: "btn btn-small", type: "button", text: "분류 변경", title: "다른 민원 분류로 바꾸고 안내·업체 요청을 다시 보냄", onclick: open });
+    box.append(btn);
+    return box;
+  }
+
   async function loadComplaints() {
     const data = await api("/api/admin/complaints", { category: $("cp-category").value });
+    cpCategories = data.categories;
     const sel = $("cp-category");
     // 카테고리가 바뀔 수 있으므로 매번 다시 채운다 (선택값 유지)
     const chosen = sel.value;
@@ -86,6 +121,7 @@
         el(
           "div",
           { class: "cp-actions" },
+          recategorizeControl(g),
           el("button", { class: "btn btn-small", type: "button", text: "민원 아님", title: "민원이 아니라고 가르치기", onclick: () => notComplaint(g).catch(reportError) }),
         ),
         detail,

@@ -5,6 +5,8 @@
     DELETE /api/admin/examples/{id}             사례 삭제
     POST   /api/admin/complaints/not-complaint  민원 아님으로 바로잡기 {ids, note}
            → 판정 0, 아직 안 보낸 접수 안내·FAQ 답변·업체 처리 요청 취소, 사례로 저장
+    POST   /api/admin/complaints/recategorize   다른 분류로 바꾸기 {ids, category}
+           → 분류 변경, 아직 안 보낸 안내·업체 요청 취소, 새 분류로 민원 방 접수 안내 + 새 담당 업체 처리 요청 다시 보냄
 
 사례는 최근 것부터 complaints.EXAMPLE_LIMIT 개까지 지시문에 들어간다.
 """
@@ -173,6 +175,61 @@ def delete_example(example_id: int, settings: SettingsDep) -> dict[str, Any]:
         cur.execute("DELETE FROM classification_examples WHERE id = %s", (example_id,))
     live.bump("complaint")
     return {"ok": True}
+
+
+class RecategorizeBody(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=200)
+    category: str = Field(min_length=1, max_length=30)
+
+
+def recategorize(cur, ids: list[int], category: str, at: datetime) -> dict[str, int]:
+    """민원 묶음의 분류를 바꾸고, 새 분류로 민원 방 접수 안내와 담당 업체 처리 요청을 다시 보낸다.
+    (관리자가 직접 바꾼 것이므로 30분·같은 문제 반복 조건 없이 보냄, 업체 요청은 '업체 처리 요청' 설정이 켜져 있을 때)"""
+    marks = ", ".join(["%s"] * len(ids))
+    cur.execute(
+        f"""SELECT m.id, m.room_name, m.sender_name, m.message_text, m.posted_at, m.device_id, c.summary, c.confidence
+            FROM kakao_messages m JOIN complaint_check c ON c.message_id = m.id
+            WHERE c.verdict = 1 AND m.id IN ({marks}) ORDER BY m.id""",
+        ids,
+    )
+    rows = cur.fetchall()
+    if not rows:
+        return {"updated": 0, "ack": 0, "vendor": 0}
+    for r in rows:
+        cur.execute("UPDATE complaint_check SET category = %s WHERE message_id = %s", (category, r["id"]))
+        cur.execute(
+            "UPDATE reply_queue SET status = 'expired', done_at = %s, note = %s"
+            " WHERE message_id = %s AND status = 'pending' AND kind IN ('ack', 'faq', 'vendor')",
+            (at, f"관리자가 분류를 '{category}'(으)로 바꿔 새로 보냄", r["id"]),
+        )
+    first = rows[0]
+    conf = store.get_settings_map(cur)
+    summary = first["summary"] or ""
+    text = cp.format_reply(conf["reply_template"], first["sender_name"], category, summary, first["room_name"])
+    store.enqueue_reply(cur, first["id"], first["device_id"], first["room_name"], text, at)
+    store.set_reply_status(cur, first["id"], 4, f"분류 변경({category}) — 휴대폰 전송 대기")
+    vendor = 0
+    if conf["vendor_enabled"] == "1":
+        verdict = cp.Verdict(first["id"], True, category, summary, float(first["confidence"] or 0.9))
+        vendor = store.enqueue_vendor_messages(cur, conf, verdict, first, at)
+    # 같은 내용은 앞으로 이 분류로 판정하도록 사례로 남김
+    add_example(cur, first["message_text"] or "", True, f"분류: {category}", at, first["id"])
+    return {"updated": len(rows), "ack": 1, "vendor": vendor}
+
+
+@router.post("/api/admin/complaints/recategorize")
+def recategorize_api(body: RecategorizeBody, settings: SettingsDep) -> dict[str, Any]:
+    from .categories import all_categories
+
+    category = body.category.strip()
+    with db.transaction(settings) as conn, conn.cursor() as cur:
+        if category not in {c["name"] for c in all_categories(cur)}:
+            raise HTTPException(422, "없는 민원 분류입니다.")
+        result = recategorize(cur, body.ids, category, store.now_local(settings))
+    if not result["updated"]:
+        raise HTTPException(404, "민원으로 분류된 메시지가 없습니다.")
+    live.bump("complaint")
+    return {"ok": True, **result}
 
 
 @router.post("/api/admin/complaints/not-complaint")
