@@ -26,12 +26,12 @@ class KakaoNotificationListener : NotificationListenerService() {
                 .onFailure { Log.w(TAG, "relay", it) }
             // 쌓아 둔 메시지: 30초마다 모아서 서버로 보낸다
             runCatching { UploadWorker.kick(this) }.onFailure { Log.w(TAG, "upload kick", it) }
-            // 새 알림이 없어도 30개 넘게 남은 오래된 카톡 알림·다른 앱 알림을 정리
+            // 새 알림이 없어도 20개 넘게 남은 오래된 주택방(★) 알림을 정리
             worker.execute { trimKakaoNotifications() }
         }, 5, RELAY_SECONDS, TimeUnit.SECONDS)
         // 권한을 막 켰거나 서비스가 재시작된 경우, 이미 떠 있는 알림도 수집한다(중복은 큐에서 걸러짐)
         runCatching { activeNotifications }.getOrNull()?.forEach(::onNotificationPosted)
-        worker.execute { trimKakaoNotifications() } // 수집이 끝난 뒤 30개 넘는 오래된 알림·다른 앱 알림 정리
+        worker.execute { trimKakaoNotifications() } // 수집이 끝난 뒤 20개 넘는 오래된 주택방(★) 알림 정리
     }
 
     override fun onCreate() {
@@ -117,55 +117,53 @@ class KakaoNotificationListener : NotificationListenerService() {
     }
 
     /**
-     * 알림창의 카톡 알림을 최대 30개로 유지: 넘치면 오래된 것부터 지운다(이미 저장한 뒤라 수집에서 빠지지 않음).
-     * 업체 톡방(●) 알림은 업체 처리 요청 '답장'에 쓰므로 일반 방 알림을 먼저 지운다.
+     * 챗봇 앱: 주택방(★) 카톡 알림을 최근 20개로 유지 — 넘치면 오래된 것부터 지운다(이미 저장한 뒤라 수집에서 빠지지 않음).
+     * 주택방이 아닌 카톡 알림(업체 ●·접수방 ◆·1:1 등)과 다른 앱 알림은 지우지 않는다.
+     * 답장 수단(ReplyRegistry)은 메모리에 따로 기억하므로 알림을 지워도 그 방에 답장할 수 있다.
      */
     internal fun trimKakaoNotifications(force: Boolean = false) {
-        if (KEEP_NOTIFICATIONS) return // 챗봇 앱: 알림을 지우지 않고 그대로 둔다
         val settings = AppSettings(this)
-        if (!settings.limitKakaoNotifications && !settings.removeOtherNotifications) return
+        if (!force && !settings.captureEnabled) return // 수집 중지 중에는 지우지 않음 (수집되지 않은 알림을 잃지 않게)
         val active = runCatching { activeNotifications }.getOrElse {
             settings.recordTrim(0, 0, "알림 목록 읽기 실패: ${it.javaClass.simpleName}")
             return
         } ?: return
-        // 이미 떠 있는 다른 앱 알림 정리 (카톡 30개 유지와 별개로 켜고 끔)
-        val others = active.count { removeOther(it) }
-        if (others > 0) settings.otherRemoved += others
-        if (!settings.limitKakaoNotifications || (!force && !settings.captureEnabled)) return
         val kakao = active.filter { it.packageName == KakaoParser.KAKAO_PACKAGE }
-        val counted = kakao.count { it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 && it.isClearable }
-        settings.kakaoNotificationCount = counted
-        if (counted <= NotificationTrim.MAX) {
-            if (force) settings.recordTrim(counted, 0, null)
-            return
-        }
+        settings.kakaoNotificationCount = kakao.count { it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 && it.isClearable }
+        val store = runCatching { MessageStore.get(this) }.getOrNull()
         val items = kakao.map { sbn ->
             val summary = sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0
             val room = if (summary) null else runCatching {
-                KakaoParser.parse(NotificationExtractor.extract(sbn, conversationShortcut(sbn)?.first)).firstOrNull()?.room
+                // 방 이름: 대화 바로가기 → 같은 채팅방 번호로 전에 읽어 둔 이름 (수집 때와 같은 순서)
+                val label = conversationShortcut(sbn)?.first ?: store?.roomForKey(NotificationExtractor.chatKeyOf(sbn))
+                KakaoParser.parse(NotificationExtractor.extract(sbn, label)).firstOrNull()?.room
             }.getOrNull()
             NotificationTrim.Item(sbn.key, sbn.postTime, room, summary, sbn.isClearable)
+        }
+        val houseCount = items.count { !it.isSummary && it.clearable && NotificationTrim.isHouseRoom(it.room) }
+        val toCancel = NotificationTrim.houseToCancel(items)
+        if (toCancel.isEmpty()) {
+            if (force) settings.recordTrim(houseCount, 0, null)
+            return
         }
         val rooms = items.associate { it.key to (it.room ?: "?") }
         var cancelled = 0
         var error: String? = null
         val names = mutableListOf<String>()
-        for (key in NotificationTrim.toCancel(items)) {
+        for (key in toCancel) {
             runCatching { cancelNotification(key) }
                 .onSuccess { cancelled++; names += rooms[key].orEmpty() }
                 .onFailure { error = "${it.javaClass.simpleName}: ${it.message.orEmpty().take(80)}"; Log.w(TAG, "알림 정리 실패", it) }
         }
         // 실제로 지워졌는지 다시 세어 기록 (Android 버전·제조사에 따라 막히는 경우 확인용)
-        val after = runCatching { activeNotifications }.getOrNull()
-            ?.count { it.packageName == KakaoParser.KAKAO_PACKAGE && it.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 && it.isClearable }
-            ?: -1
-        settings.kakaoNotificationCount = after.coerceAtLeast(0)
-        if (cancelled > 0 && after >= counted) error = error ?: "지우기 요청은 했지만 알림이 줄지 않음 (휴대폰이 막고 있을 수 있음)"
-        settings.recordTrim(after, cancelled, error)
+        val remainingKeys = runCatching { activeNotifications }.getOrNull()?.map { it.key }?.toSet()
+        val after = remainingKeys?.let { keys -> items.count { it.key in keys && !it.isSummary && it.clearable && NotificationTrim.isHouseRoom(it.room) } } ?: -1
+        if (cancelled > 0 && after >= houseCount) error = error ?: "지우기 요청은 했지만 알림이 줄지 않음 (휴대폰이 막고 있을 수 있음)"
+        settings.recordTrim(after.coerceAtLeast(0), cancelled, error)
         runCatching {
-            MessageStore.get(this).addNotificationLog(
+            store?.addNotificationLog(
                 System.currentTimeMillis(),
-                "[알림 정리] 카톡 알림 $counted 개 → $after 개, ${cancelled}개 지움" +
+                "[알림 정리] 주택방(★) 알림 $houseCount 개 → $after 개, ${cancelled}개 지움 (최근 ${NotificationTrim.HOUSE_MAX}개 유지)" +
                     (if (names.isNotEmpty()) " (오래된 순: ${names.joinToString(", ").take(300)})" else "") +
                     (error?.let { "\n  실패: $it" } ?: "") + "\n",
             )

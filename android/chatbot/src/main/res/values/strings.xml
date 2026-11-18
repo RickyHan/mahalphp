@@ -42,5 +42,5 @@
     <string name="status_notification_hint">알림줄에 🟢/🟡/🔴 상태와 수집 시작·중지 버튼을 항상 표시합니다.</string>
     <string name="section_permission">권한</string>
     <string name="section_options">수집 옵션 · 권한</string>
-    <string name="keep_notifications_hint">이 앱은 카카오톡 알림과 다른 앱 알림을 지우지 않습니다. 알림은 수집·저장만 하고 알림창에 그대로 둡니다.</string>
+    <string name="keep_notifications_hint">주택방(★ 로 시작) 카톡 알림은 최근 20개만 남기고 오래된 것부터 지웁니다(수집·저장한 뒤 지움). 그 밖의 카톡 알림(업체 ●·접수방 ◆ 등)과 다른 앱 알림은 지우지 않습니다.</string>
 </resources>

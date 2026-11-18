@@ -26,8 +26,8 @@ android {
         applicationId = "com.mahal.kakaochatbot"  // 기존 수집 앱과 함께 설치 가능
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"${secret("serverUrl")}\"")
         buildConfigField("String", "DEFAULT_API_KEY", "\"${secret("apiKey")}\"")
     }

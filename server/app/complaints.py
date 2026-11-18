@@ -22,6 +22,18 @@ VENDOR_MAX_AGE = timedelta(hours=12)
 # 예약 메시지는 휴대폰이 1시간 안에 못 보내면 만료
 SCHEDULE_MAX_AGE = timedelta(hours=1)
 SELF_SENDER = "나"
+
+# 접수방: 다이아몬드(◆ ◇ ♦ ◈ 💠 🔷 🔶 🔹 🔸)로 시작하는 채팅방.
+# 동대표·관리자가 입주민에게 받은 민원을 대신 올려 AI 에 접수시키는 방이라, 직원 닉네임 제외 규칙을 적용하지 않는다.
+INTAKE_MARKS = "◆◇♦◈💠🔷🔶🔹🔸"
+_INTAKE_PREFIX = re.compile(rf"^\s*[{re.escape(INTAKE_MARKS)}]")
+
+
+def is_intake_room(room: str | None) -> bool:
+    """다이아몬드로 시작하는 방 = 민원 접수방 (직원이 민원을 대신 올리는 방)"""
+    return bool(_INTAKE_PREFIX.match(room or ""))
+
+
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_REPLY_TEMPLATE = "[{분류}] 민원이 접수되었습니다."
 # 담당 업체 카톡방으로 보내는 처리 요청. {업체명} {방} {분류} {요약} {내용} {보낸사람} {시각}
@@ -128,6 +140,11 @@ def build_prompt(categories: list[tuple[str, str]] | None = None, examples: list
   대화 흐름을 보고 판단하라. 예) 관리비·공사비 논쟁 중의 발언은 민원이 아니다.
   앞 사람이 알린 고장에 대해 "저희 집도 그래요"처럼 같은 문제를 새로 알리면 민원이다.
   context 의 메시지는 판정 대상이 아니다. 입력 id 의 text 만 판정한다.
+
+접수방: 입력에 "intake": true 가 있는 메시지는 동대표·관리자가 입주민에게 받은 민원을 대신 올리는 접수방의 글이다.
+  여기서는 보낸 사람이 동대표·관리자여도, 특정 세대·건물의 고장·누수·청소·소음 등 조치가 필요한 문제를 전달하면 민원이다.
+  (예: "○○빌라 302호 화장실 천장 누수 확인 요청", "△△주택 1층 센서등 고장입니다")
+  처리 결과 보고("조치했습니다", "다시 올려놓겠습니다"), 인사·확인 답변, 일정 안내는 민원이 아니다.
 {examples_block(examples)}
 분류는 아래 중 하나만 고른다 (해당 없는 민원은 "{FALLBACK_CATEGORY}"):
 {guide}
@@ -186,6 +203,8 @@ def request_body(
         row: dict[str, Any] = {"id": i.id, "room": i.room, "sender": i.sender, "text": i.text[:1000]}
         if i.context:
             row["context"] = [c[:300] for c in i.context]
+        if is_intake_room(i.room):
+            row["intake"] = True
         rows.append(row)
     user = json.dumps(rows, ensure_ascii=False)
     return {

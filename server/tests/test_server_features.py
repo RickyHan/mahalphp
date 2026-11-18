@@ -568,3 +568,25 @@ def test_unknown_sender_refill_and_manual_name(admin, settings):
     r = admin.post("/api/admin/unknown-senders/fill").json()
     assert r["filled"] >= 1 and "messages" in r["left"]
     assert {m["id"]: m["sender_name"] for m in admin.get("/api/admin/messages", params={"room": room}).json()["items"]}[b1] == "홍길동"
+
+
+def test_intake_room_classifies_staff_messages(admin, settings):
+    """◆ 로 시작하는 접수방: 동대표가 민원을 대신 올리는 방 → 직원 닉네임이어도 민원 분류 대상, Gemini 에 접수방 표시"""
+    for room in ("◆◇동대표 AI접수방", " ◇접수", "♦접수방", "💠 접수", "🔷접수"):
+        assert cp.is_intake_room(room), room
+    for room in ("★다솜빌라", "●성도엘리베이터", "동대표 ◆방", "", None):
+        assert not cp.is_intake_room(room), room
+
+    c = TestClient(app)
+    now = _now(settings)
+    intake = _post(c, "◆◇동대표 AI접수방", "동대표8", "미영팰리스 502호 화장실 천장 누수 확인 요청드립니다", now)
+    house_staff = _post(c, "★접수방비교빌라", "동대표8", "502호 누수 확인했습니다 조치하겠습니다", now)
+    gem = FakeGemini()
+    store.classify_once(settings, client=gem)
+    sent = {i.id: i for batch in gem.calls for i in batch}
+    assert intake in sent and house_staff not in sent      # 접수방만 직원 닉네임 예외
+    body = cp.request_body([sent[intake]])
+    row = json.loads(body["contents"][0]["parts"][0]["text"])[0]
+    assert row["intake"] is True and "접수방" in body["systemInstruction"]["parts"][0]["text"]
+    other = cp.request_body([cp.Item(1, "★다솜빌라", "301호", "누수가 있어요")])
+    assert "intake" not in json.loads(other["contents"][0]["parts"][0]["text"])[0]

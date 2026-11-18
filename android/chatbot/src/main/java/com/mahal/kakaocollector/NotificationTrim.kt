@@ -9,7 +9,11 @@ package com.mahal.kakaocollector
  */
 object NotificationTrim {
     const val MAX = 30
+    /** 챗봇 앱: 주택방(★ 로 시작) 알림은 최근 이만큼만 남긴다 */
+    const val HOUSE_MAX = 20
     private const val CIRCLES = "●⚫⬤⏺🔴🟠🟡🟢🔵🟣🟤"
+    /** 별 모양 문자 — 서버의 주택방(★) 판단(apartments.STARS)과 같은 목록 */
+    private const val STARS = "★☆⭐✩✪✫✬✭✮✯✰🌟*"
 
     data class Item(val key: String, val postTime: Long, val room: String?, val isSummary: Boolean, val clearable: Boolean)
 
@@ -18,6 +22,24 @@ object NotificationTrim {
         val r = room?.trimStart().orEmpty()
         if (r.isEmpty()) return false
         return CIRCLES.contains(String(Character.toChars(r.codePointAt(0))))
+    }
+
+    /** 방 이름이 별(★ 등)로 시작하는지 = 주택방 — 첫 글자(코드 포인트)로 판단 */
+    fun isHouseRoom(room: String?): Boolean {
+        val r = room?.trimStart().orEmpty()
+        if (r.isEmpty()) return false
+        return STARS.contains(String(Character.toChars(r.codePointAt(0))))
+    }
+
+    /**
+     * 챗봇 앱: 주택방(★) 알림만 최근 [max]개 남기고 오래된 것을 지운다 (지울 순서대로 key).
+     * 주택방이 아닌 방(업체 ●·접수방 ◆·1:1 등)·묶음 요약·지울 수 없는 알림·방을 모르는 알림은 세지도 지우지도 않는다.
+     */
+    fun houseToCancel(items: List<Item>, max: Int = HOUSE_MAX): List<String> {
+        val house = items.filter { !it.isSummary && it.clearable && isHouseRoom(it.room) }
+        val over = house.size - max
+        if (over <= 0) return emptyList()
+        return house.sortedBy { it.postTime }.take(over).map { it.key }
     }
 
     /** 지울 알림 key (지울 순서대로) */

@@ -289,7 +289,8 @@ def unclassified(cur, limit: int, at: datetime) -> list[dict[str, Any]]:
     for r in rows:
         if r["room_name"] in vendor_rooms or _is_vendor_room(r["room_name"]):
             skip.append((r, "업체 톡방 — 민원 분류 안 함"))
-        elif staff is not None and staff.match((r["sender_name"] or "").strip()):
+        elif staff is not None and staff.match((r["sender_name"] or "").strip()) and not cp.is_intake_room(r["room_name"]):
+            # 접수방(◆ 로 시작)은 동대표가 민원을 대신 올리는 방이라 직원 닉네임이어도 분류한다
             skip.append((r, "직원 닉네임 — 민원 분류 안 함"))
         elif cp.is_eligible(r["message_type"], r["message_text"], r["sender_name"]):
             out.append(r)
